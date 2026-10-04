@@ -1,0 +1,4 @@
+interface:
+  display_name: "Watch PR Checks"
+  short_description: "Resolve PR conflicts, fix failing CI, and ship release-please releases"
+  default_prompt: "Use $land-pr to resolve this PR's merge conflicts and fix failing CI checks, automatically verify, commit, push, and repeat until green. If you cannot safely fix something or need my input, stop and ask me; otherwise finish with a brief chat message saying what changed, if anything. If the repository uses release-please, ask me yes or no while CI runs whether to also ship the release."
