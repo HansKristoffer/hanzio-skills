@@ -82,7 +82,7 @@ Success requires every relevant check to have completed successfully for the sti
 
 ## Diagnose and fix failures
 
-Inspect failed jobs as they finish; other jobs may still be running. Obtain all available root failures before deciding on a patch.
+Inspect failed jobs as they finish, but patch only once the relevant runs are complete and you hold the root failure of every failed job. A shard still running can fail for a different reason; patching on the first failure turns one fix cycle into two.
 
 ```bash
 gh run view "$RUN_ID" --repo "$REPO" --attempt "$ATTEMPT" --log-failed
