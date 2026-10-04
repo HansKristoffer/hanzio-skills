@@ -15,7 +15,7 @@ Read the root and nearest `AGENTS.md` / `CLAUDE.md` for every touched area, and 
 
 - **Scope**: Prefer a tight diff. Do not refactor unrelated modules or "clean the world."
 - **Behavior**: Preserve observable behavior unless the user asked for a change.
-- **Deletion over addition**: The best cleanup removes code. A pass that only adds - helpers, types, comments, guards - is not a cleanup.
+- **Deletion over addition**: The best cleanup removes code. A pass that only adds - helpers, types, comments, guards - is not a cleanup. Line count is not the measure, though: spacing out compressed code adds lines and is still a cleanup (see **Readable layout**).
 - **Boring over clever**: Clever is what someone decodes at 3am. Take the readable equivalent even when it costs a line.
 - **Read before you cut**: Be lazy about the diff, never about comprehension. Trace every caller of what you touch before deleting or narrowing it. A small change in the wrong place is a second bug, not a tidier file.
 - **Fix at the source**: A cast, shim, or guard repeated at several call sites is one wrong type upstream. Fix the formatter / router output / schema once instead of cleaning each site - that is both the smaller diff and the actual fix.
@@ -44,12 +44,13 @@ Tighten the diff by stripping patterns that often appear after AI-assisted edits
 
 - **Defensive bloat**: Remove try/catch or null/undefined guards that are atypical for the same layer in this repo, duplicate validation the caller already enforced, or branches that cannot happen on trusted inputs. The test: a guard is bloat when the same layer elsewhere in this repo does not have it, and load-bearing when removing it changes what happens on bad input. See **Never clean away** below.
 - **Reinvented helpers**: A formatter, guard, mapping, or fetch wrapper that already exists in a shared package, a sibling feature, or an installed dependency. Delete the local copy and import the existing one - ladder rung 2. Date and relative-time formatting is the usual offender: use the repo's formatter instead of a component-local `Intl.DateTimeFormat` or `toLocaleString()`.
-- **Justification comments**: Delete comments that explain why a change is correct, what the next line does, or where code came from ("moved from X", "now uses the shared helper", "safe because validated above"). A comment earns its place only by stating a constraint the code cannot show. The comments that stay get the prose pass below.
+- **Justification comments**: Delete comments that explain why a change is correct, what the next line does, or where code came from ("moved from X", "now uses the shared helper", "safe because validated above"). A comment earns its place by saying why, naming a constraint, or explaining what the code cannot show; those are welcome (see **Readable layout**). The comments that stay get the prose pass below.
 - **Assume required config is present**: Do not add `isXConfigured()` helpers, optional-secret fallback chains (`getOptionalSecret('FOO') ?? getOptionalSecret('BAR')`), or soft-disable branches for secrets/env the feature needs. Read it with the repo's required accessor (for example hanzio's `getSecret`) and let missing config fail. Keep the optional accessor for values that are genuinely optional at the product level, such as a third-party provider that disables itself when unset. Never invent a secret "with fallback to another secret" - pick one required key.
 - **Types**: Remove `as any`, unnecessary `as` assertions, and `@ts-ignore` / `@ts-expect-error` unless there is a documented, unavoidable reason; fix the underlying type instead. See [references/typescript.md](references/typescript.md) for branded ids, router-derived shapes and Prisma results - **fix at the source**, not with `brandXId()` shims or `as never` at every call site.
 - **Exported param/result aliases**: Remove `export type FooInput`, `export interface BarParams`, or `export type BazResult` when nothing outside the file imports them. Put the shape **inline on the function** (`input: { … }`) instead of a separate named type used only once.
 - **Redundant return annotations**: Drop explicit `: Promise<SomeResult>` (or exported result types) when `SomeResult` exists only for that function. Prefer **inferred return types**. For discriminated unions callers must narrow, use `as const` on return literals (e.g. `translated: true as const`) instead of a file-local result type.
 - **Deprecated shims**: On greenfield / pre-production code, do not leave `@deprecated` thin wrappers or duplicate entry points "for one PR cycle." Migrate callers to the canonical API and delete the wrapper.
+- **Compressed code**: Several statements per line, one-line `try`/`catch` blocks, four-clause conditions and nested template literals. Space them out as **Readable layout** describes.
 - **Style**: Align naming, `const`/`let` usage, import order, and formatting with surrounding code - not a different convention introduced in one block.
 - **Noise**: Drop gratuitously long identifiers, redundant intermediate variables, and "just in case" branches with no real scenario. Avoid emoji in identifiers, non-UI strings, or comments unless the file already uses them that way; emoji in user-facing copy is fine when it fits the product tone. Never use the em dash `—` (U+2014) in comments, copy or strings; end the sentence or use a comma, as [references/prose.md](references/prose.md) says.
 - **Static query inputs**: Do not hoist static `queryOptions({ input: … })` literals to named constants - inline `{ input: { limit: 20 } }` (or `{}` / `undefined`) at the call site. Keep named inputs only when reactive or shared across non-trivial logic.
@@ -92,13 +93,100 @@ Those are facts with an authority you can point at, and a missing entry is a bug
 
 **Worked example (website import).** Choosing which crawled pages to read a company's business details from started as `CONTACT_PAGE_HINTS = ['contact', 'kontakt', 'about', 'om-os', 'impressum', 'åbningstider', ...]`, matched against URL and title. It was replaced by a score over distinct e-mail addresses, `tel:` links, phone-shaped numbers (eight digits or more, so prices and years do not count), and opening-hours ranges such as `08.00-17.00`, with path depth and crawl order as tie-breaks. Those signals are identical in Danish, Portuguese, Japanese and Polish, so a new country needs no code change - and the ranking became unit-testable across languages instead of only against the ones in the array.
 
+## Readable layout
+
+People and agents both read this code, and both read it faster when each line holds one idea. AI-written code drifts the other way: as many statements per line as the formatter allows, conditions with four clauses, a `try`/`catch` folded onto one line. Fewer lines is not the goal; fewer things to hold in your head at once is. Spacing out compressed code is part of the cleanup, even though it adds lines.
+
+- **One statement per line**, and one declaration per `const` / `let`.
+- **Blocks get their own lines.** No `try { … } catch { }`, `} finally { … }` or multi-statement `if` body on one line. A short guard such as `if (!entry.isDirectory()) continue` stays on one line.
+- **Blank lines between phases**: setup, guards, the work, the result. Keep lines that belong together together.
+- **Name a hard condition.** Three or more clauses, or one a reader has to decode, becomes a named boolean (`const isSkillFolder = …`) or separate guards, each with its own reason.
+- **Pull nested expressions out.** A ternary inside a template literal, a template literal inside another, or an error message built inline in a `throw` gets a named variable on the line before.
+- **An empty `catch` says why.** A one-line comment names the failure it expects and why ignoring it is safe.
+- **Long lines are a symptom.** A line the formatter leaves past about 100 characters is usually doing two things; split the expression, not just the line.
+
+**Comments are welcome when they earn it.** A short comment above a block that says why, names a constraint, or saves the reader a trip elsewhere is good code: why a link is checked before reading through it, why a cheap call runs first, what an odd-looking value protects. Do not narrate what the next line does, and do not justify the change (see **Justification comments**).
+
+**Do not overdo it.** No blank line after every statement, no variable for a sub-expression that is already clear, no wrapping a short call over several lines, no helper for a three-line block used once. Match the repo's formatter and quote and semicolon style. When the surrounding file is compressed itself, space out the code you touch, not the whole file.
+
+Before:
+
+```ts
+export function readRepoSkills(root: string): { skills: FetchedSkill[]; skipped: string[] } {
+  const skills: FetchedSkill[] = [], skipped: string[] = [], inside = realpathSync(root) + sep;
+  for (const dir of [join(root, ".claude", "skills"), join(root, ".agents", "skills")]) {
+    let entries: Dirent[] = [];
+    // `.claude/skills` is often a link to `.agents/skills`; one leaving the repository is ignored.
+    try { if (realpathSync(dir).startsWith(inside)) entries = readdirSync(dir, { withFileTypes: true }); } catch { }
+    for (const entry of entries) {
+      const id = skillId(entry.name);
+      if (!entry.isDirectory() || !existsSync(join(dir, entry.name, "SKILL.md")) || skills.some(k => k.id === id)) continue;
+      try { skills.push({ id, ...readSkill(join(dir, entry.name)) }); }
+      catch (error) { skipped.push(`${entry.name}: ${error instanceof Error ? error.message : error}`); }
+    }
+  }
+  if (!skills.length) throw new Error(skipped.length ? `no usable skills: ${skipped.join("; ")}` : "no skills in .claude/skills or .agents/skills");
+  return { skills: validateFetched(skills), skipped };
+}
+```
+
+After:
+
+```ts
+export function readRepoSkills(root: string) {
+  const skills: FetchedSkill[] = [];
+  const skipped: string[] = [];
+  const insideRepo = realpathSync(root) + sep;
+
+  for (const dir of [join(root, ".claude", "skills"), join(root, ".agents", "skills")]) {
+    let entries: Dirent[] = [];
+
+    // `.claude/skills` is often a link to `.agents/skills`; a link that leaves the repository is ignored.
+    try {
+      if (realpathSync(dir).startsWith(insideRepo)) {
+        entries = readdirSync(dir, { withFileTypes: true });
+      }
+    } catch {
+      // A missing folder or a broken link: there is nothing to read.
+    }
+
+    for (const entry of entries) {
+      const id = skillId(entry.name);
+      const path = join(dir, entry.name);
+
+      const isSkillFolder = entry.isDirectory() && existsSync(join(path, "SKILL.md"));
+      const alreadyRead = skills.some((skill) => skill.id === id);
+      if (!isSkillFolder || alreadyRead) continue;
+
+      try {
+        skills.push({ id, ...readSkill(path) });
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        skipped.push(`${entry.name}: ${reason}`);
+      }
+    }
+  }
+
+  if (skills.length === 0) {
+    const message = skipped.length > 0
+      ? `no usable skills: ${skipped.join("; ")}`
+      : "no skills in .claude/skills or .agents/skills";
+    throw new Error(message);
+  }
+
+  return { skills: validateFetched(skills), skipped };
+}
+```
+
+The logic is unchanged. Each line now says one thing, the phases are visible at a glance, and the two comments explain what the code cannot.
+
 ## Checklist (work in order)
 
 1. **Simplify**
    - Remove dead code, unused imports, commented-out blocks, redundant variables, and modules with **zero importers** - but confirm "unused" first: check registries, seeders, route/queue/webhook/job registration, dynamic imports and any string-keyed lookup before deleting.
    - Run the **reuse ladder** over what is left; delete anything the repo, stdlib, platform, or an installed dependency already does.
    - Merge branches that do the same thing; prefer one clear code path.
-   - Replace overly clever patterns with readable equivalents.
+   - Replace overly clever patterns with readable equivalents, and space out compressed code per **Readable layout**.
    - Replace keyword / language / locale lists used for classification with shape-based or structural signals.
    - Apply **Common AI artifacts** above where applicable.
    - **UI code**: move touched call sites onto the repo's design tokens and its one component per concept (row, list states, button, dialog shell), as its UI contract names them. If the repo has a vocabulary gate, a cleanup must never reintroduce what it bans.
