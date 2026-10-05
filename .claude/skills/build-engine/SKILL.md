@@ -53,6 +53,7 @@ These are the rules that carry the design. Each reference file expands one area.
 10. **What types can't prove is a startup check.** Every writable field routes to exactly one adapter, no duplicate keys, no cycles: validated when the registry loads, with a failing fixture.
 11. **Prove the external system's behavior before relying on it.** Probes against a real sandbox account record expected, observed and verdict for every assumption the engine makes about the API.
 12. **Interfaces are frozen before fan-out.** Contracts are designed once, proven, then frozen; changing one is its own PR. See [references/process.md](references/process.md).
+13. **Value states are explicit end to end.** Missing, null, empty, unchanged and clear are distinct states in reads, plans, receipts, files and the UI, never collapsed into `undefined` or `''`. This was the second most frequent bug class in review.
 
 ## Front to back, typed by construction
 
@@ -65,7 +66,7 @@ The chain that makes the UI safe:
 5. The UI renders the manifest through total maps keyed by kind (`renderers satisfies Record<Kind, Component>`) and imports engine types with `import type` only.
 6. For the external system, generate its types (GraphQL codegen, OpenAPI) from a pinned schema version, and key any map over its enums by the generated enum.
 
-The result: a new kind appears in the API, the manifest and the UI without touching them, and a missing renderer is a compile error.
+The result: a new kind appears in the API, the manifest and the UI without touching them, and a missing renderer is a compile error. Handles, derived capabilities, manifest building and renderer typing are in [references/manifest.md](references/manifest.md).
 
 ## Scale the machinery
 
@@ -89,17 +90,19 @@ Name what you skipped and when it becomes necessary, in the design doc, so the n
 1. **Write the design doc first**, short and numbered: domain glossary, the kinds, the flow (intent to receipt, or less), the guarantees you promise and the ones you don't, open questions. Number the decisions so later work can cite them.
 2. **Probe the external system** for every assumption the design rests on (idempotency, ordering, error shapes, limits, what "success" really returns). Record results; fix the design before writing code.
 3. **Write the contracts and the rulebook.** One `AGENTS.md` in the engine package with numbered rules (start from the principles above, cut what you don't need). Add the bundle-boundary test and the strict tsconfig flags (`exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`).
-4. **Prove the hard parts with one vertical slice**: one kind, one adapter, one route, one rendered field, end to end, with its conformance suite and type tests. Fix the contracts now; this is the last cheap moment.
+4. **Prove the hard parts with one vertical slice**: one kind, one adapter, one route, one rendered field, end to end, with its conformance suite and type tests, and one case of every command family the contracts must carry. Fix the contracts now; this is the last cheap moment.
 5. **Freeze, then fan out** one kind or adapter per work package.
 
 ## Add to an existing engine
 
-- **New kind:** declare it in contracts, implement it with the bind-first helper, register it in one line. Run the type tests and conformance suite; let the compile errors in total maps (messages, renderers, inverses) list the rest of the work.
+- **New kind:** declare it in contracts, implement it with the bind-first helper, register it in one line, then cover every kind hotspot the rulebook lists. Run the type tests and conformance suite; let the compile errors in total maps (messages, renderers, inverses) list the rest of the work.
 - **New adapter:** payload schemas, binding, read, write through the shared write wrapper, a conformance harness. Declare only facts (does it have a compare token?); let the runtime derive its guarantee and recovery class.
 - **New command or operation:** add it to the closed vocabulary, then follow the build errors. If you find yourself writing a `default:` branch or a `Record<string, ...>`, stop: the union is being widened somewhere.
 - **A contract seems wrong:** do not patch around it locally. Raise a contract change (see process).
 
 ## Before calling work done
+
+Review the plan and the diff against [references/lessons.md](references/lessons.md), the ranked list of what reviewers actually caught, then check:
 
 - [ ] No hand-written list of kinds, operations or implementations anywhere, including tests.
 - [ ] Every boundary parses; no `as` on external or persisted data; no `any`, no `!`.
@@ -110,3 +113,5 @@ Name what you skipped and when it becomes necessary, in the design doc, so the n
 - [ ] The conformance suite covers the new implementation because it is registered, not because it was listed.
 - [ ] The frontend uses router-inferred types and the manifest, not copied shapes.
 - [ ] Provisional constants are named, commented and listed.
+- [ ] Every value touched keeps missing, null, empty, unchanged and clear distinct, with a test case per state.
+- [ ] Every assumption about the external system is backed by a probe result, not by its docs.

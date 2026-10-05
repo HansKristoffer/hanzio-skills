@@ -4,7 +4,7 @@ The engine's type system has one job: make the wrong program fail to compile, an
 
 ## Strict program
 
-Give the engine packages a stricter tsconfig than the rest of the repo: `exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`, `noImplicitReturns`, `noImplicitOverride`, `noPropertyAccessFromIndexSignature`. Lint `noExplicitAny`, `noNonNullAssertion` and `useExhaustiveSwitchCases` as errors on engine paths. Measure typecheck time once a real registry exists; deep generics are fine until they aren't.
+Give every engine path a stricter tsconfig than the rest of the repo, runtime and adapters included (flags in one package don't follow its types into the backend): `exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`, `noImplicitReturns`, `noImplicitOverride`, `noPropertyAccessFromIndexSignature`. Lint `noExplicitAny`, `noNonNullAssertion` and `useExhaustiveSwitchCases` as errors on engine paths. Measure typecheck time once a real registry exists; deep generics are fine until they aren't.
 
 ## Declare once with `const` generics
 
@@ -24,6 +24,20 @@ type ValueOf<K extends KindKey> = z.output<(typeof kinds)[K]['value']>
 ```
 
 If you ever write `type Kind = 'money' | 'text' | ...` by hand, the registry and the union will drift. Delete the hand-written one.
+
+Write each derived type generically over the registry, then bind it once:
+
+```ts
+export type ValueKindIn<R> = keyof R & string
+export type ValueOfIn<R extends Kinds, K extends ValueKindIn<R>> = z.output<R[K]['value']>
+// bound once, next to the registry:
+export type ValueKind = ValueKindIn<typeof kinds>
+export type ValueOf<K extends ValueKind> = ValueOfIn<typeof kinds, K>
+```
+
+The `…In<R, K>` family lets fixture registries in tests and a UI kit under construction reuse the exact type machinery, and keeps the bound aliases one line each.
+
+**Kind hotspots.** Some per-kind maps live outside the registry (handle builders, manifest projections, presentation, conformance cases). List every one in the engine rulebook under "Adding a kind touches", and make each a total map so the compiler finds them.
 
 ## Bind before you infer
 
@@ -62,7 +76,7 @@ When a kind travels with its data (descriptor and value, command kind and payloa
 type Routed = { [K in CommandKind]: { kind: K; adapter: AdapterOf<K>; payload: PayloadOf<K> } }[CommandKind]
 ```
 
-A generic with a default (`K extends Kind = Kind`) or a method typed against the whole union loses the correlation and lets a `money` payload reach a `text` handler. Prefer kind-bound closures over union methods.
+A generic with a default (`K extends Kind = Kind`) or a method typed against the whole union loses the correlation and lets a `money` payload reach a `text` handler. Prefer kind-bound closures over union methods, and match data to its command by identity (an ID or input index), never by value: a swap of two equal-looking payloads must fail a test.
 
 ## Closed unions, total maps
 
@@ -78,6 +92,7 @@ No `default:` in a switch over a closed union; use an exhaustive switch helper (
 - **Parse at every boundary:** API requests, webhooks, job payloads, persisted JSON, external API responses, file rows. `z.input` for incoming JSON, `z.output` for evaluated values.
 - **Never `as` on untyped data.** `row.payload as Command` is the classic bug. Generated `unknown` scalars and DB JSON columns go through a schema.
 - **Wire schemas are JSON-compatible:** no transforms, only pure refinements. A test converts every wire schema with `z.toJSONSchema(schema, { io: 'input' })`.
+- **One codec per boundary, named for the boundary** (`wire`, `remote`, `cell`), never for the vendor: a slot named after one external system leaks it into every kind.
 - **Two-way conversions are `z.codec`**, each in a generic `decode(encode(x)) === x` property test. Build codecs once per column or config, not per row. Row loops use `safeParse` / `safeDecode`, never throwing variants.
 - **Optional wire props use `.exactOptional()`;** engine types use required discriminants (`{ kind: 'none' } | { kind: 'some'; value }`), and an operand-less case has no operand property at all.
 
