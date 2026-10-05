@@ -15,6 +15,14 @@ The engine package's `AGENTS.md` is the rulebook: numbered, one paragraph each, 
 3. **Proofs:** executable vertical slices that exercise the frozen interfaces on the hardest paths (typing across the API, durable execution, file round trips). Finding a contract mistake here is cheap.
 4. **Fan-out:** a few agents at a time, one work package each.
 
+## Proofs and packages that hold up
+
+- **Run one package alone first (the pilot)**, usually the repo-checks and package skeleton, and fix the template, the review formats and the round limits from its report before anything runs in parallel.
+- **A proof covers every family it will be trusted for.** A routing proof that exercised scalar fields only forced a broad contract change when collection and family commands arrived. Prove one case of each command family, not the easiest one.
+- **Bind consumers to the real registry as soon as it exists.** A UI kit typed against a small fixture registry while the real one grew hid every missing renderer until the switch.
+- **Size a package to one session.** When a plan needs several sub-plans or a review round's findings run past what one fix round can absorb, split it into stacked packages.
+- **Verify every claim a spec makes about tooling and code before freezing it**: that a config hook or lint override exists in the installed versions, and that each "Uses" names a merged package and a real module path.
+
 ## Work packages
 
 `docs/work-packages/WP-<id>.md`, fixed shape:
@@ -30,7 +38,7 @@ The engine package's `AGENTS.md` is the rulebook: numbered, one paragraph each, 
 
 ## Contract changes
 
-A frozen contract changes only in its own `contract-change` PR that touches the contract and its existing users and nothing else. In-flight packages rebase on it. This keeps a fan-out from forking the type system.
+A frozen contract changes only in its own `contract-change` PR that touches the contract and its existing users and nothing else. In-flight packages rebase on it. This keeps a fan-out from forking the type system. Expect several per wave; stack each one ahead of the feature PR that needs it.
 
 ## Plan, build, review
 
@@ -38,8 +46,9 @@ A frozen contract changes only in its own `contract-change` PR that touches the 
 2. A **different model** reviews the plan, then the code, at most two rounds per gate.
 3. Findings are `F<n> [blocking|should|nit]` with What, Why, Fix. A blocking finding needs a reproduction.
 4. After the last round the builder may fix remaining blockers alone only when each fix is local, disputes no decision, and comes with a failing test. Anything else goes to a human.
-5. Steps only a human can run (a real-account suite, a production credential) end with a draft PR listing the exact commands, and the builder stops.
+5. A merge waits for green CI on the rebased branch; a fix applied in the final round is proven by a test that fails without it.
+6. Steps only a human can run (a real-account suite, a production credential) end with a draft PR listing the exact commands, and the builder stops.
 
 ## Logs
 
-Keep the review log and a short time log in the plan. They are how you learn which packages were mis-sized and which rules keep getting broken (turn those into repo checks).
+Keep the review log and a short time log in the plan. They are how you learn which packages were mis-sized and which rules keep getting broken (turn those into repo checks). Review every plan against [lessons.md](lessons.md) first: it ranks where blocking findings came from.

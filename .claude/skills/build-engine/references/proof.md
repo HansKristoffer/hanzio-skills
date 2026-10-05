@@ -26,7 +26,7 @@ route({ kind: 'money', payload: textPayload })
 route({ kind: 'money', payload: moneyPayload })   // the positive twin: must compile
 ```
 
-Every `@ts-expect-error` has a positive twin, or the test passes for the wrong reason. Use adversarial inputs: union-typed variables, mismatched descriptor and value, widened registry entries, method-syntax callbacks. Assert `IsAny` is false on anything coming from codegen.
+Every `@ts-expect-error` has a positive twin, or the test passes for the wrong reason. **Mutation-test** them: replace the type under test with `never` (or widen it) and the typecheck must go red; a type test that stays green under mutation proves nothing. Use adversarial inputs: union-typed variables, mismatched descriptor and value, widened registry entries, method-syntax callbacks. Assert `IsAny` is false on anything coming from codegen.
 
 ## Startup checks
 
@@ -37,6 +37,7 @@ What types can't prove runs when the registry loads, with a failing fixture to p
 - **Probes** (`scripts/probes/*`) test each assumption about the external API against a real sandbox account and record expected, observed and verdict in a doc. Re-run them when you bump the pinned API version.
 - **The conformance suite has an opt-in real leg** (`ENGINE_REAL_SUITE=1`). Without credentials it is **skipped with a reason**, never failed and never silently passed.
 - Keep DB tests in their own pattern (`*.db.test.ts`) so the unit run stays fast.
+- DB and queue tests wait on an observable state, never on a sleep. A flake is a bug.
 
 ## Docs tied to code
 
@@ -46,7 +47,7 @@ A coverage matrix in a doc (which external types are supported, which operations
 
 Write the engine's rules as an AST check (TypeScript compiler API) over engine paths: unsafe casts, `as` on JSON, capabilities built outside their owner, brands minted outside their owner, `Record<string, ...>` registries, `default:` over closed unions, fallbacks in persisted parsers, unscoped queries on engine tables. Give each rule a fixture file where a line marked `// expect: <rule>` must produce exactly that finding and no other line produces any; a rule that stops firing fails the check.
 
-Start with two or three rules you have already seen broken. Add one each time review catches the same mistake twice.
+Start with two or three rules you have already seen broken. Add one each time review catches the same mistake twice. Keep the set short: the cast, capability and brand rules pay for themselves, while chasing every contrived bypass costs review rounds. Grade a heuristic check missing a contrived bypass as `should`, and fix a checker bug in the checker, never by bending product code around it.
 
 ## Regression fixtures stay
 
