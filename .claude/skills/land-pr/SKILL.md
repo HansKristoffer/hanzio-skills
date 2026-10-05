@@ -1,11 +1,11 @@
 ---
 name: land-pr
-description: Watch a pull request's CI checks, resolve merge conflicts, fix failed jobs, and repeat verification after authorized pushes until the PR is green; in repositories that use release-please, offer to carry the resulting release PR through to merge. Use when asked to watch a PR, resolve its conflicts, fix failing CI, keep checking until checks pass, or ship a release-please release.
+description: Write or update a pull request's body, watch its CI checks, resolve merge conflicts, fix failed jobs, and repeat verification after authorized pushes until the PR is green; in repositories that use release-please, offer to carry the resulting release PR through to merge. Use when asked to open or land a PR, write its description, watch a PR, resolve its conflicts, fix failing CI, keep checking until checks pass, or ship a release-please release.
 ---
 
-# Watch and fix PR checks
+# Land a PR
 
-Carry the selected PR through a watch → resolve conflicts/fix failures → verify → push → watch loop during the active agent session. This skill supplies instructions; it does not install a background service or continue after the session ends. It works in any GitHub repository: discover the checks, commands and conventions from the repository instead of assuming them.
+Carry the selected PR through a describe → watch → resolve conflicts/fix failures → verify → push → watch loop during the active agent session. This skill supplies instructions; it does not install a background service or continue after the session ends. It works in any GitHub repository: discover the checks, commands and conventions from the repository instead of assuming them.
 
 ## Learn the repository
 
@@ -18,7 +18,7 @@ Before editing, read the repository's agent and contributor instructions (`AGENT
 
 ## Select the PR and working tree
 
-Use the PR number/URL supplied by the user, or resolve the current branch with `gh pr view`. If there is no unambiguous PR, ask for the target. Use authenticated `gh` commands; an authentication failure is a blocker, not an empty check list.
+Use the PR number/URL supplied by the user, or resolve the current branch with `gh pr view`. If the current branch has no PR and the user asked to open or land it, push the branch and create one against the release branch or default branch (`gh pr create --base <base> --title <title> --body-file <file>`), with the body from **Write the PR body**; add `--draft` if the user said so. Otherwise, if there is no unambiguous PR, ask for the target. Use authenticated `gh` commands; an authentication failure is a blocker, not an empty check list.
 
 ```bash
 git status --short
@@ -29,7 +29,13 @@ For an explicit PR, pass its number/URL. Record the base repository (`OWNER/REPO
 
 Verify the checkout belongs to the selected PR and starts from its current head before editing. Preserve unrelated local changes; use a separate worktree if needed. Never switch a dirty checkout, overwrite another contributor's work, or force-push to reconcile divergence.
 
-The default requested workflow is automatic: resolve conflicts or fix CI errors, verify locally, commit and push to the selected PR branch, then watch the new run and repeat until green. When the user invokes this workflow for a PR, carry out that commit/push loop without asking for confirmation on every iteration. Respect an explicit narrower request such as watch-only, local-fixes-only, or no pushing; automatic skill discovery alone does not authorize remote writes. Reuse session authorization. If required push authorization is missing, first prepare and verify the concrete fix, then stop and ask immediately before pushing. Do not merge the PR, post comments, change secrets or branch protection, deploy, or trigger unrelated workflows without authorization covering those actions and targets. The release question is how release-please merges get authorized.
+The default requested workflow is automatic: resolve conflicts or fix CI errors, verify locally, commit and push to the selected PR branch, then watch the new run and repeat until green. When the user invokes this workflow for a PR, carry out that commit/push loop without asking for confirmation on every iteration. Respect an explicit narrower request such as watch-only, local-fixes-only, or no pushing; automatic skill discovery alone does not authorize remote writes. Reuse session authorization. If required push authorization is missing, first prepare and verify the concrete fix, then stop and ask immediately before pushing. Writing the body of the user's own PR is part of this workflow; on someone else's PR, ask before replacing their description. Do not merge the PR, post comments, change secrets or branch protection, deploy, or trigger unrelated workflows without authorization covering those actions and targets. The release question is how release-please merges get authorized.
+
+## Write the PR body
+
+When you create a PR, write its body with the template in [references/pr-body.md](references/pr-body.md). For an existing PR, read the current title and body (`gh pr view "$PR" --repo "$REPO" --json title,body,author`) and rewrite it with the same template when it is empty, a placeholder, or does not show the change; leave a body that already follows the template alone. Do this at the first point where you are only waiting for checks, so it costs no time. Build the body in a temporary file and apply it with `gh pr edit "$PR" --repo "$REPO" --body-file <file>`; an inline `--body` string breaks on the backticks and quotes in code blocks.
+
+The body describes the PR's change, not the CI loop. Fixes that only make CI pass do not belong in it. When a fix changes behavior a reviewer should know about, or the loop produces the evidence the body lacked (a check that failed before the fix and passes after), update **Summary** or **Evidence** once the PR is green. A watch-only request means no body edits.
 
 ## Resolve merge conflicts
 
@@ -110,7 +116,7 @@ Default limits are three pushed fix iterations and 60 minutes of total watching/
 
 ## Finish
 
-Finish in the conversation with a short completion message and what changed, if anything. For example: “PR #123 checks passed and there are no merge conflicts. Resolved the base-branch conflict in the router and fixed the failing typecheck.” If nothing changed, say “PR #123 checks passed and there are no merge conflicts. No changes needed.” A PR or run link can be inline; omit commit hashes and a detailed check-by-check report unless requested. Mention material verification gaps or intentional test skips briefly. If blocked or budget-limited, state that it is unfinished, summarize what was done, and ask the user the specific question needed to continue. Do not add a GitHub comment or send another notification as part of completion.
+Finish in the conversation with a short completion message and what changed, if anything, including whether you created the PR or rewrote its body. For example: “PR #123 checks passed and there are no merge conflicts. Resolved the base-branch conflict in the router and fixed the failing typecheck.” If nothing changed, say “PR #123 checks passed and there are no merge conflicts. No changes needed.” A PR or run link can be inline; omit commit hashes and a detailed check-by-check report unless requested. Mention material verification gaps or intentional test skips briefly. If blocked or budget-limited, state that it is unfinished, summarize what was done, and ask the user the specific question needed to continue. Do not add a GitHub comment or send another notification as part of completion.
 
 If the user answered yes to the release question, do not finish here: report the green PR in one line and continue with the release below. If they answered no, finish as above.
 
