@@ -1,4 +1,4 @@
 interface:
   display_name: "Land PR"
-  short_description: "Write the PR body, resolve conflicts, fix failing CI, and ship release-please releases"
-  default_prompt: "Use $land-pr to write or update this PR's body, resolve this PR's merge conflicts and fix failing CI checks, automatically verify, commit, push, and repeat until green. If you cannot safely fix something or need my input, stop and ask me; otherwise finish with a brief chat message saying what changed, if anything. If the repository uses release-please, ask me yes or no while CI runs whether to also ship the release."
+  short_description: "Write the PR body, resolve conflicts, fix failing CI, merge when asked, and ship release-please releases"
+  default_prompt: "Use $land-pr to write or update this PR's body, resolve this PR's merge conflicts and fix failing CI checks, automatically verify, commit, push, and repeat until green. If you cannot safely fix something or need my input, stop and ask me; otherwise finish with a brief chat message saying what changed, if anything. While CI runs, ask me whether to leave the PR open, merge it, or, if the repository uses release-please, merge it and ship the release."
