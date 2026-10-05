@@ -1,6 +1,6 @@
 ---
 name: land-pr
-description: Write or update a pull request's body, watch its CI checks, resolve merge conflicts, fix failed jobs, and repeat verification after authorized pushes until the PR is green; in repositories that use release-please, offer to carry the resulting release PR through to merge. Use when asked to open or land a PR, write its description, watch a PR, resolve its conflicts, fix failing CI, keep checking until checks pass, or ship a release-please release.
+description: Write or update a pull request's body, watch its CI checks, resolve merge conflicts, fix failed jobs, and repeat verification after authorized pushes until the PR is green; offer to merge it when green and, in repositories that use release-please, to carry the resulting release PR through to merge. Use when asked to open or land a PR, write its description, watch a PR, resolve its conflicts, fix failing CI, keep checking until checks pass, or ship a release-please release.
 ---
 
 # Land a PR
@@ -29,7 +29,7 @@ For an explicit PR, pass its number/URL. Record the base repository (`OWNER/REPO
 
 Verify the checkout belongs to the selected PR and starts from its current head before editing. Preserve unrelated local changes; use a separate worktree if needed. Never switch a dirty checkout, overwrite another contributor's work, or force-push to reconcile divergence.
 
-The default requested workflow is automatic: resolve conflicts or fix CI errors, verify locally, commit and push to the selected PR branch, then watch the new run and repeat until green. When the user invokes this workflow for a PR, carry out that commit/push loop without asking for confirmation on every iteration. Respect an explicit narrower request such as watch-only, local-fixes-only, or no pushing; automatic skill discovery alone does not authorize remote writes. Reuse session authorization. If required push authorization is missing, first prepare and verify the concrete fix, then stop and ask immediately before pushing. Writing the body of the user's own PR is part of this workflow; on someone else's PR, ask before replacing their description. Do not merge the PR, post comments, change secrets or branch protection, deploy, or trigger unrelated workflows without authorization covering those actions and targets. The release question is how release-please merges get authorized.
+The default requested workflow is automatic: resolve conflicts or fix CI errors, verify locally, commit and push to the selected PR branch, then watch the new run and repeat until green. When the user invokes this workflow for a PR, carry out that commit/push loop without asking for confirmation on every iteration. Respect an explicit narrower request such as watch-only, local-fixes-only, or no pushing; automatic skill discovery alone does not authorize remote writes. Reuse session authorization. If required push authorization is missing, first prepare and verify the concrete fix, then stop and ask immediately before pushing. Writing the body of the user's own PR is part of this workflow; on someone else's PR, ask before replacing their description. Do not merge the PR, post comments, change secrets or branch protection, deploy, or trigger unrelated workflows without authorization covering those actions and targets. The merge question is how merges, and release-please releases, get authorized.
 
 ## Write the PR body
 
@@ -47,15 +47,17 @@ Inspect `git diff --name-only --diff-filter=U`, the common ancestor, and both si
 
 Verify that no unmerged entries remain (`git ls-files -u`), run `git diff --check` and `git diff --cached --check`, inspect the staged resolution, and run the affected checks plus the repository's pre-commit or lint command. Commit the merge only after verification, then follow the authorized push-and-watch loop below. If the base has advanced again, reassess mergeability against its latest SHA. Conflict-resolution pushes count toward the same iteration budget as CI fixes.
 
-## Ask about the release up front
+## Ask about merging up front
 
-If the repository uses release-please and the PR targets the release branch, ask the user once, at the first point where you are only waiting for checks to finish, whether to ship the release as well. Waiting costs nothing then, and the answer is in hand when the PR turns green. Ask one yes/no question, using the harness's structured question tool when it has one, and state exactly what yes authorizes:
+Ask the user once, at the first point where you are only waiting for checks to finish, what to do when the PR is green. Waiting costs nothing then, and the answer is in hand when the PR turns green. Ask one question, using the harness's structured question tool when it has one, and state exactly what each answer authorizes. Offer the answers that apply:
 
-- PR not yet merged: “While CI runs: when #123 is green, should I also merge it and ship the release? Yes: I merge #123, wait for the release-please PR that includes it, approve its pending workflow runs, fix failures on it, and merge it when green.”
-- The user already asked you to merge the PR: “While CI runs: should I also ship the release? Yes: after merging #123 I wait for the release-please PR that includes it, approve its pending workflow runs, fix failures on it, and merge it when green.”
-- The selected PR is itself the release-please PR: “While CI runs: should I merge release PR #124 when it is green?”
+- **Leave it open:** report the green PR and stop.
+- **Merge it:** I merge #123 when every check is green and it has no conflicts.
+- **Merge it and ship the release**, only when the repository uses release-please and the PR targets the release branch: I merge #123, wait for the release-please PR that includes it, approve its pending workflow runs, fix failures on it, and merge it when green.
 
-Ask only once per task. Skip the question if the user already said whether to release. Keep watching and fixing regardless of the answer; it only decides what happens after the PR is green. If the PR turns green before the user has answered, wait for the answer before finishing.
+For example: “While CI runs: what should I do when #123 is green? Leave it open / Merge it / Merge it and ship the release.” When the selected PR is itself the release-please PR, merging it is the release: “While CI runs: should I merge release PR #124 when it is green?”
+
+Ask only once per task. Skip whatever the user already decided: “land and merge it” settles merging, so ask only about the release where it applies, and a user who said to leave it open is not asked at all. Keep watching and fixing regardless of the answer; it only decides what happens after the PR is green. If the PR turns green before the user has answered, wait for the answer before finishing.
 
 ## Watch the current head
 
@@ -118,13 +120,21 @@ Default limits are three pushed fix iterations and 60 minutes of total watching/
 
 Finish in the conversation with a short completion message and what changed, if anything, including whether you created the PR or rewrote its body. For example: “PR #123 checks passed and there are no merge conflicts. Resolved the base-branch conflict in the router and fixed the failing typecheck.” If nothing changed, say “PR #123 checks passed and there are no merge conflicts. No changes needed.” A PR or run link can be inline; omit commit hashes and a detailed check-by-check report unless requested. Mention material verification gaps or intentional test skips briefly. If blocked or budget-limited, state that it is unfinished, summarize what was done, and ask the user the specific question needed to continue. Do not add a GitHub comment or send another notification as part of completion.
 
-If the user answered yes to the release question, do not finish here: report the green PR in one line and continue with the release below. If they answered no, finish as above.
+If the user chose to merge, do not finish here: report the green PR in one line and continue with the merge below. If they chose to leave it open, finish as above.
+
+## Merge
+
+Run this only after the user chose to merge, once the watched PR is green. The answer authorizes exactly what the question stated, nothing more.
+
+A failing check that is not required does not block the merge on GitHub, but the PR is not green either. Before merging over one, name the check and why it fails, and ask.
+
+Merge with a method the repository allows (`gh repo view --repo "$REPO" --json squashMergeAllowed,mergeCommitAllowed,rebaseMergeAllowed`). Use the same method as recent merges into the base branch; with release-please, prefer squash when allowed, since release-please builds the changelog from the commits that land on the branch. Guard the head: `gh pr merge "$PR" --repo "$REPO" --squash --match-head-commit "$HEAD_SHA"` (or `--merge` / `--rebase`). Never use `--admin` or bypass branch protection. If a required review or another rule blocks the merge, stop and ask. If someone else is merging it, poll until it merges and treat a close without merge as the end of the task. Record the merge commit (`gh pr view "$PR" --repo "$REPO" --json mergeCommit`).
+
+If the user also chose to ship the release, continue below. When the merged PR was itself the release PR, confirm the tag and release as in **Merge the release PR** below. Otherwise finish with one line, for example “PR #123 is merged. Fixed the failing typecheck on the way.”
 
 ## Release with release-please
 
-Run this only after a yes to the release question, once the watched PR is green. That yes authorizes exactly what the question stated, nothing more.
-
-**Land the watched PR.** If yes included merging it, merge with the repository's allowed method (`gh repo view --repo "$REPO" --json squashMergeAllowed,mergeCommitAllowed,rebaseMergeAllowed`; prefer squash when allowed, since release-please builds the changelog from the commits that land on the branch) and guard the head: `gh pr merge "$PR" --repo "$REPO" --squash --match-head-commit "$HEAD_SHA"`. Never use `--admin` or bypass branch protection. If a required review or another rule blocks the merge, stop and ask. If someone else is merging it, poll until it merges and treat a close without merge as the end of the task. Record the merge commit (`gh pr view "$PR" --repo "$REPO" --json mergeCommit`).
+Run this only after the user chose to ship the release, once the watched PR has merged.
 
 **Find the release PR.** Watch the release-please run that the merge commit triggers on the release branch (`gh run list --repo "$REPO" --commit "$MERGE_SHA" --event push`); if it fails, diagnose it like any failed run and ask before changing release configuration. Then find the open release PR:
 
@@ -138,7 +148,7 @@ Release-please branches are named `release-please--branches--<branch>` (with a `
 
 **Get its workflows running.** Watch the release PR with the same loop as above, with these additions:
 
-- Runs with `status: action_required` need approval. The release PR comes from a bot in this repository, so approving it is covered by the yes: `gh api -X POST "repos/$REPO/actions/runs/$RUN_ID/approve"`.
+- Runs with `status: action_required` need approval. The release PR comes from a bot in this repository, so approving it is covered by the choice to ship the release: `gh api -X POST "repos/$REPO/actions/runs/$RUN_ID/approve"`.
 - Runs with `status: waiting` are held by an environment review. List them with `gh api "repos/$REPO/actions/runs/$RUN_ID/pending_deployments"` and approve test or preview environments with `gh api -X POST "repos/$REPO/actions/runs/$RUN_ID/pending_deployments" -F "environment_ids[]=$ENV_ID" -f state=approved -f comment="Approved for release PR checks"`. Ask before approving a production or deployment environment.
 - No runs at all usually means release-please opened the PR with the default `GITHUB_TOKEN`, whose events do not trigger workflows. If the workflows trigger on `pull_request` with the default or a `reopened` type, close and immediately reopen the release PR with your own credentials (`gh pr close` then `gh pr reopen`) to start them. Otherwise report the gap. In either case, mention that release-please configured with a GitHub App or personal token avoids this; do not change that configuration unasked.
 
