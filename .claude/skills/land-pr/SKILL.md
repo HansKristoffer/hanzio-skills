@@ -5,7 +5,7 @@ description: Write or update a pull request's body, watch its CI checks, resolve
 
 # Land a PR
 
-Carry the selected PR through a describe → watch → resolve conflicts/fix failures → verify → push → watch loop during the active agent session. This skill supplies instructions; it does not install a background service or continue after the session ends. It works in any GitHub repository: discover the checks, commands and conventions from the repository instead of assuming them.
+Carry the selected PR through a describe → watch → resolve conflicts/fix failures → verify → push → watch loop. Waiting for CI happens outside the conversation, through the harness's PR watcher or one background command, so the session is only woken when there is something to act on. It works in any GitHub repository: discover the checks, commands and conventions from the repository instead of assuming them.
 
 ## Learn the repository
 
@@ -73,16 +73,23 @@ gh run list --repo "$REPO" --commit "$HEAD_SHA" --limit 100 \
 
 The checks that matter are the required checks from branch protection or rulesets. When none are configured, every check the PR's workflows report for the current head matters. Associate runs with this PR through `statusCheckRollup` check URLs or the run's `pull_requests` metadata (`gh api "repos/$REPO/actions/runs/$RUN_ID"`); SHA alone can match more than one PR. Track run ID and attempt per workflow so a rerun cannot leave you reading an older attempt's logs.
 
-Poll every 20–30 seconds using short waits or a resumable tool session. Re-read PR state, head/base SHAs, mergeability and checks on each poll. Keep the user informed at least once a minute. A long blocking `gh run watch` or `gh pr checks --watch` call must not prevent updates or detecting a new PR head.
+Do not poll from the conversation. Every poll you run yourself is a model turn that re-reads the whole session, and a 30-second loop over a CI run costs more than the fixes. Do not write your own polling loop either. Wait in the first of these ways the harness supports:
+
+1. **The harness's PR watcher**, such as T3 Code's `watch_pull_request`: start it and end your turn. It wakes you when a check fails, the required checks pass, someone comments or reviews, or the branch starts to conflict. A wake is news, not proof: re-read the PR state with the commands above before acting. A wake for a bot comment that changes nothing (a CI summary, a preview link) needs no action; end the turn again. Stop the watch (`unwatch_pull_request`) when you hand the work back.
+2. **One background command**: run [scripts/wait-for-checks.sh](scripts/wait-for-checks.sh) in the background (Claude Code's `run_in_background`, or the harness's equivalent) and end your turn, where `SKILL_DIR` is this skill's directory; the harness wakes you when it exits. After a push, pass the new SHA so it cannot return the previous head's results.
+3. **No background commands**: run the same script in the foreground with a timeout below the tool's limit, such as `--timeout 540` for a 10-minute limit, and run it again when it exits 3.
 
 ```bash
-gh run view "$RUN_ID" --repo "$REPO" \
-  --json headSha,status,conclusion,jobs,attempt,url
+bash "$SKILL_DIR/scripts/wait-for-checks.sh" "$PR" --repo "$REPO" --sha "$HEAD_SHA"
 ```
+
+The script waits until every check on the pinned head has finished, then prints each check's result and the PR's mergeability. It exits 0 when the checks finished (failures are in the output) or the PR is closed or merged, 2 when the head moved, 3 on timeout (default 60 minutes), 4 when the GitHub CLI fails three times in a row, and 5 when no checks appeared within five minutes. It already covers the cases hand-written loops get wrong: an empty check list right after a push, a stale head, and CLI errors that read as success.
+
+Tell the user when something changes (a check fails, a fix is pushed, the PR turns green), not on a timer.
 
 - If the head changes, invalidate the previous result and follow the new SHA. Reconcile any in-progress local fix with that head before committing or pushing.
 - If conflicts appear, resolve them through the workflow above, publish when authorized, and watch the resulting head.
-- If an expected run is missing and there are no conflicts, keep polling briefly. After five minutes, inspect workflow triggers, path filters, runs waiting for approval (`status: action_required` or `waiting`), and API errors; report missing checks as blocked or unverified, never green. Approving runs on the user's own PR is part of watching it; on someone else's fork PR, ask first, since approval runs their code with this repository's tokens.
+- If no checks appear (exit 5) and there are no conflicts, inspect workflow triggers, path filters, runs waiting for approval (`status: action_required` or `waiting`), and API errors; report missing checks as blocked or unverified, never green. Approving runs on the user's own PR is part of watching it; on someone else's fork PR, ask first, since approval runs their code with this repository's tokens.
 - Queued, waiting, and in-progress runs are pending. A cancelled run may have been superseded; discover its replacement. Cancellation, timeout, skipped, neutral, or action-required conclusions are not proof of success.
 - If the PR closes or merges, stop and report its state.
 
