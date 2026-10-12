@@ -27,12 +27,45 @@ Optional environment: `VOICE=<ElevenLabs voice id>`, `MODEL=<model id>`, `LANGUA
 ## Workflow
 
 1. **Understand what to show.** For a change, read the diff, the PR, the feature docs and the UI it touches. For a product demo, follow **Product demo walkthrough** below. Decide the story in 4-12 scenes, and which parts are slides and which are live.
-2. **Start the build.** `bun $SKILL/video.ts init <slug>` prints the build folder and output path. It creates `slides.json` and `slides.html` to edit. Add another part by adding `<name>.json` (and `<name>.html` for slides).
-3. **Write the script.** A part's JSON is `[{ "id": "intro", "text": "..." }]`. Write the text to be heard: plain spoken sentences, two to five per scene, one idea per scene, the product's own terms, no symbols or abbreviations the voice will misread. Write it in the audience's language.
-4. **Narrate.** `bun $SKILL/video.ts narrate <build>/<part>.json` writes `<part>/audio/` and `<part>/timing.json` with each scene's length. Re-run it after any text change.
-5. **Make each part** (below).
-6. **Join.** `bun $SKILL/video.ts concat <repo>/<slug>.mp4 <build>/<part>/video.mp4 ...`. Any clip can be a part, such as a logo intro the project already has. Parts are scaled to 1920x1080, and silent clips get a silent track.
-7. **Check it.** `bun $SKILL/video.ts check <repo>/<slug>.mp4` writes a 12-frame contact sheet; look at it. Then tell the user the path and length, and say if the narration fell back to `say`.
+2. **Match the brand** (below) before designing any scene.
+3. **Start the build.** `bun $SKILL/video.ts init <slug>` prints the build folder and output path. It creates `slides.json` and `slides.html` to edit. Add another part by adding `<name>.json` (and `<name>.html` for slides).
+4. **Write the script.** A part's JSON is `[{ "id": "intro", "text": "..." }]`. Write the text to be heard: plain spoken sentences, two to five per scene, one idea per scene, the product's own terms, no symbols or abbreviations the voice will misread. Write it in the audience's language.
+5. **Narrate.** `bun $SKILL/video.ts narrate <build>/<part>.json` writes `<part>/audio/` and `<part>/timing.json` with each scene's length. Re-run it after any text change.
+6. **Make each part** (below).
+7. **Join.** `bun $SKILL/video.ts concat <repo>/<slug>.mp4 <build>/<part>/video.mp4 ...`. Any clip can be a part, such as a logo intro the project already has. Parts are scaled to 1920x1080, and silent clips get a silent track.
+8. **Check it.** `bun $SKILL/video.ts check <repo>/<slug>.mp4` writes a 12-frame contact sheet; look at it. Then tell the user the path and length, and say if the narration fell back to `say`.
+
+## Match the brand
+
+The video should look and sound like the product it shows, not like this template. Build a short brand profile before the first scene, from these sources in order of authority:
+
+1. **Brand docs.** Search the repository for brand guidelines, a design system or tone-of-voice notes, for example `docs/brand/`, `brand.md`, `DESIGN.md`, `CONTEXT.md` or the nearest `AGENTS.md`. Approved claims, statistics and product names there override anything you would write yourself.
+2. **Design tokens.** Read the CSS custom properties (`:root`, `@theme`), the Tailwind config, theme files, or the token package the apps import. Take the background, surface, text, muted text, accent and status colors, the border radius and the font families with their weights.
+3. **Assets.** Find the logo (SVG first) and any existing motion such as a logo intro clip, in places like `public/`, `assets/`, `brand/`, the favicon or the marketing site. Copy them into the build folder. Use the brand intro as the first part of `concat` when one exists.
+4. **The running product.** When the app runs, read its real styles in ego-browser. This is the most reliable source when tokens are hard to trace:
+
+   ```js
+   console.log(await page.evaluate(() => {
+     const css = (selector, ...props) => {
+       const el = document.querySelector(selector)
+       if (!el) return null
+       const style = getComputedStyle(el)
+       return Object.fromEntries(props.map((prop) => [prop, style.getPropertyValue(prop)]))
+     }
+     return {
+       body: css('body', 'background-color', 'color', 'font-family'),
+       heading: css('h1, h2', 'color', 'font-family', 'font-weight', 'letter-spacing'),
+       primaryButton: css('button[type=submit], .btn-primary, [data-variant=primary], button', 'background-color', 'color', 'border-radius'),
+       link: css('a', 'color'),
+       card: css('[class*=card]', 'background-color', 'border-color', 'border-radius', 'box-shadow'),
+     }
+   }))
+   ```
+
+   Take a screenshot of a typical screen as the visual reference too.
+5. **Voice.** Read the marketing site or README for how the product talks: formal or casual, its words for its users and features, and the language. The narration and on-screen text use the same register and terms.
+
+Then set the template's `:root` variables, `--font` and the accent colors from the profile. Match the product's light or dark look rather than keeping the template's dark default, and use its radius and shadows on cards. Put the logo in the intro and outro scenes. Before recording, compare `preview.png` with the product screenshot: the two should look like the same company. If the repository has no brand to find, ask the user for colors and a logo, or say that the video uses the neutral template.
 
 ## Slides part
 
@@ -40,7 +73,7 @@ Edit `<part>.html`, which starts from `template.html`:
 
 - One `<section class="scene" data-id="...">` per scene, in the same order as the JSON. Recording fails on a mismatch.
 - `data-f="0.4"` reveals an element 40 % into the scene's narration, so visuals land when the voice mentions them. Use `.r` to rise in, `.pop` to pop in, and `.glow` to pulse.
-- Restyle the `:root` variables to the project's brand: its colors, font and logo. Prefer the real product over invented UI, for example screenshots taken with ego-browser and placed in the build folder as `<img class="shot" src="shots/x.png">`. A mock card or chat bubble is fine for an idea the product cannot show.
+- Apply the brand profile from **Match the brand** to the `:root` variables, the logo and the copy before writing scenes. Prefer the real product over invented UI, for example screenshots taken with ego-browser and placed in the build folder as `<img class="shot" src="shots/x.png">`. A mock card or chat bubble is fine for an idea the product cannot show.
 - Keep text large and short. The narration carries the detail, and the screen carries the structure.
 
 `bun $SKILL/video.ts preview <build>/<part>.json` screenshots every scene in its finished state into `<part>/preview.png`. Look at it and fix overflow and layout before recording, because recording runs in real time. Then run `bun $SKILL/video.ts slides <build>/<part>.json` to write `<part>/video.mp4`.
