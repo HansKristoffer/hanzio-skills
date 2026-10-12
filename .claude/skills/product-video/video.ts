@@ -32,6 +32,7 @@ type Recording = {
 	frames: { file: string; t: number }[]
 	scenes: { id: string; start: number; end: number }[]
 	cuts?: { start: number; end: number }[]
+	marks?: { name: string; t: number; box?: { x: number; y: number; width: number; height: number } }[]
 }
 
 const [command, ...args] = process.argv.slice(2)
@@ -231,7 +232,7 @@ async function mux(video: string, audio: string, out: string) {
 async function live(partFile: string) {
 	const dir = partDir(partFile)
 	const timing = await readTiming(dir)
-	const { frames, scenes, cuts = [] }: Recording = await Bun.file(join(dir, 'recording.json')).json()
+	const { frames, scenes, cuts = [], marks = [] }: Recording = await Bun.file(join(dir, 'recording.json')).json()
 
 	const recordedIds = scenes.map((scene) => scene.id)
 	const timingIds = timing.map((scene) => scene.id)
@@ -265,6 +266,19 @@ async function live(partFile: string) {
 	const total = durations.reduce((sum, seconds) => sum + seconds, 0)
 	await $`ffmpeg -v error -y -f concat -safe 0 -i ${list} -i ${narration} -t ${total} -map 0:v -map 1:a -vf scale=${SIZE.width}:${SIZE.height}:force_original_aspect_ratio=decrease,pad=${SIZE.width}:${SIZE.height}:-1:-1:color=black,fps=30 ${ENCODE} -c:a aac -b:a 160k ${out}`
 	console.log(out)
+
+	// Marks in video time, with a crop for each marked element (even sizes, as x264 needs).
+	const intervals = kept.flat()
+	const videoTime = (t: number) =>
+		intervals.reduce((sum, [from, to]) => sum + Math.max(0, Math.min(t, to) - from), 0)
+	const even = (value: number) => Math.max(2, Math.round(value / 2) * 2)
+	const placed = marks.map(({ name, t, box }) => ({
+		name,
+		t: round(videoTime(t)),
+		crop: box && `crop=${even(box.width)}:${even(box.height)}:${even(box.x)}:${even(box.y)}`
+	}))
+	await writeFile(join(dir, 'marks.json'), JSON.stringify(placed, null, 2))
+	for (const { name, t, crop } of placed) console.log(`mark ${t.toFixed(2)}s  ${name}${crop ? `  ${crop}` : ''}`)
 }
 
 /** Joins parts (recorded videos or any clip, such as a logo intro) into one video. */

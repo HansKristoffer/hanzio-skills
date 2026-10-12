@@ -38,7 +38,7 @@ When the video is about a product the user names (or one you pick, such as a wel
 
 - **Facts:** read the product's homepage, features, pricing and changelog or launch post in ego-browser. Pick the one launch or feature the film is about. Every on-screen claim, number and feature name comes from those pages; note the URL in the brief. Never invent customer counts, ratings or results.
 - **Logo:** the SVG in the site header (`document.querySelector('header svg').outerHTML`, or the `img` in the header link), the brand or press page (`/brand`, `/press`, `/media-kit`), or `https://cdn.simpleicons.org/<slug>` for a monochrome mark. Prefer SVG; never trace or redraw a logo.
-- **Colors and type:** run the computed-style snippet above on the homepage and on a product page. Use the brand's font when it is a web font you can load (`@font-face` from the site's own CSS, or Google Fonts); otherwise the closest system font, and say so.
+- **Colors and type:** run the computed-style snippet above on the homepage and on a product page. Use the brand's font when it is a web font you can load: in a repository, copy the `woff2` files from `node_modules/@fontsource*` (or the app's font folder) into `assets/` and declare them with `@font-face`; on the web, the site's own CSS or Google Fonts. A missing font falls back silently, so check a still. Otherwise use the closest system font, and say so.
 - **Product imagery:** in order of preference:
   1. the real product, screenshotted at 2x in ego-browser (`page.screenshot({ path, clip })` per region), signed in with the user's account or a public demo;
   2. product screenshots and videos from the marketing site and launch post (their `img` and `video` sources at full resolution);

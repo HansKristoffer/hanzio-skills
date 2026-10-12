@@ -94,6 +94,16 @@
 			return result
 		},
 
+		/**
+		 * The film time at which a `<video data-start data-from data-rate>` reaches `clipTime`,
+		 * so captions and cues follow the clip's marks (`live` prints them) instead of guesses.
+		 */
+		clipAt(video, clipTime) {
+			const el = typeof video === 'string' ? document.querySelector(video) : video
+			const { start, from = 0, rate = 1 } = el.dataset
+			return Number(start) + (clipTime - Number(from)) / Number(rate)
+		},
+
 		/** Shows `el` from `from` to `to` with a hard cut, so scenes can share one stage. */
 		show(tl, el, from, to) {
 			tl.set(el, { autoAlpha: 0 }, 0)
@@ -130,8 +140,9 @@
 
 		/**
 		 * Kinetic headline: words rise through a mask with a stagger, and leave upward at `out`.
-		 * For words swapping in one place, use `outDur: 0.15` and start the next word 0.05 s
-		 * before this one has gone (out + outDur - 0.05): a slot roll with no empty frame.
+		 * Returns the words; `words.gone` is the film time the last word has left. A single word
+		 * swapping in place may start the next at `gone - 0.05` (a slot roll, no empty frame);
+		 * a title of several words or lines starts the next at `gone`, or the two splice.
 		 */
 		headline(tl, el, at, { out, stagger = 0.06, outDur = 0.35 } = {}) {
 			const { words } = Film.split(el)
@@ -141,6 +152,7 @@
 			if (out !== undefined) {
 				const ease = outDur < 0.25 ? 'power2.in' : 'leave'
 				tl.to(words, { yPercent: -115, duration: outDur, ease, stagger: stagger / 2 }, out)
+				words.gone = out + outDur + (stagger / 2) * (words.length - 1)
 			}
 			return words
 		},

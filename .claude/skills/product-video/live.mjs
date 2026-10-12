@@ -71,7 +71,10 @@ function locate(selector, smooth) {
 
 	el.scrollIntoView(smooth ? { behavior: 'smooth', block: 'center' } : { block: 'nearest', inline: 'nearest' })
 	const rect = el.getBoundingClientRect()
-	return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+	// A loading overlay or a dialog can sit over an element the DOM reports as visible.
+	const top = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)
+	const covered = Boolean(top) && !el.contains(top) && !top.contains(el)
+	return { x: rect.x, y: rect.y, width: rect.width, height: rect.height, covered }
 }
 
 /**
@@ -94,6 +97,7 @@ export async function record(page, partDir, { cursor = true, rehearse = false } 
 	const writes = []
 	const scenes = []
 	const cuts = []
+	const marks = []
 	const replies = new Map()
 	let current = null
 	let running = true
@@ -168,7 +172,13 @@ export async function record(page, partDir, { cursor = true, rehearse = false } 
 	/** The element's box in top-level viewport pixels, searching the page, then its iframes. */
 	async function box(selector, smooth = false) {
 		const expression = `(${locate})(${JSON.stringify(selector)}, ${smooth})`
-		const inPage = await page.evaluate(expression)
+		let inPage = await page.evaluate(expression)
+		// Wait out an overlay, so a click lands and a mark measures what the viewer sees.
+		for (let tries = 0; inPage?.covered && tries < 50; tries++) {
+			await sleep(100)
+			inPage = await page.evaluate(expression)
+		}
+		if (inPage?.covered) console.warn(`${selector} is still covered by another element`)
 		if (inPage) return inPage
 
 		// ponytail: direct child iframes only; recurse through parentId if an app nests frames.
@@ -229,6 +239,16 @@ export async function record(page, partDir, { cursor = true, rehearse = false } 
 		if (current) current.cut += end - start
 	}
 
+	/**
+	 * Notes when something happens, and optionally where: `live` reports each mark's time in
+	 * the finished video and a ready crop for its element, so nobody hunts through frames.
+	 */
+	async function mark(name, selector) {
+		const t = now()
+		const found = selector ? await box(selector) : undefined
+		marks.push({ name, t, box: found && { x: found.x, y: found.y, width: found.width, height: found.height } })
+	}
+
 	/** Glides the pointer to an element and returns its box. */
 	async function pointAt(selector) {
 		const found = await box(selector)
@@ -244,6 +264,7 @@ export async function record(page, partDir, { cursor = true, rehearse = false } 
 	async function click(selector) {
 		const { x, y } = await pointAt(selector)
 		await page.evaluate(() => window.__video?.press(true))
+		marks.push({ name: `click ${selector}`, t: now() })
 		await page.mouse.click(x, y)
 		await page.evaluate(() => window.__video?.press(false))
 		await sleep(rehearse ? 0 : 250)
@@ -291,9 +312,9 @@ export async function record(page, partDir, { cursor = true, rehearse = false } 
 		if (rehearse) return { rehearsed: scenes.map((entry) => entry.id) }
 
 		await Promise.all(writes)
-		await writeFile(join(partDir, 'recording.json'), JSON.stringify({ frames, scenes, cuts }))
+		await writeFile(join(partDir, 'recording.json'), JSON.stringify({ frames, scenes, cuts, marks }))
 		return { frames: frames.length, scenes: scenes.length, cuts: cuts.length }
 	}
 
-	return { scene, cut, pointAt, click, type, highlight, caption, scrollTo, stop }
+	return { scene, cut, mark, pointAt, click, type, highlight, caption, scrollTo, stop }
 }

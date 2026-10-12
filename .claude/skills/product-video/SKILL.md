@@ -71,7 +71,7 @@ Never repeat the key in a reply, write it into a repository or print it to a log
 3. **Storyboard.** Before building, write a table in the brief: time, what the viewer sees, what the beat says, the transition out and what carries across it. Use 12-15 compositions per 30 s and name three signature moments. Follow `references/motion.md`.
 4. **Sound first for a launch film.** Generate the music to the storyboard's length, and the effect kit (`references/audio.md`). For narrated films, write `film.json` (one `{ "id", "text" }` per scene, plain spoken sentences, the product's own words) and run `narrate`, which sets each scene's length.
 5. **Build** the composition from the template: restyle the brand tokens, replace the mock product with the real imagery, and choreograph each beat with the Film helpers. Check `stills` after every meaningful change.
-6. **Render** with `render`, then run `check` on the result.
+6. **Render** a draft with `render --fps 15` (four times faster) and `check` it: frozen time and loudness read the same. Fix the holds, then render at 60 fps and `check` again.
 7. **Critic loop.** A fresh agent reviews the render against the quality bar; fix the largest gaps and verify with a new critic (`references/review.md`).
 8. **Join and deliver.** `concat` the parts into `<repo>/<slug>.mp4` when there is more than one, run `check` once more, and report the result honestly.
 

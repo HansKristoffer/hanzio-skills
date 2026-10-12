@@ -42,6 +42,7 @@ try {
 | `rec.caption(text)` | A caption at the bottom until the next one; `rec.caption()` clears it. It survives navigation. |
 | `rec.scrollTo(selector)` | A smooth scroll that centers the element. |
 | `rec.pointAt(selector)` | The pointer moving there, hovering, without clicking. |
+| `rec.mark(name, selector?)` | Nothing: notes the moment (and the element's box) so `live` prints its time in the video and a ready `crop=`. Mark every result a composition will time against: a reply arriving, a card landing, a state changing. Clicks are marked on their own. |
 | `rec.cut(async () => {})` | Nothing: the time inside is cut from the video, and the scene's narration clock pauses. Use it for a long job, an upload or an assistant thinking. |
 
 Selectors are CSS (`[data-testid=x]`, `#id`, `[aria-label="Send"]`) or `text=Exact visible text`, which takes the first visible match in page order, so scope it with CSS when the text repeats, as in a menu or table of contents. `text=` is how a script that says "use the app's own labels" maps onto clicks.
@@ -88,5 +89,7 @@ When the user supplies a script, follow it; do not rewrite the story. A typical 
 - **Labels to confirm:** confirm each one while exploring. When the real label or flow differs from the script, use the real one in both the walkthrough and the voice-over, and list every such change for the user.
 - **Recording notes:** cut long waits with `rec.cut`. Retake any take that shows an internal code, a stack trace, a development-only route or real customer data. When the user asks for a shorter cut, drop the chapters the brief names for that first.
 - **Sign-in:** a product inside another platform, such as a Shopify admin, needs the user's signed-in session in ego-browser. If the walkthrough reaches a sign-in page, stop and ask the user to sign in in ego-browser; never type their password.
+- **Actions consume their state.** Approving, sending or deleting changes the product, so the next take starts somewhere else. Rehearse with `{ rehearse: true }` first, record the action once, and know how to restore the start state (a seeder, a second demo record) before you start.
+- **Look for strings that break the film:** seed or test labels, a language other than the film's, internal ids. Choose the crop around them, or fix the demo data; never cover them with a graphic.
 - **Unpredictable steps:** for an assistant that writes its own reply, or a step whose result varies, rehearse, wrap the wait in `rec.cut`, and check the take's contact sheet before moving on.
 
