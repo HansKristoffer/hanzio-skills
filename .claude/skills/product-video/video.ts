@@ -6,17 +6,20 @@ import { existsSync } from 'node:fs'
 import { appendFile, chmod, copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
+import { parseArgs } from 'node:util'
 
 const SKILL_DIR = import.meta.dir
 const PAD_SECONDS = 0.8
 const SIZE = { width: 1920, height: 1080 }
 const ENCODE = ['-c:v', 'libx264', '-preset', 'medium', '-crf', '20', '-pix_fmt', 'yuv420p']
 
-type Scene = { id: string; text: string }
+/** A scene without text is silent and lasts `dur` seconds (1.5 by default), e.g. a pause. */
+type Scene = { id: string; text?: string; dur?: number }
 type Timing = { id: string; audio: string; dur: number }[]
 type Recording = {
 	frames: { file: string; t: number }[]
 	scenes: { id: string; start: number; end: number }[]
+	cuts?: { start: number; end: number }[]
 }
 
 const [command, ...args] = process.argv.slice(2)
@@ -24,6 +27,7 @@ const commands: Record<string, (...args: string[]) => Promise<void>> = {
 	init,
 	narrate,
 	'set-key': setKey,
+	card,
 	preview,
 	slides,
 	live,
@@ -93,18 +97,34 @@ async function narrate(partFile: string, flag?: string) {
 	await mkdir(audioDir, { recursive: true })
 
 	const timing: Timing = []
+	let words = 0
+	let speaking = 0
 	for (const [index, scene] of scenes.entries()) {
 		const name = `${String(index).padStart(2, '0')}-${scene.id}`
+
+		if (!scene.text?.trim()) {
+			const seconds = scene.dur ?? 1.5
+			const audio = join(audioDir, `${name}.wav`)
+			await $`ffmpeg -v error -y -f lavfi -t ${seconds} -i anullsrc=r=48000:cl=stereo ${audio}`
+			timing.push({ id: scene.id, audio, dur: seconds })
+			console.log(`silent ${scene.id} (${seconds}s)`)
+			continue
+		}
+
 		const audio = key
 			? await speakElevenLabs(scene.text, join(audioDir, `${name}.mp3`), key)
 			: await speakSay(scene.text, join(audioDir, `${name}.aiff`))
+		const spoken = await duration(audio)
+		words += scene.text.trim().split(/\s+/).length
+		speaking += spoken
 
-		timing.push({ id: scene.id, audio, dur: round((await duration(audio)) + PAD_SECONDS) })
+		timing.push({ id: scene.id, audio, dur: round(spoken + PAD_SECONDS) })
 		console.log(`narrated ${scene.id} (${timing.at(-1)?.dur}s)`)
 	}
 
 	await writeFile(join(dir, 'timing.json'), JSON.stringify(timing, null, 1))
-	console.log(`total ${round(timing.reduce((sum, scene) => sum + scene.dur, 0))}s`)
+	const pace = speaking > 0 ? `, ${Math.round((words / speaking) * 60)} words per minute` : ''
+	console.log(`total ${round(timing.reduce((sum, scene) => sum + scene.dur, 0))}s${pace}`)
 }
 
 /** Screenshots every scene in its finished state, so layouts can be checked without recording. */
@@ -172,7 +192,7 @@ async function slides(partFile: string, htmlFile?: string) {
 async function live(partFile: string) {
 	const dir = partDir(partFile)
 	const timing = await readTiming(dir)
-	const { frames, scenes }: Recording = await Bun.file(join(dir, 'recording.json')).json()
+	const { frames, scenes, cuts = [] }: Recording = await Bun.file(join(dir, 'recording.json')).json()
 
 	const recordedIds = scenes.map((scene) => scene.id)
 	const timingIds = timing.map((scene) => scene.id)
@@ -181,26 +201,29 @@ async function live(partFile: string) {
 	}
 	if (frames.length === 0) throw new Error('the recording has no frames')
 
-	// A scene lasts until the next one starts, so the gaps between them stay in the narration too.
-	const start = scenes[0].start
-	const end = scenes.at(-1)!.end
-	const durations = scenes.map((scene, index) => (scenes[index + 1]?.start ?? end) - scene.start)
+	// The video keeps only time inside scenes, minus the cuts; waits between scenes drop out.
+	const kept = scenes.map((scene) => withoutCuts(scene.start, scene.end, cuts))
+	const durations = kept.map((intervals) => intervals.reduce((sum, [from, to]) => sum + to - from, 0))
 
 	// The screencast only sends a frame when the page changes; each frame holds until the next.
-	const opening = frames.findLast((frame) => frame.t <= start) ?? frames[0]
-	const shown = [opening, ...frames.filter((frame) => frame.t > start && frame.t < end)]
 	const lines = ['ffconcat version 1.0']
-	for (const [index, frame] of shown.entries()) {
-		const until = shown[index + 1]?.t ?? end
-		lines.push(`file 'frames/${frame.file}'`, `duration ${Math.max(until - Math.max(frame.t, start), 0.001).toFixed(4)}`)
+	let last = frames[0]
+	for (const [from, to] of kept.flat()) {
+		const opening = frames.findLast((frame) => frame.t <= from) ?? frames[0]
+		const shown = [opening, ...frames.filter((frame) => frame.t > from && frame.t < to)]
+		for (const [index, frame] of shown.entries()) {
+			const until = shown[index + 1]?.t ?? to
+			lines.push(`file 'frames/${frame.file}'`, `duration ${Math.max(until - Math.max(frame.t, from), 0.001).toFixed(4)}`)
+		}
+		last = shown.at(-1)!
 	}
-	lines.push(`file 'frames/${shown.at(-1)!.file}'`)
+	lines.push(`file 'frames/${last.file}'`)
 	const list = join(dir, 'frames.ffconcat')
 	await writeFile(list, `${lines.join('\n')}\n`)
 
 	const narration = await buildNarration(dir, timing, durations)
 	const out = join(dir, 'video.mp4')
-	const total = end - start
+	const total = durations.reduce((sum, seconds) => sum + seconds, 0)
 	await $`ffmpeg -v error -y -f concat -safe 0 -i ${list} -i ${narration} -t ${total} -map 0:v -map 1:a -vf scale=${SIZE.width}:${SIZE.height}:force_original_aspect_ratio=decrease,pad=${SIZE.width}:${SIZE.height}:-1:-1:color=black,fps=30 ${ENCODE} -c:a aac -b:a 160k ${out}`
 	console.log(out)
 }
@@ -231,8 +254,74 @@ async function concat(output: string, ...parts: string[]) {
 	const joined = parts.map((_, index) => `[v${index}][a${index}]`).join('')
 	filters.push(`${joined}concat=n=${parts.length}:v=1:a=1[v][a]`)
 
-	await $`ffmpeg -v error -y ${inputs} -filter_complex ${filters.join(';')} -map ${'[v]'} -map ${'[a]'} ${ENCODE} -c:a aac -b:a 160k -movflags +faststart ${output}`
+	// Title cards made by `card` carry their title; each one starts a chapter.
+	const chapters: { title: string; start: number }[] = []
+	let at = 0
+	for (const part of parts) {
+		const title = (await $`ffprobe -v error -show_entries format_tags=title -of csv=p=0 ${part}`.text()).trim()
+		if (title) chapters.push({ title, start: at })
+		else if (at === 0) chapters.push({ title: 'Intro', start: 0 })
+		at += await duration(part)
+	}
+
+	const chapterArgs: string[] = []
+	if (chapters.length > 1) {
+		const metadata = [';FFMETADATA1']
+		for (const [index, chapter] of chapters.entries()) {
+			const end = chapters[index + 1]?.start ?? at
+			metadata.push('[CHAPTER]', 'TIMEBASE=1/1000', `START=${Math.round(chapter.start * 1000)}`, `END=${Math.round(end * 1000)}`, `title=${chapter.title.replace(/[=;#\\\n]/g, ' ')}`)
+		}
+		const file = join(tmpdir(), `${basename(output, '.mp4')}.chapters.txt`)
+		await writeFile(file, `${metadata.join('\n')}\n`)
+		chapterArgs.push('-f', 'ffmetadata', '-i', file, '-map_chapters', String(next))
+	}
+
+	await $`ffmpeg -v error -y ${inputs} ${chapterArgs.slice(0, 4)} -filter_complex ${filters.join(';')} -map ${'[v]'} -map ${'[a]'} ${chapterArgs.slice(4)} ${ENCODE} -c:a aac -b:a 160k -movflags +faststart ${output}`
 	console.log(`${output} (${round(await duration(output))}s)`)
+
+	if (chapters.length > 1) {
+		console.log('\nYouTube chapters:')
+		for (const chapter of chapters) console.log(`${timestamp(chapter.start)} ${chapter.title}`)
+	}
+}
+
+/**
+ * A short chapter title card in the brand's style: `card <out.mp4> <title> [--eyebrow
+ * "Chapter 2"] [--style <part>.html] [--seconds 1.5]`. The title is stored in the file,
+ * so `concat` turns each card into a chapter.
+ */
+async function card(output: string, ...rest: string[]) {
+	const { values, positionals } = parseArgs({
+		args: rest,
+		allowPositionals: true,
+		options: { eyebrow: { type: 'string' }, style: { type: 'string' }, seconds: { type: 'string' } }
+	})
+	const title = positionals.join(' ')
+	if (!output || !title) throw new Error('usage: card <out.mp4> <title> [--eyebrow x] [--style part.html] [--seconds 1.5]')
+
+	// Reuse the brand stylesheet of a slides part, written next to it so its asset paths resolve.
+	const styleSource = resolve(values.style ?? join(SKILL_DIR, 'template.html'))
+	const stylesheet = (await readFile(styleSource, 'utf8')).match(/<style>[\s\S]*?<\/style>/)?.[0] ?? ''
+	const escape = (text: string) => text.replace(/[&<>"]/g, (char) => `&#${char.charCodeAt(0)};`)
+	const eyebrow = values.eyebrow ? `<div class="eyebrow">${escape(values.eyebrow)}</div>` : ''
+	const html = join(dirname(styleSource), `.card-${basename(output, '.mp4')}.html`)
+	await writeFile(
+		html,
+		`<!doctype html><html><head><meta charset="utf-8">${stylesheet}</head><body class="static"><section class="scene on" style="align-items:center;text-align:center">${eyebrow}<h1>${escape(title)}</h1></section></body></html>`
+	)
+
+	const browser = await launchBrowser()
+	const page = await browser.newPage({ viewport: SIZE })
+	await page.goto(`file://${html}`)
+	const still = join(tmpdir(), `${basename(output, '.mp4')}.card.png`)
+	await page.screenshot({ path: still })
+	await browser.close()
+	await rm(html)
+
+	const seconds = Number(values.seconds ?? 1.5)
+	const fadeOut = Math.max(seconds - 0.25, 0)
+	await $`ffmpeg -v error -y -loop 1 -t ${seconds} -i ${still} -f lavfi -t ${seconds} -i anullsrc=r=48000:cl=stereo -vf fps=30,fade=in:d=0.25,fade=out:st=${fadeOut}:d=0.25 ${ENCODE} -c:a aac -b:a 160k -shortest -metadata title=${title} ${output}`
+	console.log(output)
 }
 
 /** Writes a 4x3 contact sheet of evenly spaced frames to the temp folder. */
@@ -329,8 +418,10 @@ async function speakElevenLabs(text: string, path: string, key: string) {
 	const url = `https://api.elevenlabs.io/v1/text-to-speech/${voice}?output_format=mp3_44100_128`
 	const body = {
 		text,
-		model_id: process.env.MODEL ?? 'eleven_v4_turbo',
+		// v4 Turbo ignores speed; Multilingual v2 honours 0.7-1.2, so SPEED picks it.
+		model_id: process.env.MODEL ?? (process.env.SPEED ? 'eleven_multilingual_v2' : 'eleven_v4_turbo'),
 		apply_text_normalization: 'on',
+		...(process.env.SPEED ? { voice_settings: { speed: Number(process.env.SPEED) } } : {}),
 		...(process.env.LANGUAGE ? { language_code: process.env.LANGUAGE } : {})
 	}
 
@@ -355,6 +446,26 @@ async function speakSay(text: string, path: string) {
 
 async function duration(file: string) {
 	return Number((await $`ffprobe -v error -show_entries format=duration -of csv=p=0 ${file}`.text()).trim())
+}
+
+/** Removes the cut spans from [start, end]; the remaining intervals are what the video shows. */
+function withoutCuts(start: number, end: number, cuts: { start: number; end: number }[]) {
+	let intervals = [[start, end]]
+	for (const cut of cuts) {
+		intervals = intervals.flatMap(([from, to]) => {
+			if (cut.end <= from || cut.start >= to) return [[from, to]]
+			return [
+				[from, cut.start],
+				[cut.end, to]
+			].filter(([a, b]) => b - a > 0.001)
+		})
+	}
+	return intervals
+}
+
+function timestamp(seconds: number) {
+	const whole = Math.round(seconds)
+	return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`
 }
 
 function round(seconds: number) {

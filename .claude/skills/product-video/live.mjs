@@ -6,12 +6,14 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+const now = () => Date.now() / 1000
 
-// Runs in every document of the recorded tab: a pointer that glides to each click (the
-// real one is not in the screencast), a highlight ring and a caption that survives
-// same-origin navigation through sessionStorage.
+// Runs in the top document of the recorded tab: a pointer that glides to each target
+// (the real one is not in the screencast), a highlight ring and a caption that
+// survives same-origin navigation through sessionStorage. Only the helpers move the
+// pointer: mouse events stop at an iframe's edge, so following them would strand it there.
 const OVERLAY_SCRIPT = `(() => {
-	if (window.__video) return
+	if (window.top !== window || window.__video) return
 	const style = 'position:fixed;z-index:2147483647;pointer-events:none;'
 	const ease = 'cubic-bezier(.2,.8,.2,1)'
 	const make = (css) => {
@@ -24,10 +26,10 @@ const OVERLAY_SCRIPT = `(() => {
 		const dot = make('left:-40px;top:-40px;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;background:rgba(20,20,20,.35);border:2px solid #fff;box-shadow:0 2px 10px rgba(0,0,0,.35);transition:left .45s ' + ease + ',top .45s ' + ease + ',transform .15s')
 		const ring = make('border:3px solid #ffb020;border-radius:14px;box-shadow:0 0 0 9999px rgba(0,0,0,.28);opacity:0;transition:opacity .3s,left .3s,top .3s,width .3s,height .3s')
 		const caption = make('left:50%;bottom:48px;transform:translateX(-50%);max-width:1400px;padding:16px 28px;border-radius:16px;background:rgba(15,17,21,.88);color:#fff;font:600 28px/1.3 -apple-system,Helvetica,Arial,sans-serif;box-shadow:0 10px 40px rgba(0,0,0,.35);opacity:0;transition:opacity .3s')
-		addEventListener('mousemove', (e) => { dot.style.left = e.clientX + 'px'; dot.style.top = e.clientY + 'px' }, true)
-		addEventListener('mousedown', () => { dot.style.transform = 'scale(.7)' }, true)
-		addEventListener('mouseup', () => { dot.style.transform = '' }, true)
+		const move = (x, y) => { dot.style.left = x + 'px'; dot.style.top = y + 'px' }
 		window.__video = {
+			move,
+			press(down) { dot.style.transform = down ? 'scale(.7)' : '' },
 			ring(box) {
 				if (!box) { ring.style.opacity = '0'; return }
 				Object.assign(ring.style, { left: box.x - 8 + 'px', top: box.y - 8 + 'px', width: box.width + 16 + 'px', height: box.height + 16 + 'px', opacity: '1' })
@@ -47,6 +49,7 @@ const OVERLAY_SCRIPT = `(() => {
 /**
  * Finds the element for a CSS selector, or for `text=Save as test` the smallest visible
  * element whose text is exactly that, scrolls it into view and returns its box.
+ * Serialized into each document it searches, so it must stay self-contained.
  */
 function locate(selector, smooth) {
 	const visible = (el) => {
@@ -90,29 +93,104 @@ export async function record(page, partDir, { cursor = true, rehearse = false } 
 	const frames = []
 	const writes = []
 	const scenes = []
-	let running = !rehearse
-	let pump = Promise.resolve()
+	const cuts = []
+	const replies = new Map()
+	let current = null
+	let running = true
 
 	if (!rehearse) {
 		await rm(framesDir, { recursive: true, force: true })
 		await mkdir(framesDir, { recursive: true })
-		await page.events() // drop events buffered before the recording
+	}
+	await page.events() // drop events buffered before the recording
+	if (!rehearse) {
 		await page.cdp('Page.startScreencast', { format: 'jpeg', quality: 85, maxWidth: 1920, maxHeight: 1080 })
+	}
 
-		// Chrome sends a frame whenever the page changes and waits for the ack before the next.
-		pump = (async () => {
-			while (running) {
-				for (const event of await page.events()) {
-					if (event.method !== 'Page.screencastFrame') continue
-
+	// One reader for every CDP event: screencast frames (Chrome sends one whenever the page
+	// changes and waits for the ack) and replies from embedded frames.
+	const pump = (async () => {
+		while (running) {
+			for (const event of await page.events()) {
+				if (event.method === 'Page.screencastFrame') {
 					const file = `${String(frames.length).padStart(6, '0')}.jpg`
 					frames.push({ file, t: event.params.metadata.timestamp })
 					writes.push(writeFile(join(framesDir, file), Buffer.from(event.params.data, 'base64')))
 					await page.cdp('Page.screencastFrameAck', { sessionId: event.params.sessionId })
+				} else if (event.method === 'Target.receivedMessageFromTarget') {
+					const message = JSON.parse(event.params.message)
+					const key = `${event.params.sessionId}:${message.id}`
+					replies.get(key)?.(message)
+					replies.delete(key)
 				}
-				await sleep(10)
 			}
-		})()
+			await sleep(10)
+		}
+	})()
+
+	// Embedded apps (a Shopify app inside the admin, say) live in cross-origin iframes the
+	// page session cannot evaluate in, so each gets its own session, reached through the page.
+	const frameSessions = new Map()
+	let messageId = 0
+
+	async function evaluateInFrame(targetId, expression) {
+		let sessionId = frameSessions.get(targetId)
+		if (!sessionId) {
+			;({ sessionId } = await page.cdp('Target.attachToTarget', { targetId, flatten: false }))
+			frameSessions.set(targetId, sessionId)
+		}
+
+		const id = ++messageId
+		const reply = new Promise((resolve) => replies.set(`${sessionId}:${id}`, resolve))
+		const message = { id, method: 'Runtime.evaluate', params: { expression, returnByValue: true } }
+		await page.cdp('Target.sendMessageToTarget', { sessionId, message: JSON.stringify(message) })
+
+		const answer = await Promise.race([reply, sleep(5000).then(() => null)])
+		if (!answer || answer.error) {
+			frameSessions.delete(targetId)
+			return null
+		}
+		return answer.result.result.value
+	}
+
+	/** Where an iframe's content starts, in top-level viewport pixels. */
+	async function frameOrigin(targetId) {
+		const { backendNodeId } = await page.cdp('DOM.getFrameOwner', { frameId: targetId })
+		const { object } = await page.cdp('DOM.resolveNode', { backendNodeId })
+		const { result } = await page.cdp('Runtime.callFunctionOn', {
+			objectId: object.objectId,
+			functionDeclaration: 'function () { const r = this.getBoundingClientRect(); return { x: r.x + this.clientLeft, y: r.y + this.clientTop } }',
+			returnByValue: true
+		})
+		return result.value
+	}
+
+	/** The element's box in top-level viewport pixels, searching the page, then its iframes. */
+	async function box(selector, smooth = false) {
+		const expression = `(${locate})(${JSON.stringify(selector)}, ${smooth})`
+		const inPage = await page.evaluate(expression)
+		if (inPage) return inPage
+
+		// ponytail: direct child iframes only; recurse through parentId if an app nests frames.
+		const { targetInfos } = await page.cdp('Target.getTargets')
+		const childFrames = targetInfos.filter((target) => target.type === 'iframe' && target.parentId === page.targetId)
+		const inFrameExpression = `(${locate})(${JSON.stringify(selector)}, false)`
+		for (const frame of childFrames) {
+			const inFrame = await evaluateInFrame(frame.targetId, inFrameExpression)
+			if (!inFrame) continue
+
+			// Scrolling inside the frame does not move the page around it, so bring the element on screen.
+			let origin = await frameOrigin(frame.targetId)
+			const middle = origin.y + inFrame.y + inFrame.height / 2
+			const offscreen = origin.y + inFrame.y < 0 || origin.y + inFrame.y + inFrame.height > 1080
+			if (smooth || offscreen) {
+				await page.evaluate(([top, isSmooth]) => scrollBy({ top, behavior: isSmooth ? 'smooth' : 'instant' }), [middle - 540, smooth])
+				origin = await frameOrigin(frame.targetId)
+			}
+			return { ...inFrame, x: inFrame.x + origin.x, y: inFrame.y + origin.y }
+		}
+
+		throw new Error(`nothing visible matches ${selector}`)
 	}
 
 	/**
@@ -123,37 +201,51 @@ export async function record(page, partDir, { cursor = true, rehearse = false } 
 		const planned = timing.find((entry) => entry.id === id)
 		if (!planned && !rehearse) throw new Error(`no narrated scene "${id}" in timing.json`)
 
-		const start = Date.now() / 1000
+		current = { start: now(), cut: 0 }
+		const state = current
 		const at = async (fraction) => {
 			if (rehearse) return
-			const left = start + planned.dur * fraction - Date.now() / 1000
+			const left = state.start + state.cut + planned.dur * fraction - now()
 			if (left > 0) await sleep(left * 1000)
 		}
 
 		if (rehearse) console.log(`scene ${id}${planned ? '' : ' (not narrated yet)'}`)
 		await act(at)
 		await at(1)
-		scenes.push({ id, start, end: Date.now() / 1000 })
+		scenes.push({ id, start: state.start, end: now() })
+		current = null
 	}
 
-	async function box(selector, smooth = false) {
-		const found = await page.evaluate(`(${locate})(${JSON.stringify(selector)}, ${smooth})`)
-		if (!found) throw new Error(`nothing visible matches ${selector}`)
-		return found
+	/**
+	 * Keeps a wait out of the video, such as a long job or an assistant thinking: the
+	 * frames are dropped and the scene's narration clock pauses until `act` returns.
+	 * Waits between scenes are left out on their own.
+	 */
+	async function cut(act) {
+		const start = now()
+		await act()
+		const end = now()
+		cuts.push({ start, end })
+		if (current) current.cut += end - start
 	}
 
 	/** Glides the pointer to an element and returns its box. */
 	async function pointAt(selector) {
 		const found = await box(selector)
-		await page.mouse.move(found.x + found.width / 2, found.y + found.height / 2)
+		const x = found.x + found.width / 2
+		const y = found.y + found.height / 2
+		await page.evaluate(([px, py]) => window.__video?.move(px, py), [x, y])
+		await page.mouse.move(x, y)
 		await sleep(rehearse ? 0 : 550)
-		return found
+		return { x, y }
 	}
 
 	/** Glides to an element and clicks it, so viewers see where the click happens. */
 	async function click(selector) {
-		const found = await pointAt(selector)
-		await page.mouse.click(found.x + found.width / 2, found.y + found.height / 2)
+		const { x, y } = await pointAt(selector)
+		await page.evaluate(() => window.__video?.press(true))
+		await page.mouse.click(x, y)
+		await page.evaluate(() => window.__video?.press(false))
 		await sleep(rehearse ? 0 : 250)
 	}
 
@@ -193,12 +285,15 @@ export async function record(page, partDir, { cursor = true, rehearse = false } 
 			window.__video?.ring(null)
 		})
 		await page.cdp('Emulation.clearDeviceMetricsOverride')
+		for (const sessionId of frameSessions.values()) {
+			await page.cdp('Target.detachFromTarget', { sessionId }).catch(() => {})
+		}
 		if (rehearse) return { rehearsed: scenes.map((entry) => entry.id) }
 
 		await Promise.all(writes)
-		await writeFile(join(partDir, 'recording.json'), JSON.stringify({ frames, scenes }))
-		return { frames: frames.length, scenes: scenes.length }
+		await writeFile(join(partDir, 'recording.json'), JSON.stringify({ frames, scenes, cuts }))
+		return { frames: frames.length, scenes: scenes.length, cuts: cuts.length }
 	}
 
-	return { scene, pointAt, click, type, highlight, caption, scrollTo, stop }
+	return { scene, cut, pointAt, click, type, highlight, caption, scrollTo, stop }
 }

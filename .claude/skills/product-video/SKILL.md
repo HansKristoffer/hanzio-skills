@@ -30,17 +30,19 @@ printf '%s' '<key>' | bun $SKILL/video.ts set-key
 
 Then run `narrate` again. The key now persists for every project. Never repeat the key in a reply, write it into a repository or print it to a log. If the user would rather not use ElevenLabs, run `narrate <part>.json --say`.
 
-Optional environment: `VOICE=<ElevenLabs voice id>`, `MODEL=<model id>`, `LANGUAGE=da` (ISO 639-1, for non-English narration), `SAY_VOICE=<say voice>`.
+`narrate` reports the pace in words per minute; the default voice speaks at about 190. For a slower target, set `SPEED` between 0.7 and 1.2. That switches to `eleven_multilingual_v2`, because v4 Turbo ignores speed: `SPEED=0.7` gives about 140 words per minute. Narrate again until the reported pace matches the brief.
+
+Optional environment: `VOICE=<ElevenLabs voice id>`, `MODEL=<model id>`, `SPEED=0.7-1.2`, `LANGUAGE=da` (ISO 639-1, for non-English narration), `SAY_VOICE=<say voice>`.
 
 ## Workflow
 
 1. **Understand what to show.** For a change, read the diff, the PR, the feature docs and the UI it touches. For a product demo, follow **Product demo walkthrough** below. Decide the story in 4-12 scenes, and which parts are slides and which are live.
 2. **Match the brand** (below) before designing any scene.
 3. **Start the build.** `bun $SKILL/video.ts init <slug>` prints the build folder and output path. It creates `slides.json` and `slides.html` to edit. Add another part by adding `<name>.json` (and `<name>.html` for slides).
-4. **Write the script.** A part's JSON is `[{ "id": "intro", "text": "..." }]`. Write the text to be heard: plain spoken sentences, two to five per scene, one idea per scene, the product's own terms, no symbols or abbreviations the voice will misread. Write it in the audience's language.
+4. **Write the script.** A part's JSON is `[{ "id": "intro", "text": "..." }]`. A scene without text is silent and lasts `dur` seconds, for example `{ "id": "settle", "dur": 1 }` for a beat with no voice. Write the text to be heard: plain spoken sentences, two to five per scene, one idea per scene, the product's own terms, no symbols or abbreviations the voice will misread. Write it in the audience's language.
 5. **Narrate.** `bun $SKILL/video.ts narrate <build>/<part>.json` writes `<part>/audio/` and `<part>/timing.json` with each scene's length. Re-run it after any text change.
 6. **Make each part** (below).
-7. **Join.** `bun $SKILL/video.ts concat <repo>/<slug>.mp4 <build>/<part>/video.mp4 ...`. Any clip can be a part, such as a logo intro the project already has. Parts are scaled to 1920x1080, and silent clips get a silent track.
+7. **Join.** `bun $SKILL/video.ts concat <repo>/<slug>.mp4 <build>/<part>/video.mp4 ...`. Any clip can be a part, such as a logo intro the project already has. Parts are scaled to 1920x1080, and silent clips get a silent track. For chapters, put a title card before each chapter's part. Make one with `bun $SKILL/video.ts card <build>/card-02.mp4 "Selecting products" --eyebrow "Chapter 2" --style <build>/slides.html [--seconds 1.5]`, which uses the brand styles of a slides part. `concat` turns every card into a chapter in the video file and prints the list in YouTube's description format. YouTube needs a chapter at 0:00, which `concat` names "Intro" when the video does not start with a card, at least three chapters, and chapters of at least 10 seconds.
 8. **Check it.** `bun $SKILL/video.ts check <repo>/<slug>.mp4` writes a 12-frame contact sheet; look at it. Then tell the user the path and length, and say if the narration used `say`.
 
 ## Match the brand
@@ -125,15 +127,26 @@ try {
 | `rec.highlight(selector, { ms })` | A ring around the element with the page dimmed around it. |
 | `rec.caption(text)` | A caption at the bottom until the next one; `rec.caption()` clears it. It survives navigation. |
 | `rec.scrollTo(selector)` | A smooth scroll that centers the element. |
-| `rec.pointAt(selector)` | The pointer moving there without clicking. |
+| `rec.pointAt(selector)` | The pointer moving there, hovering, without clicking. |
+| `rec.cut(async () => {})` | Nothing: the time inside is cut from the video, and the scene's narration clock pauses. Use it for a long job, an upload or an assistant thinking. |
 
-Selectors are CSS (`[data-testid=x]`, `#id`, `[aria-label="Send"]`) or `text=Exact visible text`, which takes the first visible match in page order, so scope it with CSS when the text repeats, as in a menu or table of contents. The helpers act through the pointer, so a viewer sees every step. Call `page` methods directly for anything else, such as waits and navigation.
+Selectors are CSS (`[data-testid=x]`, `#id`, `[aria-label="Send"]`) or `text=Exact visible text`, which takes the first visible match in page order, so scope it with CSS when the text repeats, as in a menu or table of contents. `text=` is how a script that says "use the app's own labels" maps onto clicks.
+
+The helpers search the page first and then its embedded iframes, for example an app inside the Shopify admin or another host. They scroll the element on screen, and the pointer, ring and click land on it. Only the helpers move the drawn pointer, so do every visible action through them. Call `page` methods directly for anything else:
+
+- waits and navigation (`page.waitForSelector`, `page.goto`);
+- a file picker: `const chooser = page.waitForFileChooser(); await rec.click("text=Add file"); await (await chooser).setFiles("/abs/price-list.xlsx")`, or `page.setInputFiles(selector, path)` for a drop zone (see the ego-browser skill for exact signatures);
+- pasting copied cells: `rec.click` the first cell, then `page.keyboard.paste(text)`;
+- keys: `page.keyboard.press("Enter")`.
+
+Time between `rec.scene` calls is never in the video, so a slow setup step or a job finishing between two scenes can happen there. Inside a scene, wrap a wait in `rec.cut`. The video then cuts straight from the progress bar to the result, while the narration continues across the cut.
 
 - Call `rec.scene` once per narrated scene, in script order. If a scene's actions take longer than its narration, the scene and its audio stretch to fit.
 - The recording sets the page to 1920x1080 and draws the pointer, ring and caption. Setup done before `record`, such as signing in, is not in the video.
 - Use local development data or seeded demo accounts. Never record production customer data, secrets or another person's account unless the user explicitly asks for it.
 - Chrome sends a frame only when the page changes, at about 13 frames per second during motion. That suits UI walkthroughs; fast animation looks choppy, so show it in a slides part.
 - If a take fails, fix the walkthrough and run it again from the start. `record` clears the previous frames.
+- Only a browser tab is recorded. To show a desktop app such as Excel, take a screenshot of it and show it in a slides part, or leave it out and say so.
 - Shell environment variables do not reach the walkthrough script, which runs inside the ego-browser service. Switch between rehearsal and a take by editing the `record` options, not with an environment variable.
 
 ## Product demo walkthrough
@@ -148,6 +161,20 @@ Use this when the user wants a demo of the product, or of a feature, rather than
 6. **Record and check.** Reset any data the rehearsal changed, record the take, then run `live`, `concat` and `check`. Look at the contact sheet. Retake a scene with a stray dialog, a loading spinner or a wrong screen.
 
 Walkthroughs often change data, for example by sending a message or saving a record. Make the script work on a fresh start state, or reset the demo data before each take. Never run a walkthrough that changes data against production.
+
+## From a written script
+
+When the user supplies a script, follow it; do not rewrite the story. A typical brief has chapters of **On screen** and **Voice-over** rows, a setup list and recording notes:
+
+- **Parts:** each chapter is one live part, `chNN-<name>.json` with `chNN-<name>.walk.mjs`, recorded as its own take, so a retake never shifts the rest. An opening or closing that only shows a logo or end card is a slides part.
+- **Scenes:** each row is one scene. Its voice-over becomes `text`, verbatim apart from fixes the user approves, and its on-screen column becomes the steps inside `rec.scene`. A row with no voice-over is a silent scene with a `dur`. Place the steps with `at()` so each lands when the voice mentions it. Pause about a second on anything the viewer should read, such as a before and after value.
+- **Chapter cards:** make one with `card` for each chapter, then join with `concat` in order: card, part, card, part, and so on. Give the user the printed YouTube chapter list.
+- **Timings:** times in the brief are a plan. The narration decides the real length, and `narrate` reports the pace to tune with `SPEED`.
+- **Setup list:** before recording, check every item in the app, such as demo records, settings, files and an existing conflicting item a warning depends on. Report anything missing and fix it if the user agrees. Never fake it on screen.
+- **Labels to confirm:** confirm each one while exploring. When the real label or flow differs from the script, use the real one in both the walkthrough and the voice-over, and list every such change for the user.
+- **Recording notes:** cut long waits with `rec.cut`. Retake any take that shows an internal code, a stack trace, a development-only route or real customer data. When the user asks for a shorter cut, drop the chapters the brief names for that first.
+- **Sign-in:** a product inside another platform, such as a Shopify admin, needs the user's signed-in session in ego-browser. If the walkthrough reaches a sign-in page, stop and ask the user to sign in in ego-browser; never type their password.
+- **Unpredictable steps:** for an assistant that writes its own reply, or a step whose result varies, rehearse, wrap the wait in `rec.cut`, and check the take's contact sheet before moving on.
 
 ## Reuse
 
