@@ -53,6 +53,8 @@ These come up in nearly every first cut; build them in from the start.
 - **Callouts belong to their subject.** Keep them outside the zooming camera at screen size (at least 32 px), place them beside, never on top of, a ring or highlight on the thing they name, and let them leave just before that subject does. Check the ring's position on a still with the target outlined (`outline: 3px solid red` on the spot).
 - **Zoomed captures fade at the edges.** A full-frame overlay that fades to the background over the outer 7 % stops cropped words from being cut off hard.
 - **Before a camera move into the product, the title makes way.** Text on top of busy UI is unreadable; the title leaves, and the product fills the frame.
+- **Fly through compact things, lift wide text out.** A logo, a mark or a short word can scale through the camera; a full-width headline clips at the frame edges, so it leaves with `Film.leave` (lift and blur) while the next scene rises.
+- **End a clip beat on its payoff.** When a recorded clip finishes its action, cut to the next beat within about 0.5 s, and make sure the crossfade into it has finished before the action starts.
 - **Size for a phone.** On a 1080p frame, anything that must be read is at least 28 px, callouts at least 32 px; the CTA is a 48-60 px pill held at least 1.8 s; a concept label is at least 24 px and not dimmed.
 
 ## Pacing

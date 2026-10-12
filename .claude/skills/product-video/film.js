@@ -157,7 +157,8 @@
 
 		/**
 		 * Foreground fly-through: `el` scales toward the camera, blurs and fades, revealing what
-		 * is underneath. Keep `scale` modest (about 3) for wide text, or it clips at the frame edges.
+		 * is underneath. Use it for a logo, a mark or a short word; a full-width headline clips at
+		 * the frame edges, so lift it out with `Film.leave` instead.
 		 */
 		flyThrough(tl, el, at, { dur = 0.55, scale = 3 } = {}) {
 			tl.to(el, { scale, autoAlpha: 0, filter: 'blur(14px)', duration: dur, ease: 'leave' }, at)
