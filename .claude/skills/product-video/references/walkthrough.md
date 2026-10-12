@@ -42,7 +42,7 @@ try {
 | `rec.caption(text)` | A caption at the bottom until the next one; `rec.caption()` clears it. It survives navigation. |
 | `rec.scrollTo(selector)` | A smooth scroll that centers the element. |
 | `rec.pointAt(selector)` | The pointer moving there, hovering, without clicking. |
-| `rec.mark(name, selector?)` | Nothing: notes the moment (and the element's box) so `live` prints its time in the video and a ready `crop=`. Mark every result a composition will time against: a reply arriving, a card landing, a state changing. Clicks are marked on their own. |
+| `rec.mark(name, selector?)` | Nothing: notes the moment (and the element's box) so `live` prints its time in the video and a ready `crop=`. Mark every result a composition will time against: a reply arriving, a card landing, a state changing. Clicks are marked on their own. Mark after waiting for something specific (`waitForFunction` on the final text or element), not on a pause in streaming, which also happens mid-reply. |
 | `rec.cut(async () => {})` | Nothing: the time inside is cut from the video, and the scene's narration clock pauses. Use it for a long job, an upload or an assistant thinking. |
 
 Selectors are CSS (`[data-testid=x]`, `#id`, `[aria-label="Send"]`) or `text=Exact visible text`, which takes the first visible match in page order, so scope it with CSS when the text repeats, as in a menu or table of contents. `text=` is how a script that says "use the app's own labels" maps onto clicks.

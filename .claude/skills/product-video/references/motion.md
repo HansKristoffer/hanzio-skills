@@ -57,6 +57,8 @@ These come up in nearly every first cut; build them in from the start.
 - **Fly through compact things, lift wide text out.** A logo, a mark or a short word can scale through the camera; a full-width headline clips at the frame edges, so it leaves with `Film.leave` (lift and blur) while the next scene rises.
 - **End a clip beat on its payoff.** When a recorded clip finishes its action, cut to the next beat within about 0.5 s, and make sure the crossfade into it has finished before the action starts.
 - **A footage beat needs its own camera move.** Screen footage changes in small regions, so `check` reads it as frozen; give the frame a drift of about 8-10 % plus a push onto the payoff (eased out over 2-3 s, not a fast landing that then sits still).
+- **A claim stays on screen until its proof appears.** "Answers straight away" must still be up when the answer lands. Cut a wait out of a clip with a jump cut: two `<video>` elements of the same clip in one frame, the first playing up to the action, the second from just before the result (`Film.show` switches them). Speed up typing with `data-rate`, not the answer.
+- **A dark logo intro over a living background:** `mix-blend-mode: lighten` on the video drops its flat dark field and keeps the letters, so the end card does not jump to a flat colour.
 - **Check the first and last frames of every video asset.** A logo intro or a recorded clip often starts empty or ends on a dead frame; set `data-from` past the lead-in so the beat opens on something.
 - **Size for a phone.** On a 1080p frame, anything that must be read is at least 28 px, callouts at least 32 px; the CTA is a 48-60 px pill held at least 1.8 s; a concept label is at least 24 px and not dimmed.
 
