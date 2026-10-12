@@ -1,0 +1,286 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta name="film-size" content="1920x1080" />
+<!--
+	A launch film starter: about 18 s, music-led, every frame code-built. Rendered frame by frame
+	by `video.ts render`, which injects GSAP and the Film runtime (film.js). Replace the copy, the
+	mock product with real screenshots or a recorded clip, and the :root brand tokens. Keep every
+	motion on film.tl; see references/motion.md for the grammar behind each beat.
+-->
+<style>
+:root {
+	--bg: #f5f4f0;
+	--surface: #ffffff;
+	--surface-2: #f0efea;
+	--line: #e4e2db;
+	--text: #121212;
+	--muted: #6b6b6b;
+	--accent: #5b5bf7;
+	--accent-2: #c25cf2;
+	--accent-soft: rgba(91, 91, 247, 0.12);
+	--good: #1f9d63;
+	--radius: 22px;
+	--font: 'Inter', -apple-system, 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif;
+	--mono: 'SF Mono', Menlo, monospace;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font-family: var(--font); -webkit-font-smoothing: antialiased; }
+
+/* Living background: two soft colour fields that drift for the whole film. */
+.bg { position: absolute; inset: 0; overflow: hidden; }
+.blob { position: absolute; width: 1100px; height: 1100px; border-radius: 50%; filter: blur(140px); opacity: 0.55; }
+.blob.a { background: var(--accent); left: -300px; top: -420px; }
+.blob.b { background: var(--accent-2); right: -360px; bottom: -520px; opacity: 0.4; }
+.grain { position: absolute; inset: 0; background: radial-gradient(transparent 60%, rgba(0, 0, 0, 0.05)); }
+
+.layer { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+.eyebrow { font-size: 26px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent); }
+h1 { margin: 0; font-size: 150px; line-height: 1; letter-spacing: -0.045em; font-weight: 700; text-align: center; }
+h2 { margin: 0; font-size: 96px; line-height: 1.02; letter-spacing: -0.035em; font-weight: 700; }
+.muted { color: var(--muted); }
+.gradient-text { background: linear-gradient(90deg, var(--accent), var(--accent-2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+/* Hook */
+#hook .inner { display: flex; flex-direction: column; align-items: center; gap: 36px; }
+.mark { width: 92px; height: 92px; border-radius: 26px; background: linear-gradient(135deg, var(--accent), var(--accent-2)); box-shadow: 0 20px 60px var(--accent-soft); }
+
+/* Product: camera > push > window, so focus, drift and tilt never fight over one transform. */
+#product { perspective: 2200px; }
+#cam { position: relative; }
+#window {
+	position: relative; width: 1500px; height: 860px; border-radius: 26px; overflow: hidden;
+	background: var(--surface); border: 1px solid var(--line);
+	box-shadow: 0 60px 160px rgba(20, 20, 40, 0.22), 0 8px 24px rgba(20, 20, 40, 0.08);
+	display: grid; grid-template-columns: 300px 1fr; grid-template-rows: 64px 1fr;
+}
+.titlebar { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; padding: 0 24px; border-bottom: 1px solid var(--line); }
+.titlebar i { width: 14px; height: 14px; border-radius: 50%; background: var(--line); }
+.titlebar .url { margin-left: 24px; font-size: 18px; color: var(--muted); }
+.sidebar { border-right: 1px solid var(--line); padding: 28px 20px; display: flex; flex-direction: column; gap: 8px; background: var(--surface-2); }
+.nav { font-size: 20px; padding: 12px 16px; border-radius: 12px; color: var(--muted); }
+.nav.active { background: var(--surface); color: var(--text); font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06); }
+.main { padding: 36px 44px; display: flex; flex-direction: column; gap: 22px; }
+.main-head { display: flex; align-items: center; justify-content: space-between; }
+.main-head h3 { margin: 0; font-size: 34px; letter-spacing: -0.02em; }
+.btn { font-size: 20px; font-weight: 600; padding: 14px 24px; border-radius: 14px; background: var(--accent); color: #fff; }
+.row { display: grid; grid-template-columns: 1fr 160px 140px; align-items: center; padding: 18px 22px; border: 1px solid var(--line); border-radius: 16px; font-size: 21px; }
+.row .tag { justify-self: start; font-size: 16px; font-weight: 600; padding: 6px 12px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
+.row .num { justify-self: end; font-family: var(--mono); color: var(--muted); }
+.row.new { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+.row.new .tag { background: rgba(31, 157, 99, 0.12); color: var(--good); }
+
+#cursor { position: absolute; left: 0; top: 0; width: 34px; height: 34px; z-index: 5; }
+#cursor svg { position: absolute; left: 0; top: 0; filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.25)); }
+#cursor .ripple { position: absolute; left: -22px; top: -22px; width: 48px; height: 48px; border-radius: 50%; border: 3px solid var(--accent); opacity: 0; }
+.callout {
+	position: absolute; z-index: 6; font-size: 22px; font-weight: 600; padding: 12px 18px; border-radius: 12px;
+	background: var(--text); color: var(--bg); box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2); white-space: nowrap;
+}
+
+/* Features */
+#features .inner { display: flex; flex-direction: column; align-items: center; gap: 70px; }
+.cards { position: relative; width: 980px; height: 300px; }
+.card {
+	position: absolute; inset: 0; border-radius: 30px; padding: 44px 52px; background: var(--surface);
+	border: 1px solid var(--line); box-shadow: 0 40px 100px rgba(20, 20, 40, 0.14);
+	display: flex; flex-direction: column; justify-content: center; gap: 14px;
+}
+.card .k { font-size: 22px; font-weight: 600; color: var(--accent); letter-spacing: 0.1em; text-transform: uppercase; }
+.card .t { font-size: 54px; font-weight: 700; letter-spacing: -0.025em; }
+.card .d { font-size: 26px; color: var(--muted); }
+
+/* Number */
+#number .inner { display: flex; align-items: baseline; gap: 40px; }
+.big { font-size: 360px; font-weight: 800; letter-spacing: -0.06em; line-height: 0.9; }
+
+/* Words */
+#words .inner { position: relative; width: 1600px; height: 220px; }
+#words h1 { position: absolute; inset: 0; font-size: 190px; }
+
+/* End card */
+#end .inner { display: flex; flex-direction: column; align-items: center; gap: 44px; }
+.lockup { display: flex; align-items: center; gap: 32px; }
+.lockup .mark { width: 120px; height: 120px; border-radius: 34px; }
+.lockup .name { font-size: 120px; font-weight: 700; letter-spacing: -0.045em; }
+.cta { font-size: 52px; font-weight: 600; padding: 24px 52px; border-radius: 999px; background: var(--text); color: var(--bg); }
+.small { font-size: 28px; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<div class="bg"><div class="blob a"></div><div class="blob b"></div><div class="grain"></div></div>
+
+<section class="layer" id="hook">
+	<div class="inner">
+		<div class="mark"></div>
+		<h1><span id="hook-a">The one line that</span><br/><span id="hook-b" class="gradient-text">makes them stop.</span></h1>
+	</div>
+</section>
+
+<section class="layer" id="product">
+	<div id="cam"><div id="push">
+		<div id="window">
+			<div class="titlebar"><i></i><i></i><i></i><span class="url">app.product.com</span></div>
+			<div class="sidebar">
+				<div class="nav active">Projects</div><div class="nav">Inbox</div><div class="nav">Reports</div><div class="nav">Settings</div>
+			</div>
+			<div class="main">
+				<div class="main-head"><h3>Projects</h3><div class="btn" id="create">+ New project</div></div>
+				<div class="row new" id="result"><span>Spring launch</span><span class="tag">Draft</span><span class="num">just now</span></div>
+				<div class="row" id="focus-region"><span>Pricing page refresh</span><span class="tag">In review</span><span class="num">2h</span></div>
+				<div class="row"><span>Onboarding emails</span><span class="tag">Draft</span><span class="num">1d</span></div>
+				<div class="row"><span>Customer interviews</span><span class="tag">Planned</span><span class="num">3d</span></div>
+			</div>
+			<div id="cursor">
+				<span class="ripple"></span>
+				<svg width="34" height="34" viewBox="0 0 24 24"><path d="M4 2l16 9.5-7 1.6-3.4 6.9z" fill="#111" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/></svg>
+			</div>
+			<div class="callout" id="callout">Shared with your team in one click</div>
+		</div>
+	</div></div>
+</section>
+
+<section class="layer" id="features">
+	<div class="inner">
+		<h2>Everything in <span class="gradient-text">one place.</span></h2>
+		<div class="cards">
+			<div class="card"><div class="k">Benefit one</div><div class="t">Plan the work</div><div class="d">A plain sentence about what it does for them.</div></div>
+			<div class="card"><div class="k">Benefit two</div><div class="t">See it move</div><div class="d">A plain sentence about what it does for them.</div></div>
+			<div class="card"><div class="k">Benefit three</div><div class="t">Ship it together</div><div class="d">A plain sentence about what it does for them.</div></div>
+		</div>
+	</div>
+</section>
+
+<section class="layer" id="number">
+	<div class="inner">
+		<div class="big"><span id="count">0</span><span class="gradient-text">×</span></div>
+		<h2 class="muted" style="font-size:64px;max-width:640px">a true, sourced<br/>number goes here</h2>
+	</div>
+</section>
+
+<section class="layer" id="words">
+	<div class="inner">
+		<h1 id="w1">Faster.</h1>
+		<h1 id="w2">Clearer.</h1>
+		<h1 id="w3" class="gradient-text">Yours.</h1>
+	</div>
+</section>
+
+<section class="layer" id="end">
+	<div class="inner">
+		<div class="lockup"><div class="mark"></div><div class="name">Product</div></div>
+		<div class="cta">Try it free</div>
+		<div class="small">product.com</div>
+	</div>
+</section>
+
+<script>
+Film.create({
+	duration: 18,
+	// music: 'assets/music.mp3', musicGain: -8,   after `video.ts music`; -8 leaves room for the effects
+	build(film) {
+		const { tl, cue } = film
+		const $ = (selector) => document.querySelector(selector)
+
+		// Measure before any tween moves things: the cursor and callout live inside the window.
+		const win = $('#window').getBoundingClientRect()
+		const button = $('#create').getBoundingClientRect()
+		const region = $('#focus-region').getBoundingClientRect()
+		const buttonX = button.left - win.left + button.width / 2
+		const buttonY = button.top - win.top + button.height / 2
+		gsap.set('#callout', { x: region.right - win.left - 360, y: region.bottom - win.top + 14 })
+
+		// The background never stops moving.
+		tl.to('.blob.a', { x: 260, y: 160, duration: 18, ease: 'none' }, 0)
+		tl.to('.blob.b', { x: -300, y: -120, duration: 18, ease: 'none' }, 0)
+
+		// 1. Hook: frame 0 is already a finished composition; the payoff line rises in, then the
+		// whole block flies through the camera. A drift ends where the exit begins: two tweens
+		// driving the same property at once cancel each other.
+		Film.show(tl, '#hook', 0, 2.8)
+		Film.drift(tl, '#hook .inner', 0, 2.3, { scale: 1.05 })
+		Film.headline(tl, '#hook-b', 0.35)
+		tl.from('#hook .mark', { rotate: -12, duration: 1.2, ease: 'land' }, 0)
+		Film.flyThrough(tl, '#hook .inner', 2.3)
+		cue(2.25, 'whoosh')
+
+		// 2. The product is already in place underneath and swings in as the line clears.
+		Film.show(tl, '#product', 2.3, 9.4)
+		Film.tilt(tl, '#window', 2.35)
+		Film.rise(tl, '#window .row:not(#result)', 2.9, { stagger: 0.12, y: 24 })
+		Film.drift(tl, '#push', 3.3, 9.1, { scale: 1.09, y: -30 })
+
+		// 3. Cause, then effect: the cursor clicks, and the new project materialises.
+		tl.set('#result', { autoAlpha: 0 }, 0)
+		Film.cursor(tl, $('#cursor'), [
+			{ x: 1560, y: 900 },
+			{ at: 4.6, x: buttonX, y: buttonY, click: true, dur: 1.4 }
+		])
+		cue(4.6, 'click')
+		tl.set('#result', { autoAlpha: 1 }, 4.75)
+		tl.from('#result', { scaleY: 0.2, transformOrigin: '50% 0%', duration: 0.5, ease: 'land' }, 4.75)
+		Film.rise(tl, '#result > *', 4.9, { y: 14, blur: 6 })
+		cue(4.8, 'pop')
+
+		// The new project keeps working on its own: its status moves on, which is the point.
+		Film.swap(tl, $('#result .tag'), 5.6, 'Shared')
+		cue(5.75, 'tick', -2)
+
+		// 4. The camera moves onto the detail that matters, and a callout names it.
+		Film.focus(tl, $('#cam'), $('#focus-region'), 6.2, { fill: 0.62 })
+		cue(6.15, 'swipe')
+		tl.from('#callout', { y: '+=20', autoAlpha: 0, duration: 0.5, ease: 'land' }, 7.1)
+		Film.swap(tl, $('#focus-region .tag'), 8.0, 'Approved')
+		cue(8.15, 'tick', -2)
+		tl.to('#cursor', { autoAlpha: 0, duration: 0.3 }, 6.2)
+		Film.leave(tl, '#product', 9.1, { y: 0, blur: 16 })
+		cue(9.05, 'whoosh')
+
+		// 5. Benefits stack up, each card covering the last.
+		// New text enters only once the outgoing scene has cleared: text never crosses text.
+		Film.show(tl, '#features', 9.4, 12.5)
+		Film.headline(tl, '#features h2', 9.45)
+		Film.stack(tl, [...document.querySelectorAll('.card')], 9.8, { gap: 0.6 })
+		;[9.8, 10.4, 11.0].forEach((t) => cue(t, 'pop', -4))
+		Film.drift(tl, '#features .inner', 9.4, 12.1, { scale: 1.04 })
+		Film.leave(tl, '#features .inner', 12.1)
+
+		// 6. One true number, counted up.
+		Film.show(tl, '#number', 12.45, 14.4)
+		Film.counter(tl, $('#count'), 12.5, { to: 10, dur: 1 })
+		Film.rise(tl, '#number h2', 12.7)
+		Film.drift(tl, '#number .inner', 12.45, 14.0, { scale: 1.05 })
+		Film.flyThrough(tl, '#number .inner', 14.0)
+		cue(13.95, 'swipe')
+
+		// 7. Three words, one beat each, swapping in place.
+		Film.show(tl, '#words', 14.4, 16.6)
+		;['#w1', '#w2', '#w3'].forEach((word, i) => {
+			const at = 14.45 + i * 0.55
+			tl.set(word, { autoAlpha: 1 }, at)
+			// A slot roll: each word starts 0.05 s before the previous one has gone, so no frame is empty.
+			Film.headline(tl, word, at, i < 2 ? { out: at + 0.45, outDur: 0.15 } : {})
+			if (i > 0) tl.set(['#w1', '#w2', '#w3'][i - 1], { autoAlpha: 0 }, at)
+		})
+		tl.set(['#w2', '#w3'], { autoAlpha: 0 }, 0)
+
+		// 8. The last word flies through and reveals the end card, already in place underneath.
+		Film.flyThrough(tl, '#words .inner', 16.15, { dur: 0.45 })
+		cue(16.1, 'whoosh', -3)
+		Film.show(tl, '#end', 16.15)
+		tl.from('.lockup .mark', { scale: 0, rotate: -45, duration: 0.8, ease: 'back.out(1.6)' }, 16.2)
+		tl.from('.lockup .name', { x: -40, autoAlpha: 0, filter: 'blur(12px)', duration: 0.8, ease: 'land' }, 16.35)
+		Film.rise(tl, ['#end .cta', '#end .small'], 16.75)
+		Film.drift(tl, '#end .inner', 16.15, 18, { scale: 1.05 })
+		cue(16.2, 'hit')
+
+		// The music breathes: held back under the hook, a dead stop before the logo hit.
+		film.dip(0, 2.25, -8)
+		film.dip(15.85, 16.2, -24)
+	}
+})
+</script>
+</body>
+</html>

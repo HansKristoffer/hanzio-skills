@@ -6,7 +6,7 @@ Agent skills for Claude Code and Codex, built for TypeScript monorepos (Bun or N
 | --- | --- |
 | [build-engine](.claude/skills/build-engine/SKILL.md) | Design and build a typed domain engine end to end: contracts, pure logic, adapters to an external system, a durable runtime and a UI driven by the engine's manifest |
 | [land-pr](.claude/skills/land-pr/SKILL.md) | Open a PR or rewrite its body (summary diagram, evidence, merge danger), watch its checks, resolve conflicts, fix failing CI until it is green, then merge it and ship a release-please release when asked |
-| [product-video](.claude/skills/product-video/SKILL.md) | Make narrated product videos and demos: animated explainer scenes and live walkthroughs of the real product in ego-browser, voiced by ElevenLabs |
+| [product-video](.claude/skills/product-video/SKILL.md) | Make professional product videos: launch films, explainers, demos and walkthroughs that mix frame-exact motion graphics with real product footage, scored and voiced with ElevenLabs, checked by measurement and an independent critic |
 | [unslop](.claude/skills/unslop/SKILL.md) | Clean up code, tests and prose after a change: AI artifacts, typed contracts, low-value tests, AI-sounding text |
 
 Install by copying or symlinking a skill folder into a project's `.claude/skills/` (Claude Code) or `.agents/skills/` (Codex), or into `~/.claude/skills/` for every project.

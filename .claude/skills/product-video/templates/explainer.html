@@ -1,0 +1,114 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta name="film-size" content="1920x1080" />
+<!--
+	A narrated explainer: one <section class="scene" data-scene="<id>"> per scene in the part's
+	JSON, timed by its narration (window.TIMING). data-f="0.4" reveals an element 40 % into the
+	scene's narration; add class "kinetic" to a heading to reveal it word by word. Restyle the
+	:root tokens to the brand. See references/motion.md before adding custom motion.
+-->
+<style>
+:root {
+	--bg: #f5f4f0;
+	--surface: #ffffff;
+	--surface-2: #f0efea;
+	--line: #e4e2db;
+	--text: #121212;
+	--muted: #6b6b6b;
+	--accent: #5b5bf7;
+	--accent-soft: rgba(91, 91, 247, 0.12);
+	--good: #1f9d63;
+	--good-soft: rgba(31, 157, 99, 0.12);
+	--warn: #c98a1b;
+	--warn-soft: rgba(201, 138, 27, 0.14);
+	--bad: #d64545;
+	--bad-soft: rgba(214, 69, 69, 0.12);
+	--font: 'Inter', -apple-system, 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif;
+	--mono: 'SF Mono', Menlo, monospace;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font-family: var(--font); -webkit-font-smoothing: antialiased; }
+.bg { position: absolute; inset: 0; overflow: hidden; }
+.glow { position: absolute; width: 1300px; height: 1000px; border-radius: 50%; filter: blur(120px); opacity: 0.5; }
+.glow.a { background: var(--accent); left: -420px; top: -560px; }
+.glow.b { background: var(--good); right: -520px; bottom: -700px; opacity: 0.25; }
+
+.scene { position: absolute; inset: 0; padding: 110px 140px; display: flex; flex-direction: column; justify-content: center; }
+.inner { display: flex; flex-direction: column; gap: 40px; }
+.eyebrow { font-size: 26px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); font-weight: 600; }
+h1 { font-size: 88px; line-height: 1.04; margin: 0; font-weight: 700; letter-spacing: -0.03em; }
+h2 { font-size: 64px; line-height: 1.08; margin: 0; font-weight: 700; letter-spacing: -0.02em; }
+p.lead { font-size: 34px; color: var(--muted); margin: 0; line-height: 1.4; max-width: 1400px; }
+.small { font-size: 22px; color: var(--muted); }
+.mono { font-family: var(--mono); font-size: 22px; color: var(--muted); }
+.row { display: flex; gap: 28px; align-items: stretch; }
+.col { display: flex; flex-direction: column; gap: 18px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 24px; padding: 32px 36px; box-shadow: 0 24px 60px rgba(20, 20, 40, 0.08); }
+.pill { display: inline-flex; align-items: center; font-size: 22px; font-weight: 600; padding: 8px 18px; border-radius: 999px; white-space: nowrap; align-self: flex-start; }
+.pill.accent { background: var(--accent-soft); color: var(--accent); }
+.pill.good { background: var(--good-soft); color: var(--good); }
+.pill.warn { background: var(--warn-soft); color: var(--warn); }
+.pill.bad { background: var(--bad-soft); color: var(--bad); }
+.arrow { font-size: 44px; color: var(--accent); align-self: center; }
+/* A real screenshot of the product: <img class="shot" src="assets/cases.png"> */
+.shot { max-width: 100%; max-height: 760px; border-radius: 20px; border: 1px solid var(--line); box-shadow: 0 40px 100px rgba(20, 20, 40, 0.18); align-self: center; }
+</style>
+</head>
+<body>
+<div class="bg"><div class="glow a"></div><div class="glow b"></div></div>
+
+<section class="scene" data-scene="intro">
+	<div class="inner">
+		<div class="eyebrow" data-f="0">Product · what changed</div>
+		<h1 class="kinetic" data-f="0.03">The change in one line.<br/>Why it matters in another.</h1>
+		<p class="lead" data-f="0.5">A sentence of context that lands while the narration explains it.</p>
+	</div>
+</section>
+
+<section class="scene" data-scene="how">
+	<div class="inner">
+		<div class="eyebrow" data-f="0">How it works</div>
+		<div class="row" style="align-items:center">
+			<div class="card col" data-f="0.1" style="width:460px"><div class="small">Before</div><div style="font-size:32px;font-weight:700">What used to happen</div></div>
+			<div class="arrow" data-f="0.3">→</div>
+			<div class="card col" data-f="0.45" style="width:460px;border-color:var(--accent)"><div class="small">Now</div><div style="font-size:32px;font-weight:700">What happens now</div><span class="pill good">Shipped</span></div>
+		</div>
+	</div>
+</section>
+
+<script>
+Film.create({
+	// music: 'assets/music.mp3', musicGain: -14,   a quiet bed under the voice; it ducks while someone speaks
+	build(film) {
+		const { tl } = film
+		const scenes = Film.scenes()
+		const sections = [...document.querySelectorAll('.scene')]
+
+		// Held reading beats still move: the background drifts for the whole film.
+		tl.to('.glow.a', { x: 520, y: 260, duration: film.duration, ease: 'none' }, 0)
+		tl.to('.glow.b', { x: -480, y: -220, duration: film.duration, ease: 'none' }, 0)
+
+		for (const [index, section] of sections.entries()) {
+			const scene = scenes[section.dataset.scene]
+			if (!scene) throw new Error(`scene "${section.dataset.scene}" is not in the narrated script`)
+			const inner = section.querySelector('.inner')
+			const last = index === sections.length - 1
+
+			Film.show(tl, section, scene.start, scene.end)
+			Film.drift(tl, inner, scene.start, scene.end, { scale: 1.06 })
+			for (const el of section.querySelectorAll('[data-f]')) {
+				// Frame 0 is a finished composition: the opening's data-f="0" elements are already there.
+				if (index === 0 && Number(el.dataset.f) === 0) continue
+				const at = scene.start + Number(el.dataset.f) * scene.dur
+				if (el.classList.contains('kinetic')) Film.headline(tl, el, at)
+				else Film.rise(tl, el, at)
+			}
+			if (!last) Film.leave(tl, inner, scene.end - 0.35)
+		}
+	}
+})
+</script>
+</body>
+</html>

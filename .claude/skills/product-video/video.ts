@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
-// Narrated product videos: voice a script with ElevenLabs, record HTML scenes or a
-// live ego-browser run in time with it, and join the parts. Usage is in SKILL.md.
+// Product videos: render HTML/GSAP compositions frame by frame, record live ego-browser
+// walkthroughs, voice and score them with ElevenLabs, and join the parts. Usage is in SKILL.md.
 import { $ } from 'bun'
 import { existsSync } from 'node:fs'
 import { appendFile, chmod, copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
@@ -11,7 +11,19 @@ import { parseArgs } from 'node:util'
 const SKILL_DIR = import.meta.dir
 const PAD_SECONDS = 0.8
 const SIZE = { width: 1920, height: 1080 }
-const ENCODE = ['-c:v', 'libx264', '-preset', 'medium', '-crf', '20', '-pix_fmt', 'yuv420p']
+const ENCODE = ['-c:v', 'libx264', '-preset', 'medium', '-crf', '18', '-pix_fmt', 'yuv420p']
+const ELEVENLABS = 'https://api.elevenlabs.io/v1'
+
+/** Starter sound effects for `sfx --kit`: short, clean, no low rumble. */
+const SFX_KIT = {
+	whoosh: ['short soft clean air whoosh for a fast screen transition, smooth, no low rumble, no wind', 0.7],
+	swipe: ['very short quick swipe whoosh, light and crisp, no bass', 0.4],
+	click: ['single clean soft mouse click, close and dry', 0.25],
+	pop: ['soft round UI pop, a bubble appearing, gentle', 0.3],
+	tick: ['tiny light UI tick, a soft tap on glass', 0.2],
+	hit: ['soft deep cinematic impact for a logo reveal, short and tight, clean', 1.2],
+	shimmer: ['short bright sparkle shimmer for a success state, airy and soft', 1.0]
+} as const
 
 /** A scene without text is silent and lasts `dur` seconds (1.5 by default), e.g. a pause. */
 type Scene = { id: string; text?: string; dur?: number }
@@ -26,11 +38,13 @@ const [command, ...args] = process.argv.slice(2)
 const commands: Record<string, (...args: string[]) => Promise<void>> = {
 	init,
 	narrate,
+	music,
+	sfx,
 	'set-key': setKey,
-	card,
-	preview,
-	slides,
+	stills,
+	render,
 	live,
+	card,
 	concat,
 	check
 }
@@ -41,9 +55,13 @@ if (!command || !commands[command]) {
 }
 await commands[command](...args)
 
-/** Creates `<repo>/.video-build/<slug>/`, kept out of git through `.git/info/exclude`. */
-async function init(slug: string) {
-	if (!slug) throw new Error('usage: init <slug>')
+/**
+ * Creates `<repo>/.video-build/<slug>/`, kept out of git through `.git/info/exclude`, with
+ * a brief, `film.html` from the launch template (or the narrated explainer with
+ * `--narrated`, which also writes `film.json`) and folders for assets and sound effects.
+ */
+async function init(slug: string, flag?: string) {
+	if (!slug) throw new Error('usage: init <slug> [--narrated]')
 
 	const gitRoot = await $`git rev-parse --show-toplevel`.nothrow().quiet().text()
 	const root = gitRoot.trim() || process.cwd()
@@ -61,15 +79,20 @@ async function init(slug: string) {
 		}
 	}
 
-	if (!existsSync(join(build, 'slides.html'))) {
-		await copyFile(join(SKILL_DIR, 'template.html'), join(build, 'slides.html'))
+	await mkdir(join(build, 'assets'), { recursive: true })
+	await mkdir(join(build, 'sfx'), { recursive: true })
+	if (!existsSync(join(build, 'brief.md'))) await copyFile(join(SKILL_DIR, 'templates/brief.md'), join(build, 'brief.md'))
+
+	const narrated = flag === '--narrated'
+	if (!existsSync(join(build, 'film.html'))) {
+		await copyFile(join(SKILL_DIR, 'templates', narrated ? 'explainer.html' : 'launch.html'), join(build, 'film.html'))
 	}
-	if (!existsSync(join(build, 'slides.json'))) {
+	if (narrated && !existsSync(join(build, 'film.json'))) {
 		const example: Scene[] = [
 			{ id: 'intro', text: 'One or two sentences that say what changed and why it matters.' },
 			{ id: 'how', text: 'What the user now sees or does, in plain words.' }
 		]
-		await writeFile(join(build, 'slides.json'), `${JSON.stringify(example, null, 1)}\n`)
+		await writeFile(join(build, 'film.json'), `${JSON.stringify(example, null, 1)}\n`)
 	}
 
 	console.log(JSON.stringify({ root, build, output: join(root, `${slug}.mp4`) }, null, 1))
@@ -81,8 +104,11 @@ async function init(slug: string) {
  */
 async function narrate(partFile: string, flag?: string) {
 	const useSay = flag === '--say'
-	const key = useSay ? undefined : await elevenLabsKey()
-	if (!key && !useSay) {
+	const scenes: Scene[] = await Bun.file(partFile).json()
+	// An all-silent part (a product clip timed by `dur`) needs no voice and no key.
+	const speaks = scenes.some((scene) => scene.text?.trim())
+	const key = useSay || !speaks ? undefined : await elevenLabsKey()
+	if (speaks && !key && !useSay) {
 		console.error(
 			'NO_ELEVENLABS_KEY: ask the user for their ElevenLabs API key, then store it with ' +
 				'`bun video.ts set-key` (key on stdin). Or rerun with --say to narrate with macOS `say`.'
@@ -90,7 +116,6 @@ async function narrate(partFile: string, flag?: string) {
 		process.exit(2)
 	}
 
-	const scenes: Scene[] = await Bun.file(partFile).json()
 	const dir = partDir(partFile)
 	const audioDir = join(dir, 'audio')
 	await rm(audioDir, { recursive: true, force: true })
@@ -127,64 +152,78 @@ async function narrate(partFile: string, flag?: string) {
 	console.log(`total ${round(timing.reduce((sum, scene) => sum + scene.dur, 0))}s${pace}`)
 }
 
-/** Screenshots every scene in its finished state, so layouts can be checked without recording. */
-async function preview(partFile: string, htmlFile?: string) {
-	const dir = partDir(partFile)
-	const html = await buildHtml(partFile, htmlFile)
-	const out = join(dir, 'preview')
+/**
+ * Renders frames of a composition at chosen times into `<part>/stills/` and a contact sheet:
+ * `stills <part>.html [--every 0.5] [--at 1.2,4,7.5]`. Fast, for checking layout and motion.
+ */
+async function stills(htmlFile: string, ...rest: string[]) {
+	const { values } = parseArgs({ args: rest, options: { every: { type: 'string' }, at: { type: 'string' } } })
+	const dir = htmlFile.replace(/\.html$/, '')
+	const out = join(dir, 'stills')
 	await rm(out, { recursive: true, force: true })
 	await mkdir(out, { recursive: true })
 
-	const browser = await launchBrowser()
-	const page = await browser.newPage({ viewport: SIZE })
-	await page.goto(`file://${html}`)
-	const count = await page.evaluate(() => document.querySelectorAll('.scene').length)
-	for (let index = 0; index < count; index++) {
-		await page.evaluate((i) => (window as unknown as { preview(i: number): void }).preview(i), index)
-		await page.screenshot({ path: join(out, `${String(index).padStart(2, '0')}.png`) })
+	const { browser, page, film } = await openComposition(htmlFile)
+	const every = Number(values.every ?? 0.5)
+	const times = values.at
+		? values.at.split(',').map(Number)
+		: Array.from({ length: Math.floor(film.duration / every) + 1 }, (_, i) => round(i * every))
+
+	for (const t of times) {
+		await seekFrame(page, t)
+		await page.screenshot({ path: join(out, `${t.toFixed(2).padStart(6, '0')}.png`) })
 	}
 	await browser.close()
 
-	const sheet = join(dir, 'preview.png')
-	await $`ffmpeg -v error -y -pattern_type glob -i ${join(out, '*.png')} -vf scale=640:-1,tile=${Math.min(count, 3)}x${Math.ceil(count / 3)} ${sheet}`
-	console.log(sheet)
+	const sheet = join(dir, 'stills.png')
+	const columns = Math.min(times.length, 6)
+	await $`ffmpeg -v error -y -pattern_type glob -i ${join(out, '*.png')} -vf scale=480:-1,tile=${columns}x${Math.ceil(times.length / columns)} ${sheet}`
+	console.log(`${sheet} (${times.length} frames: ${times.join(', ')}s)`)
 }
 
-/** Records `<part>.html` in time with the narration into `<part>/video.mp4`. */
-async function slides(partFile: string, htmlFile?: string) {
-	const dir = partDir(partFile)
-	const timing = await readTiming(dir)
-	const html = await buildHtml(partFile, htmlFile)
-	const raw = join(dir, 'raw')
-	await rm(raw, { recursive: true, force: true })
+/**
+ * Renders a composition frame by frame into `<part>/video.mp4` with its audio: narration
+ * from `<part>.json`, the music and sound cues it declares. `render <part>.html [--fps 60]`;
+ * `--audio-only` remixes the sound onto the frames of the last render.
+ */
+async function render(htmlFile: string, ...rest: string[]) {
+	const { values } = parseArgs({ args: rest, options: { fps: { type: 'string' }, 'audio-only': { type: 'boolean' } } })
+	const fps = Number(values.fps ?? 60)
+	const dir = htmlFile.replace(/\.html$/, '')
+	await mkdir(dir, { recursive: true })
 
-	const browser = await launchBrowser()
-	const context = await browser.newContext({ viewport: SIZE, recordVideo: { dir: raw, size: SIZE } })
-	const createdAt = Date.now()
-	const page = await context.newPage()
-	await page.goto(`file://${html}`)
-
-	const sceneIds = await page.evaluate(() =>
-		[...document.querySelectorAll<HTMLElement>('.scene')].map((scene) => scene.dataset.id)
-	)
-	const timingIds = timing.map((scene) => scene.id)
-	if (sceneIds.join() !== timingIds.join()) {
+	const { browser, page, film, size } = await openComposition(htmlFile)
+	const silent = join(dir, 'frames.mp4')
+	if (values['audio-only']) {
 		await browser.close()
-		throw new Error(`scene ids [${sceneIds}] do not match the script [${timingIds}]`)
+		if (!existsSync(silent)) throw new Error(`${silent} is missing: render once without --audio-only`)
+		return mux(silent, await mixAudio(htmlFile, film), join(dir, 'video.mp4'))
 	}
 
-	await page.waitForTimeout(800)
-	const startedAt = Date.now()
-	const total = await page.evaluate(() => (window as unknown as { start(): number }).start())
-	await page.waitForTimeout(total * 1000 + 500)
-	const video = page.video()
-	await context.close()
-	await browser.close()
+	const cdp = await page.context().newCDPSession(page)
+	const frames = Math.round(film.duration * fps)
+	const encoder = Bun.spawn(
+		['ffmpeg', '-v', 'error', '-y', '-f', 'image2pipe', '-framerate', String(fps), '-c:v', 'mjpeg', '-i', '-', '-vf', `scale=${size.width}:${size.height}`, ...ENCODE, '-r', String(fps), silent],
+		{ stdin: 'pipe' }
+	)
 
-	const narration = await buildNarration(dir, timing, timing.map((scene) => scene.dur))
-	const offset = (startedAt - createdAt) / 1000
-	const out = join(dir, 'video.mp4')
-	await $`ffmpeg -v error -y -ss ${offset} -i ${await video!.path()} -i ${narration} -t ${total} -map 0:v -map 1:a -vf fps=30 ${ENCODE} -c:a aac -b:a 160k ${out}`
+	const started = Date.now()
+	for (let frame = 0; frame < frames; frame++) {
+		await seekFrame(page, frame / fps)
+		const { data } = await cdp.send('Page.captureScreenshot', { format: 'jpeg', quality: 94, optimizeForSpeed: true })
+		encoder.stdin.write(Buffer.from(data, 'base64'))
+		if (frame % (fps * 5) === 0) console.log(`frame ${frame}/${frames}`)
+	}
+	encoder.stdin.end()
+	await encoder.exited
+	await browser.close()
+	console.log(`rendered ${frames} frames in ${round((Date.now() - started) / 1000)}s`)
+
+	await mux(silent, await mixAudio(htmlFile, film), join(dir, 'video.mp4'))
+}
+
+async function mux(video: string, audio: string, out: string) {
+	await $`ffmpeg -v error -y -i ${video} -i ${audio} -map 0:v -map 1:a -c:v copy -c:a aac -b:a 192k -shortest -movflags +faststart ${out}`
 	console.log(out)
 }
 
@@ -232,6 +271,14 @@ async function live(partFile: string) {
 async function concat(output: string, ...parts: string[]) {
 	if (!output || parts.length === 0) throw new Error('usage: concat <output.mp4> <part.mp4>...')
 
+	// The joined video takes the first part's size and the highest frame rate of any part.
+	const [width, height] = (await $`ffprobe -v error -select_streams v -show_entries stream=width,height -of csv=p=0 ${parts[0]}`.text()).trim().split(',').map(Number)
+	let fps = 30
+	for (const part of parts) {
+		const [num, den] = (await $`ffprobe -v error -select_streams v -show_entries stream=r_frame_rate -of csv=p=0 ${part}`.text()).trim().split('/').map(Number)
+		fps = Math.max(fps, Math.round(num / (den || 1)))
+	}
+
 	const inputs: string[] = []
 	const filters: string[] = []
 	let next = 0
@@ -239,7 +286,7 @@ async function concat(output: string, ...parts: string[]) {
 		inputs.push('-i', part)
 		const video = next++
 		filters.push(
-			`[${video}:v]scale=${SIZE.width}:${SIZE.height}:force_original_aspect_ratio=decrease,pad=${SIZE.width}:${SIZE.height}:-1:-1:color=black,fps=30,format=yuv420p,setsar=1[v${index}]`
+			`[${video}:v]scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:-1:-1:color=black,fps=${fps},format=yuv420p,setsar=1[v${index}]`
 		)
 
 		// A silent clip gets a silent track of its own length so the join stays in sync.
@@ -299,15 +346,15 @@ async function card(output: string, ...rest: string[]) {
 	const title = positionals.join(' ')
 	if (!output || !title) throw new Error('usage: card <out.mp4> <title> [--eyebrow x] [--style part.html] [--seconds 1.5]')
 
-	// Reuse the brand stylesheet of a slides part, written next to it so its asset paths resolve.
-	const styleSource = resolve(values.style ?? join(SKILL_DIR, 'template.html'))
+	// Reuse the brand stylesheet of a composition, written next to it so its asset paths resolve.
+	const styleSource = resolve(values.style ?? join(SKILL_DIR, 'templates/explainer.html'))
 	const stylesheet = (await readFile(styleSource, 'utf8')).match(/<style>[\s\S]*?<\/style>/)?.[0] ?? ''
 	const escape = (text: string) => text.replace(/[&<>"]/g, (char) => `&#${char.charCodeAt(0)};`)
 	const eyebrow = values.eyebrow ? `<div class="eyebrow">${escape(values.eyebrow)}</div>` : ''
 	const html = join(dirname(styleSource), `.card-${basename(output, '.mp4')}.html`)
 	await writeFile(
 		html,
-		`<!doctype html><html><head><meta charset="utf-8">${stylesheet}</head><body class="static"><section class="scene on" style="align-items:center;text-align:center">${eyebrow}<h1>${escape(title)}</h1></section></body></html>`
+		`<!doctype html><html><head><meta charset="utf-8">${stylesheet}<style>.title-card{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:28px;text-align:center;opacity:1;visibility:visible}</style></head><body><section class="title-card">${eyebrow}<h1>${escape(title)}</h1></section></body></html>`
 	)
 
 	const browser = await launchBrowser()
@@ -324,13 +371,35 @@ async function card(output: string, ...rest: string[]) {
 	console.log(output)
 }
 
-/** Writes a 4x3 contact sheet of evenly spaced frames to the temp folder. */
+/**
+ * Measures a finished video: a contact sheet in the temp folder, frozen stretches (frames
+ * that barely change, sampled at 10 fps) and loudness (integrated, range, true peak).
+ */
 async function check(video: string) {
 	const seconds = await duration(video)
-	// Kept out of the repository; it is only for looking at.
 	const sheet = join(tmpdir(), `${basename(video, '.mp4')}.frames.png`)
-	await $`ffmpeg -v error -y -i ${video} -vf fps=${12 / seconds},scale=640:-1,tile=4x3 -frames:v 1 ${sheet}`
-	console.log(sheet)
+	await $`ffmpeg -v error -y -i ${video} -vf fps=${24 / seconds},scale=480:-1,tile=6x4 -frames:v 1 ${sheet}`
+	console.log(`contact sheet: ${sheet}`)
+
+	const stats = await $`ffmpeg -hide_banner -i ${video} -vf fps=10,scale=320:-1,format=gray,tblend=all_mode=difference,signalstats,metadata=print:key=lavfi.signalstats.YAVG -an -f null -`.nothrow().quiet()
+	const diffs = [...stats.stderr.toString().matchAll(/YAVG=([0-9.]+)/g)].map((match) => Number(match[1]))
+	const frozen = frozenStretches(diffs, 0.35, 10)
+	const total = frozen.reduce((sum, [from, to]) => sum + to - from, 0)
+	const longest = frozen.toSorted((a, b) => b[1] - b[0] - (a[1] - a[0]))[0]
+	console.log(
+		`frozen: ${round(total)}s of ${round(seconds)}s` +
+			(longest ? `, longest ${round(longest[1] - longest[0])}s at ${round(longest[0])}s` : '') +
+			' (aim: under 1s per 30s, no hold over 0.6s except the end card)'
+	)
+	const holds = frozen.filter(([from, to]) => to - from > 0.6)
+	if (holds.length > 0) console.log(`holds over 0.6s: ${holds.map(([from, to]) => `${round(from)}-${round(to)}s`).join(', ')}`)
+
+	const hasAudio = (await $`ffprobe -v error -select_streams a -show_entries stream=index -of csv=p=0 ${video}`.text()).trim()
+	if (!hasAudio) return console.log('loudness: no audio track')
+	const loud = (await $`ffmpeg -hide_banner -i ${video} -af ebur128=peak=true -f null -`.nothrow().quiet()).stderr.toString()
+	const summary = loud.slice(loud.lastIndexOf('Summary:'))
+	const pick = (label: string) => summary.match(new RegExp(`${label}:\\s+(-?[0-9.]+)`))?.[1]
+	console.log(`loudness: ${pick('I')} LUFS integrated, range ${pick('LRA')} LU, true peak ${pick('Peak')} dBFS (aim: about -14 music-led, -16 narrated, peak at or below -1)`)
 }
 
 function partDir(partFile: string) {
@@ -343,23 +412,213 @@ async function readTiming(dir: string): Promise<Timing> {
 	return Bun.file(file).json()
 }
 
-/** Fills the narrated scene durations into the HTML; without narration every scene gets 5 s. */
-async function buildHtml(partFile: string, htmlFile?: string) {
-	const source = resolve(htmlFile ?? partFile.replace(/\.json$/, '.html'))
-	const timingFile = join(partDir(partFile), 'timing.json')
-	const timing: Timing = existsSync(timingFile) ? await Bun.file(timingFile).json() : []
-	const scenes: Scene[] = await Bun.file(partFile).json()
-	const durations = scenes.map((scene) => ({
-		id: scene.id,
-		dur: timing.find((entry) => entry.id === scene.id)?.dur ?? 5
-	}))
+type FilmState = {
+	duration: number
+	cues: { t: number; sound: string; gain: number }[]
+	audio: { music?: string; musicGain: number; narrationGain: number; dips: { from: number; to: number; gain: number }[] }
+}
 
-	// Written next to the source so relative image paths keep working.
-	const built = join(dirname(source), `.${basename(source, '.html')}.build.html`)
+/**
+ * Loads a composition with GSAP, the film runtime and any narration timing injected, at the
+ * size its `<meta name="film-size" content="1080x1920">` asks for (1920x1080 by default).
+ */
+async function openComposition(htmlFile: string) {
+	const source = resolve(htmlFile)
 	const html = await readFile(source, 'utf8')
-	if (!html.includes('__TIMING__')) throw new Error(`${source} has no __TIMING__ placeholder`)
-	await writeFile(built, html.replace('__TIMING__', JSON.stringify(durations)))
-	return built
+	const sizeMatch = html.match(/name="film-size"\s+content="(\d+)x(\d+)"/)
+	const size = sizeMatch ? { width: Number(sizeMatch[1]), height: Number(sizeMatch[2]) } : SIZE
+
+	const timingFile = join(source.replace(/\.html$/, ''), 'timing.json')
+	const timing: Timing = existsSync(timingFile) ? await Bun.file(timingFile).json() : []
+	const gsapDir = join(SKILL_DIR, 'node_modules/gsap/dist')
+	const head = [
+		`<script>window.TIMING = ${JSON.stringify(timing.map(({ id, dur }) => ({ id, dur })))}</script>`,
+		...['gsap.min.js', 'SplitText.min.js', 'CustomEase.min.js'].map((file) => `<script src="file://${join(gsapDir, file)}"></script>`),
+		`<script src="file://${join(SKILL_DIR, 'film.js')}"></script>`,
+		`<style>html, body { width: ${size.width}px; height: ${size.height}px; margin: 0; overflow: hidden; }</style>`
+	].join('\n')
+
+	// Written next to the source so relative asset paths keep working.
+	const built = join(dirname(source), `.${basename(source, '.html')}.build.html`)
+	await writeFile(built, html.replace(/<head>/i, `<head>\n${head}`))
+
+	const browser = await launchBrowser()
+	const page = await browser.newPage({ viewport: size })
+	const errors: string[] = []
+	page.on('pageerror', (error: Error) => errors.push(error.message))
+	await page.goto(`file://${built}`)
+	try {
+		await page.waitForFunction(() => (window as unknown as { film?: { ready: boolean } }).film?.ready, undefined, { timeout: 30_000 })
+	} catch {
+		await browser.close()
+		throw new Error(`the composition never became ready${errors.length ? `: ${errors.join('; ')}` : ' (did it call Film.create?)'}`)
+	}
+
+	const film: FilmState = await page.evaluate(() => {
+		const { duration, cues, audio } = (window as unknown as { film: FilmState }).film
+		return { duration, cues, audio }
+	})
+	return { browser, page, film, size }
+}
+
+/** Seeks the film and waits for the frame to be painted. */
+async function seekFrame(page: { evaluate: (fn: (t: number) => Promise<void>, t: number) => Promise<void> }, t: number) {
+	await page.evaluate(async (time) => {
+		await (window as unknown as { film: { seek(t: number): Promise<void> } }).film.seek(time)
+		await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+	}, t)
+}
+
+/**
+ * Mixes narration (from `<part>.json`), music ducked under it, and the sound cues into one
+ * track of the film's length, mastered to about -14 LUFS (-16 when narrated).
+ */
+async function mixAudio(htmlFile: string, film: FilmState) {
+	const source = resolve(htmlFile)
+	const base = dirname(source)
+	const dir = source.replace(/\.html$/, '')
+	const length = round(film.duration)
+	const inputs: string[] = []
+	const filters: string[] = []
+	const mix: string[] = []
+
+	const timingFile = join(dir, 'timing.json')
+	const narrated = existsSync(timingFile)
+	if (narrated) {
+		const timing: Timing = await Bun.file(timingFile).json()
+		inputs.push('-i', await buildNarration(dir, timing, timing.map((scene) => scene.dur)))
+		filters.push(`[0:a]volume=${film.audio.narrationGain}dB,asplit=2[voice][key]`)
+		mix.push('[voice]')
+	}
+
+	if (film.audio.music) {
+		const index = inputs.length / 2
+		inputs.push('-i', resolve(base, film.audio.music))
+		const fadeOut = Math.max(length - 1.5, 0)
+		// Each dip ramps over 60 ms at both ends, so it never clicks.
+		const dips = film.audio.dips
+			.map(({ from, to, gain }) => {
+				const depth = 1 - 10 ** (gain / 20)
+				return `,volume='1-${depth}*clip(min((t-${from})/0.06\,(${to}-t)/0.06)\,0\,1)':eval=frame`
+			})
+			.join('')
+		filters.push(`[${index}:a]aresample=48000,atrim=0:${length},afade=t=in:d=0.02,afade=t=out:st=${fadeOut}:d=1.5,volume=${film.audio.musicGain}dB${dips}[music]`)
+		if (narrated) {
+			// The music dips while someone speaks.
+			filters.push('[music][key]sidechaincompress=threshold=0.02:ratio=6:attack=20:release=400[ducked]')
+			mix.push('[ducked]')
+		} else {
+			mix.push('[music]')
+		}
+	} else if (narrated) {
+		filters.push('[key]anullsink')
+	}
+
+	for (const [i, cue] of film.cues.entries()) {
+		const file = ['mp3', 'wav'].map((ext) => join(base, 'sfx', `${cue.sound}.${ext}`)).find((path) => existsSync(path))
+		if (!file) throw new Error(`sound cue "${cue.sound}" at ${cue.t}s has no file in sfx/ (run: sfx --kit ${join(base, 'sfx')})`)
+		const index = inputs.length / 2
+		inputs.push('-i', file)
+		const delay = Math.round(cue.t * 1000)
+		filters.push(`[${index}:a]aresample=48000,adelay=${delay}|${delay},volume=${cue.gain}dB[cue${i}]`)
+		mix.push(`[cue${i}]`)
+	}
+
+	const out = join(dir, 'mix.wav')
+	if (mix.length === 0) {
+		await $`ffmpeg -v error -y -f lavfi -t ${length} -i anullsrc=r=48000:cl=stereo ${out}`
+		return out
+	}
+
+	filters.push(`${mix.join('')}amix=inputs=${mix.length}:normalize=0:duration=longest,apad=whole_dur=${length},atrim=0:${length}[out]`)
+	const premix = join(dir, 'premix.wav')
+	await $`ffmpeg -v error -y ${inputs} -filter_complex ${filters.join(';')} -map ${'[out]'} -c:a pcm_f32le ${premix}`
+
+	// Two-pass, linear loudness normalisation: one gain for the whole film, so the dips and
+	// builds survive. Single-pass loudnorm compresses dynamically and flattens them. The limiter
+	// sits at -1.9 dBFS because AAC encoding adds inter-sample peaks on top.
+	const target = narrated ? -16 : -14
+	const measure = await $`ffmpeg -hide_banner -i ${premix} -af loudnorm=I=${target}:TP=-1.5:LRA=20:print_format=json -f null -`.nothrow().quiet()
+	const stats = JSON.parse(measure.stderr.toString().match(/\{[\s\S]*?\}/)![0])
+	const normalize = `loudnorm=I=${target}:TP=-1.5:LRA=20:linear=true:measured_I=${stats.input_i}:measured_TP=${stats.input_tp}:measured_LRA=${stats.input_lra}:measured_thresh=${stats.input_thresh}:offset=${stats.target_offset}`
+	await $`ffmpeg -v error -y -i ${premix} -af ${normalize},aresample=48000,alimiter=limit=0.8:level=false -c:a pcm_s16le ${out}`
+	return out
+}
+
+/** Stretches where the frame difference stays under `threshold`, as [start, end] seconds. */
+function frozenStretches(diffs: number[], threshold: number, rate: number) {
+	const stretches: [number, number][] = []
+	let start = -1
+	for (const [i, diff] of [...diffs, Number.POSITIVE_INFINITY].entries()) {
+		if (diff < threshold && start < 0) start = i
+		if (diff >= threshold && start >= 0) {
+			if (i - start >= 2) stretches.push([start / rate, i / rate])
+			start = -1
+		}
+	}
+	return stretches
+}
+
+/**
+ * Generates a music bed with ElevenLabs Music: `music <out.mp3> --seconds 30 --prompt "..."`.
+ * Prints short-term loudness per second, so a slow intro or an early fade shows up.
+ */
+async function music(output: string, ...rest: string[]) {
+	const { values } = parseArgs({ args: rest, options: { seconds: { type: 'string' }, prompt: { type: 'string' } } })
+	if (!output || !values.seconds || !values.prompt) throw new Error('usage: music <out.mp3> --seconds 30 --prompt "..."')
+	const key = await requireKey()
+
+	// Generated tracks often open with near-silence; ask for extra, drop the quiet start, cut to length.
+	const seconds = Number(values.seconds)
+	const body = { prompt: values.prompt, music_length_ms: Math.round((seconds + 4) * 1000) }
+	const raw = join(tmpdir(), `music-${basename(output)}`)
+	await Bun.write(raw, await elevenLabs(`${ELEVENLABS}/music?output_format=mp3_44100_192`, key, body))
+	await $`ffmpeg -v error -y -i ${raw} -af silenceremove=start_periods=1:start_threshold=-45dB,atrim=0:${seconds},afade=t=in:d=0.005 -b:a 192k ${output}`
+
+	const loud = (await $`ffmpeg -hide_banner -i ${output} -af ebur128 -f null -`.nothrow().quiet()).stderr.toString()
+	// Momentary loudness (400 ms window): short-term needs 3 s to fill and hides a quiet start.
+	const perSecond = [...loud.matchAll(/t:\s*([0-9.]+)\s+TARGET.*?M:\s*(-?[0-9.]+|-inf)/g)]
+		.filter((match) => Number(match[1]) % 1 < 0.1)
+		.map((match) => `${Math.round(Number(match[1]))}:${match[2]}`)
+	console.log(`${output} (${round(await duration(output))}s)\nLUFS per second: ${perSecond.join(' ')}`)
+}
+
+/**
+ * Generates sound effects with ElevenLabs and cleans them (high-pass, low-pass, short fades):
+ * `sfx <out.mp3> "<description>" [--seconds 0.6]`, or `sfx --kit <dir>` for a starter set.
+ */
+async function sfx(...rest: string[]) {
+	const { values, positionals } = parseArgs({
+		args: rest,
+		allowPositionals: true,
+		options: { kit: { type: 'string' }, seconds: { type: 'string' } }
+	})
+	const key = await requireKey()
+
+	const jobs: [string, string, number][] = values.kit
+		? Object.entries(SFX_KIT).map(([name, [text, seconds]]) => [join(values.kit!, `${name}.mp3`), text, seconds])
+		: [[positionals[0], positionals.slice(1).join(' '), Number(values.seconds ?? 0.6)]]
+	if (!jobs[0][0] || !jobs[0][1]) throw new Error('usage: sfx <out.mp3> "<description>" [--seconds 0.6] | sfx --kit <dir>')
+
+	for (const [path, text, seconds] of jobs) {
+		await mkdir(dirname(resolve(path)), { recursive: true })
+		const raw = join(tmpdir(), `sfx-${basename(path)}`)
+		// The API's shortest effect is 0.5 s; shorter ones are trimmed afterwards.
+		const body = { text, duration_seconds: Math.max(seconds, 0.5), prompt_influence: 0.6 }
+		await Bun.write(raw, await elevenLabs(`${ELEVENLABS}/sound-generation`, key, body))
+
+		// Rumble and hiss are what make effects sound cheap; trim both and avoid clicks.
+		const length = Math.min(seconds, await duration(raw))
+		const fadeOut = Math.max(length - 0.06, 0)
+		const shaped = `atrim=0:${length},highpass=f=160,lowpass=f=10000,afade=t=in:d=0.005,afade=t=out:st=${fadeOut}:d=0.06`
+
+		// Every effect at the same average level (-18 dBFS), so cue gains mean the same thing
+		// for each; loudness meters gate out sounds this short, so measure the mean instead.
+		const detect = await $`ffmpeg -hide_banner -i ${raw} -af ${shaped},volumedetect -f null -`.nothrow().quiet()
+		const mean = Number(detect.stderr.toString().match(/mean_volume:\s*(-?[0-9.]+)/)?.[1] ?? -18)
+		await $`ffmpeg -v error -y -i ${raw} -af ${shaped},volume=${-18 - mean}dB,alimiter=limit=0.89:level=false ${path}`
+		console.log(path)
+	}
 }
 
 /** Pads each scene's audio to the scene's on-screen length and joins them into one track. */
@@ -378,9 +637,8 @@ async function buildNarration(dir: string, timing: Timing, durations: number[]) 
 }
 
 async function launchBrowser() {
-	if (!existsSync(join(SKILL_DIR, 'node_modules/playwright-core'))) await $`bun install`.cwd(SKILL_DIR).quiet()
-	// Playwright encodes recordings with its own ffmpeg build; the install is a no-op once present.
-	await $`bun ${join(SKILL_DIR, 'node_modules/playwright-core/cli.js')} install ffmpeg`.cwd(SKILL_DIR).quiet()
+	const installed = ['playwright-core', 'gsap'].every((name) => existsSync(join(SKILL_DIR, 'node_modules', name)))
+	if (!installed) await $`bun install`.cwd(SKILL_DIR).quiet()
 	const { chromium } = await import(join(SKILL_DIR, 'node_modules/playwright-core/index.mjs'))
 	// Installed Google Chrome first; a Playwright-managed Chromium otherwise.
 	try {
@@ -402,6 +660,20 @@ async function setKey() {
 	await writeFile(envFile, `${[...others, `ELEVENLABS_API_KEY=${key}`].join('\n')}\n`, { mode: 0o600 })
 	await chmod(envFile, 0o600)
 	console.log(`stored ElevenLabs key in ${envFile}`)
+}
+
+async function requireKey() {
+	const key = await elevenLabsKey()
+	if (key) return key
+	console.error('NO_ELEVENLABS_KEY: ask the user for their ElevenLabs API key, then store it with `bun video.ts set-key` (key on stdin).')
+	process.exit(2)
+}
+
+async function elevenLabs(url: string, key: string, body: unknown) {
+	const response = await fetch(url, { method: 'POST', headers: { 'xi-api-key': key, 'content-type': 'application/json' }, body: JSON.stringify(body) })
+	if (response.status === 401) throw new Error('ElevenLabs rejected the key (401): ask the user for a valid key and store it with `set-key`')
+	if (!response.ok) throw new Error(`ElevenLabs ${response.status}: ${await response.text()}`)
+	return response.arrayBuffer()
 }
 
 async function elevenLabsKey() {

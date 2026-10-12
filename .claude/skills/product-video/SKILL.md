@@ -1,181 +1,95 @@
 ---
 name: product-video
-description: Make narrated product videos in any repository, voiced by ElevenLabs. Covers explainers of a change, feature or release with animated HTML scenes, and product demos recorded as live walkthroughs of the real product in ego-browser, or both. Use when asked for a product video, product demo, explainer, walkthrough, demo video or screen recording with voice-over.
+description: Make professional product videos in any repository, from code-built motion graphics rendered frame by frame at 60 fps, live ego-browser recordings of the real product, ElevenLabs narration, music and sound effects, checked by measurement and an independent critic. Covers SaaS launch films in the style seen on X, feature explainers, product demos and chaptered walkthroughs. Use when asked for a product video, launch video, promo, explainer, demo, walkthrough or screen recording with voice-over.
 ---
 
 # Product video
 
-A video is one or more **parts** joined in order. Each part is a script of scenes, narrated first, then recorded so every scene lasts exactly as long as its narration:
+Every video is one or more **parts** joined in order:
 
-- **Slides**: an HTML page with one animated scene per narrated scene, recorded in headless Chrome. Use it to explain an idea, a flow or a before and after.
-- **Live**: a scripted ego-browser session on the real product, screencast at 1920x1080 while the narration plays. Use it to show the feature working.
+- **Composition**: an HTML page animated with GSAP on one timeline and rendered frame by frame, so every frame is exact. It can be music-led (a launch film) or timed to narration (an explainer), and it can embed real screenshots and recorded clips.
+- **Live**: a scripted ego-browser session on the real product, screencast while the narration plays (`references/walkthrough.md`).
 
 `SKILL` below means the absolute path of the folder holding this file, for example `~/.claude/skills/product-video`. Every command is `bun $SKILL/video.ts <command>`.
 
+Read only the reference the current step needs:
+
+| Step | Read |
+| --- | --- |
+| Brand, logo, colors, fonts, real product imagery, a product from the internet | `references/assets.md` |
+| Storyboard and building a composition | `references/motion.md` |
+| Music, sound effects, narration mix | `references/audio.md` |
+| Checking stills, measuring, the critic loop, delivering | `references/review.md` |
+| Recording the real product, demos, a chaptered written script | `references/walkthrough.md` |
+
+## Choose the mix
+
+Most videos combine graphics and real product footage; the balance depends on what is being made. Decide it in the brief, before the storyboard.
+
+| Video | Spine | Real product | Graphics |
+| --- | --- | --- | --- |
+| Launch film (15-45 s, X, landing page) | One composition | Real UI captures and short live clips (2-4 s each) inside frames, zoomed onto the detail that matters | Hook, kinetic type, transitions, numbers, end card |
+| Feature or release explainer (30-90 s, narrated) | Narrated composition | Before and after captures, a clip of the new flow | Diagrams, cause and effect, labels, end card |
+| Product demo (1-3 min) | Live recording of the real flow | The whole journey, in real time | An opening composition (problem, promise), captions and highlights, an end card |
+| Walkthrough, onboarding, help (chaptered) | Live parts, one per chapter | Every step | Chapter cards, captions, highlights |
+
+Rules for the mix:
+
+- **Footage proves, graphics explain.** Show the product doing the work with real footage; use graphics for what footage cannot show: the idea, the structure, the before and after, the number, the brand. Graphics never fake a product state.
+- **Clip over screenshot when something happens over time** (an agent working, data updating, a flow completing); a screenshot when the point is a still detail the camera zooms into.
+- **Every product shot is framed by graphics** (a window or device frame, a title, a callout) so it belongs to the film, and graphics hand over to footage with a matched move, not a cut to a raw screen recording.
+- **Footage keeps its real speed or close to it** (`data-rate` up to about 2 to fit a beat); never speed up text a viewer must read.
+
+How the pieces combine: record a silent clip as a live part, then play it inside a composition with `<video data-start data-from data-rate>` (`references/motion.md`, "Real product footage"), or join whole live parts and compositions with `concat` (demos and walkthroughs).
+
+## What good looks like
+
+The bar is a professionally edited launch film: the real product, the brand's own look, motion that never stops and never collides, sound that lands on the action, and every claim true. A clean render with no bugs is not enough; basic, empty or slow cuts fail. That is why every film goes through stills, measurement and an independent critic before it is delivered.
+
 ## Where things go
 
-- Build files go in `<repo>/.video-build/<slug>/`. `init` adds that folder to `.git/info/exclude`, so it never shows in `git status` and is never committed. Outside a git repository, the current directory is the root.
-- The finished video goes to `<repo>/<slug>.mp4`. It is also excluded from git; commit it only when asked.
-- Requires `bun` and `ffmpeg`. Slides use the installed Google Chrome, or a Playwright Chromium; `video.ts` installs `playwright-core` into `$SKILL` on first use. Live parts need the `ego-browser` CLI (ego lite) and its skill.
+- Build files go in `<repo>/.video-build/<slug>/`. `init` adds that folder to `.git/info/exclude`, so it never shows in `git status`. Outside a git repository, the current directory is the root.
+- The finished video goes to `<repo>/<slug>.mp4`, also excluded from git; commit it only when asked.
+- Requires `bun` and `ffmpeg`, and Google Chrome or a Playwright Chromium. `video.ts` installs its own `playwright-core` and `gsap` on first use. Live parts need the `ego-browser` CLI and its skill; ego-browser is also the way to read brands and capture product screenshots.
 
-## Voice
+## ElevenLabs key
 
-Narration uses ElevenLabs (`eleven_v4_turbo`, voice Sarah). The key is `ELEVENLABS_API_KEY` from the environment, otherwise from `$SKILL/.env` (mode 600, gitignored).
+Narration, music and sound effects use ElevenLabs. The key is `ELEVENLABS_API_KEY` from the environment, otherwise from `$SKILL/.env` (mode 600, gitignored).
 
-When `narrate` exits with `NO_ELEVENLABS_KEY`, or ElevenLabs rejects the key, stop and ask the user in the chat for their ElevenLabs API key. Mention that macOS `say` is the free alternative. When they paste the key, store it without echoing it:
+When a command exits with `NO_ELEVENLABS_KEY`, or ElevenLabs rejects the key, stop and ask the user in the chat for their ElevenLabs API key. When they paste it, store it without echoing it, then rerun the command:
 
 ```bash
 printf '%s' '<key>' | bun $SKILL/video.ts set-key
 ```
 
-Then run `narrate` again. The key now persists for every project. Never repeat the key in a reply, write it into a repository or print it to a log. If the user would rather not use ElevenLabs, run `narrate <part>.json --say`.
-
-`narrate` reports the pace in words per minute; the default voice speaks at about 190. For a slower target, set `SPEED` between 0.7 and 1.2. That switches to `eleven_multilingual_v2`, because v4 Turbo ignores speed: `SPEED=0.7` gives about 140 words per minute. Narrate again until the reported pace matches the brief.
-
-Optional environment: `VOICE=<ElevenLabs voice id>`, `MODEL=<model id>`, `SPEED=0.7-1.2`, `LANGUAGE=da` (ISO 639-1, for non-English narration), `SAY_VOICE=<say voice>`.
+Never repeat the key in a reply, write it into a repository or print it to a log. Without ElevenLabs, narration can use macOS `say` (`narrate <part>.json --say`), and music can be a licensed track the user supplies.
 
 ## Workflow
 
-1. **Understand what to show.** For a change, read the diff, the PR, the feature docs and the UI it touches. For a product demo, follow **Product demo walkthrough** below. Decide the story in 4-12 scenes, and which parts are slides and which are live.
-2. **Match the brand** (below) before designing any scene.
-3. **Start the build.** `bun $SKILL/video.ts init <slug>` prints the build folder and output path. It creates `slides.json` and `slides.html` to edit. Add another part by adding `<name>.json` (and `<name>.html` for slides).
-4. **Write the script.** A part's JSON is `[{ "id": "intro", "text": "..." }]`. A scene without text is silent and lasts `dur` seconds, for example `{ "id": "settle", "dur": 1 }` for a beat with no voice. Write the text to be heard: plain spoken sentences, two to five per scene, one idea per scene, the product's own terms, no symbols or abbreviations the voice will misread. Write it in the audience's language.
-5. **Narrate.** `bun $SKILL/video.ts narrate <build>/<part>.json` writes `<part>/audio/` and `<part>/timing.json` with each scene's length. Re-run it after any text change.
-6. **Make each part** (below).
-7. **Join.** `bun $SKILL/video.ts concat <repo>/<slug>.mp4 <build>/<part>/video.mp4 ...`. Any clip can be a part, such as a logo intro the project already has. Parts are scaled to 1920x1080, and silent clips get a silent track. For chapters, put a title card before each chapter's part. Make one with `bun $SKILL/video.ts card <build>/card-02.mp4 "Selecting products" --eyebrow "Chapter 2" --style <build>/slides.html [--seconds 1.5]`, which uses the brand styles of a slides part. `concat` turns every card into a chapter in the video file and prints the list in YouTube's description format. YouTube needs a chapter at 0:00, which `concat` names "Intro" when the video does not start with a card, at least three chapters, and chapters of at least 10 seconds.
-8. **Check it.** `bun $SKILL/video.ts check <repo>/<slug>.mp4` writes a 12-frame contact sheet; look at it. Then tell the user the path and length, and say if the narration used `say`.
+1. **Brief.** `bun $SKILL/video.ts init <slug>` creates the build folder with `brief.md`, `film.html` (the launch template) and `assets/` and `sfx/` folders; `init <slug> --narrated` starts from the narrated explainer with `film.json`. Fill in the brief: product, audience, the one message, the CTA, true claims with sources, length, format and sound. Ask the user only for what you cannot find yourself.
+2. **Brand and assets.** Follow `references/assets.md`: the brand's colors, type and logo, the real product imagery, and the facts, each with its source in `assets/SOURCES.md`.
+3. **Storyboard.** Before building, write a table in the brief: time, what the viewer sees, what the beat says, the transition out and what carries across it. Use 12-15 compositions per 30 s and name three signature moments. Follow `references/motion.md`.
+4. **Sound first for a launch film.** Generate the music to the storyboard's length, and the effect kit (`references/audio.md`). For narrated films, write `film.json` (one `{ "id", "text" }` per scene, plain spoken sentences, the product's own words) and run `narrate`, which sets each scene's length.
+5. **Build** the composition from the template: restyle the brand tokens, replace the mock product with the real imagery, and choreograph each beat with the Film helpers. Check `stills` after every meaningful change.
+6. **Render** with `render`, then run `check` on the result.
+7. **Critic loop.** A fresh agent reviews the render against the quality bar; fix the largest gaps and verify with a new critic (`references/review.md`).
+8. **Join and deliver.** `concat` the parts into `<repo>/<slug>.mp4` when there is more than one, run `check` once more, and report the result honestly.
 
-## Match the brand
+## Commands
 
-The video should look and sound like the product it shows, not like this template. Build a short brand profile before the first scene, from these sources in order of authority:
-
-1. **Brand docs.** Search the repository for brand guidelines, a design system or tone-of-voice notes, for example `docs/brand/`, `brand.md`, `DESIGN.md`, `CONTEXT.md` or the nearest `AGENTS.md`. Approved claims, statistics and product names there override anything you would write yourself.
-2. **Design tokens.** Read the CSS custom properties (`:root`, `@theme`), the Tailwind config, theme files, or the token package the apps import. Take the background, surface, text, muted text, accent and status colors, the border radius and the font families with their weights.
-3. **Assets.** Find the logo (SVG first) and any existing motion such as a logo intro clip, in places like `public/`, `assets/`, `brand/`, the favicon or the marketing site. Copy them into the build folder. Use the brand intro as the first part of `concat` when one exists.
-4. **The running product.** When the app runs, read its real styles in ego-browser. This is the most reliable source when tokens are hard to trace:
-
-   ```js
-   console.log(await page.evaluate(() => {
-     const css = (selector, ...props) => {
-       const el = document.querySelector(selector)
-       if (!el) return null
-       const style = getComputedStyle(el)
-       return Object.fromEntries(props.map((prop) => [prop, style.getPropertyValue(prop)]))
-     }
-     return {
-       body: css('body', 'background-color', 'color', 'font-family'),
-       heading: css('h1, h2', 'color', 'font-family', 'font-weight', 'letter-spacing'),
-       primaryButton: css('button[type=submit], .btn-primary, [data-variant=primary], button', 'background-color', 'color', 'border-radius'),
-       link: css('a', 'color'),
-       card: css('[class*=card]', 'background-color', 'border-color', 'border-radius', 'box-shadow'),
-     }
-   }))
-   ```
-
-   Take a screenshot of a typical screen as the visual reference too.
-5. **Voice.** Read the marketing site or README for how the product talks: formal or casual, its words for its users and features, and the language. The narration and on-screen text use the same register and terms.
-
-Then set the template's `:root` variables, `--font` and the accent colors from the profile. Match the product's light or dark look rather than keeping the template's dark default, and use its radius and shadows on cards. Put the logo in the intro and outro scenes. Before recording, compare `preview.png` with the product screenshot: the two should look like the same company. If the repository has no brand to find, ask the user for colors and a logo, or say that the video uses the neutral template.
-
-## Slides part
-
-Edit `<part>.html`, which starts from `template.html`:
-
-- One `<section class="scene" data-id="...">` per scene, in the same order as the JSON. Recording fails on a mismatch.
-- `data-f="0.4"` reveals an element 40 % into the scene's narration, so visuals land when the voice mentions them. Use `.r` to rise in, `.pop` to pop in, and `.glow` to pulse.
-- Apply the brand profile from **Match the brand** to the `:root` variables, the logo and the copy before writing scenes. Prefer the real product over invented UI, for example screenshots taken with ego-browser and placed in the build folder as `<img class="shot" src="shots/x.png">`. A mock card or chat bubble is fine for an idea the product cannot show.
-- Keep text large and short. The narration carries the detail, and the screen carries the structure.
-
-`bun $SKILL/video.ts preview <build>/<part>.json` screenshots every scene in its finished state into `<part>/preview.png`. Look at it and fix overflow and layout before recording, because recording runs in real time. Then run `bun $SKILL/video.ts slides <build>/<part>.json` to write `<part>/video.mp4`.
-
-## Live part
-
-A live part is a walkthrough script that drives the real product through each narrated scene. Save it as `<build>/<part>.walk.mjs` so every take reruns the same steps. Run it with `ego-browser nodejs < <build>/<part>.walk.mjs`, then run `bun $SKILL/video.ts live <build>/<part>.json` to write `<part>/video.mp4`.
-
-```js
-const { record } = await import("/abs/path/to/product-video/live.mjs")   // $SKILL/live.mjs
-const task = await taskSpace("product video: <slug>")      // reuse one space across takes: taskSpace(<id>)
-const page = task.page("p1")
-await page.goto("http://localhost:5173/cases")              // sign in and reach the start state before recording
-await page.waitForSelector("[data-testid=case-list]")
-
-const rec = await record(page, "/abs/repo/.video-build/<slug>/demo")   // the part folder; { rehearse: true } for a dry run
-try {
-  await rec.scene("open-case", async (at) => {
-    await rec.caption("Open any conversation")
-    await at(0.25)                                          // wait until 25 % of this scene's narration
-    await rec.click("text=Refund for order 1042")
-    await page.waitForSelector("[data-testid=case-detail]")
-    await at(0.6)
-    await rec.highlight("[data-testid=case-summary]")
-  })
-  await rec.scene("save-test", async (at) => {
-    await rec.click("text=Save as test")
-    await rec.type("input[name=title]", "Refund without receipt")
-    await rec.click("text=Save")
-  })
-} finally {
-  console.log(await rec.stop())
-}
-```
-
-| Helper | Shows the viewer |
+| Command | Does |
 | --- | --- |
-| `rec.scene(id, async (at) => {})` | One narrated scene, held until its narration ends. `at(0.4)` waits until 40 % of it. |
-| `rec.click(selector)` | The pointer gliding to the element, then the click. |
-| `rec.type(selector, text)` | A click into the field and typing at reading pace. |
-| `rec.highlight(selector, { ms })` | A ring around the element with the page dimmed around it. |
-| `rec.caption(text)` | A caption at the bottom until the next one; `rec.caption()` clears it. It survives navigation. |
-| `rec.scrollTo(selector)` | A smooth scroll that centers the element. |
-| `rec.pointAt(selector)` | The pointer moving there, hovering, without clicking. |
-| `rec.cut(async () => {})` | Nothing: the time inside is cut from the video, and the scene's narration clock pauses. Use it for a long job, an upload or an assistant thinking. |
-
-Selectors are CSS (`[data-testid=x]`, `#id`, `[aria-label="Send"]`) or `text=Exact visible text`, which takes the first visible match in page order, so scope it with CSS when the text repeats, as in a menu or table of contents. `text=` is how a script that says "use the app's own labels" maps onto clicks.
-
-The helpers search the page first and then its embedded iframes, for example an app inside the Shopify admin or another host. They scroll the element on screen, and the pointer, ring and click land on it. Only the helpers move the drawn pointer, so do every visible action through them. Call `page` methods directly for anything else:
-
-- waits and navigation (`page.waitForSelector`, `page.goto`);
-- a file picker: `const chooser = page.waitForFileChooser(); await rec.click("text=Add file"); await (await chooser).setFiles("/abs/price-list.xlsx")`, or `page.setInputFiles(selector, path)` for a drop zone (see the ego-browser skill for exact signatures);
-- pasting copied cells: `rec.click` the first cell, then `page.keyboard.paste(text)`;
-- keys: `page.keyboard.press("Enter")`.
-
-Time between `rec.scene` calls is never in the video, so a slow setup step or a job finishing between two scenes can happen there. Inside a scene, wrap a wait in `rec.cut`. The video then cuts straight from the progress bar to the result, while the narration continues across the cut.
-
-- Call `rec.scene` once per narrated scene, in script order. If a scene's actions take longer than its narration, the scene and its audio stretch to fit.
-- The recording sets the page to 1920x1080 and draws the pointer, ring and caption. Setup done before `record`, such as signing in, is not in the video.
-- Use local development data or seeded demo accounts. Never record production customer data, secrets or another person's account unless the user explicitly asks for it.
-- Chrome sends a frame only when the page changes, at about 13 frames per second during motion. That suits UI walkthroughs; fast animation looks choppy, so show it in a slides part.
-- If a take fails, fix the walkthrough and run it again from the start. `record` clears the previous frames.
-- Only a browser tab is recorded. To show a desktop app such as Excel, take a screenshot of it and show it in a slides part, or leave it out and say so.
-- Shell environment variables do not reach the walkthrough script, which runs inside the ego-browser service. Switch between rehearsal and a take by editing the `record` options, not with an environment variable.
-
-## Product demo walkthrough
-
-Use this when the user wants a demo of the product, or of a feature, rather than an explanation of a change.
-
-1. **Find the story.** Read the product's docs, README and feature pages to learn who it is for and what they gain. Pick one to three journeys that show that value end to end, such as a support agent answering a customer or a manager reading a report. A demo shows outcomes, not every setting.
-2. **Explore before writing.** Start the app (the repository's dev instructions say how) and sign in with a seeded or demo account. Walk each journey in ego-browser, taking a snapshot at each step. Note the selectors that work, the realistic data to show and the screen each step ends on. Fix or seed missing demo data first, because an empty table makes a poor demo.
-3. **Plan the scenes.** Use one scene per step a viewer should notice: what they see, what you do, what it means for them. Open with a short slides part that names the problem and the product. Close with a short slides part that repeats the outcome and gives a call to action.
-4. **Write the narration from the screen.** Describe what is happening and why it helps, in benefit terms, using the product's own names for things. Keep each scene to two to four sentences so the screen keeps moving.
-5. **Narrate, then rehearse.** Run `narrate`, then run the walkthrough once with `{ rehearse: true }`. That checks every selector and step without recording or waiting. Fix anything that fails.
-6. **Record and check.** Reset any data the rehearsal changed, record the take, then run `live`, `concat` and `check`. Look at the contact sheet. Retake a scene with a stray dialog, a loading spinner or a wrong screen.
-
-Walkthroughs often change data, for example by sending a message or saving a record. Make the script work on a fresh start state, or reset the demo data before each take. Never run a walkthrough that changes data against production.
-
-## From a written script
-
-When the user supplies a script, follow it; do not rewrite the story. A typical brief has chapters of **On screen** and **Voice-over** rows, a setup list and recording notes:
-
-- **Parts:** each chapter is one live part, `chNN-<name>.json` with `chNN-<name>.walk.mjs`, recorded as its own take, so a retake never shifts the rest. An opening or closing that only shows a logo or end card is a slides part.
-- **Scenes:** each row is one scene. Its voice-over becomes `text`, verbatim apart from fixes the user approves, and its on-screen column becomes the steps inside `rec.scene`. A row with no voice-over is a silent scene with a `dur`. Place the steps with `at()` so each lands when the voice mentions it. Pause about a second on anything the viewer should read, such as a before and after value.
-- **Chapter cards:** make one with `card` for each chapter, then join with `concat` in order: card, part, card, part, and so on. Give the user the printed YouTube chapter list.
-- **Timings:** times in the brief are a plan. The narration decides the real length, and `narrate` reports the pace to tune with `SPEED`.
-- **Setup list:** before recording, check every item in the app, such as demo records, settings, files and an existing conflicting item a warning depends on. Report anything missing and fix it if the user agrees. Never fake it on screen.
-- **Labels to confirm:** confirm each one while exploring. When the real label or flow differs from the script, use the real one in both the walkthrough and the voice-over, and list every such change for the user.
-- **Recording notes:** cut long waits with `rec.cut`. Retake any take that shows an internal code, a stack trace, a development-only route or real customer data. When the user asks for a shorter cut, drop the chapters the brief names for that first.
-- **Sign-in:** a product inside another platform, such as a Shopify admin, needs the user's signed-in session in ego-browser. If the walkthrough reaches a sign-in page, stop and ask the user to sign in in ego-browser; never type their password.
-- **Unpredictable steps:** for an assistant that writes its own reply, or a step whose result varies, rehearse, wrap the wait in `rec.cut`, and check the take's contact sheet before moving on.
+| `init <slug> [--narrated]` | Creates the build folder, git-excluded, from a template. |
+| `narrate <part>.json [--say]` | Voices each scene into `<part>/timing.json`; reports words per minute. `SPEED=0.7-1.2` slows or speeds it up. Also `VOICE`, `MODEL`, `LANGUAGE`. |
+| `music <out.mp3> --seconds N --prompt "..."` | A music bed from ElevenLabs Music, trimmed to start on the beat; prints loudness per second. |
+| `sfx --kit <dir>` / `sfx <out.mp3> "<description>" [--seconds 0.6]` | Clean sound effects from ElevenLabs. |
+| `stills <part>.html [--every 0.5 \| --at 1,2.5]` | Frames at chosen times and a contact sheet, in seconds. |
+| `render <part>.html [--fps 60] [--audio-only]` | The composition rendered frame by frame, mixed with its narration, music and cues, to `<part>/video.mp4`. `--audio-only` remixes the sound onto the last frames. |
+| `live <part>.json` | A recorded live walkthrough assembled to `<part>/video.mp4`. |
+| `card <out.mp4> <title> [--eyebrow x] [--style <part>.html]` | A chapter title card in the brand's style. |
+| `concat <out.mp4> <part.mp4>...` | Joins parts, embeds chapters from cards and prints YouTube chapters. |
+| `check <video.mp4>` | Contact sheet, frozen time and loudness. |
 
 ## Reuse
 
-Each part folder keeps its audio, so after a script change only that part needs `narrate` and recording again, followed by `concat`. Delete `<repo>/.video-build/<slug>` when the video is final, unless the user wants to iterate later.
+Each part folder keeps its audio and frames, so a change needs only that part re-rendered, then `concat`. Delete `<repo>/.video-build/<slug>` when the video is final, unless the user wants to iterate later.
