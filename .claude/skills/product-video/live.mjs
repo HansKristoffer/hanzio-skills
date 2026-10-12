@@ -81,12 +81,14 @@ function locate(selector, smooth) {
  * `rehearse: true` runs the same walkthrough without recording or waiting for the
  * narration, to check selectors and flow quickly before a take.
  */
-export async function record(page, partDir, { cursor = true, rehearse = false } = {}) {
+export async function record(page, partDir, { cursor = true, rehearse = false, scale = 2 } = {}) {
 	const timingFile = join(partDir, 'timing.json')
 	const timing = existsSync(timingFile) ? JSON.parse(await readFile(timingFile, 'utf8')) : []
 	if (!rehearse && timing.length === 0) throw new Error(`${timingFile} is missing: run narrate first`)
 
-	await page.cdp('Emulation.setDeviceMetricsOverride', { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false })
+	// Recorded at 2x density by default: a clip cropped and enlarged inside a composition
+	// stays sharp. The page still lays out at 1920x1080 CSS pixels.
+	await page.cdp('Emulation.setDeviceMetricsOverride', { width: 1920, height: 1080, deviceScaleFactor: scale, mobile: false })
 	if (cursor) {
 		await page.cdp('Page.addScriptToEvaluateOnNewDocument', { source: OVERLAY_SCRIPT })
 		await page.evaluate(OVERLAY_SCRIPT)
@@ -108,7 +110,7 @@ export async function record(page, partDir, { cursor = true, rehearse = false } 
 	}
 	await page.events() // drop events buffered before the recording
 	if (!rehearse) {
-		await page.cdp('Page.startScreencast', { format: 'jpeg', quality: 85, maxWidth: 1920, maxHeight: 1080 })
+		await page.cdp('Page.startScreencast', { format: 'jpeg', quality: 95, maxWidth: 1920 * scale, maxHeight: 1080 * scale })
 	}
 
 	// One reader for every CDP event: screencast frames (Chrome sends one whenever the page
@@ -312,7 +314,7 @@ export async function record(page, partDir, { cursor = true, rehearse = false } 
 		if (rehearse) return { rehearsed: scenes.map((entry) => entry.id) }
 
 		await Promise.all(writes)
-		await writeFile(join(partDir, 'recording.json'), JSON.stringify({ frames, scenes, cuts, marks }))
+		await writeFile(join(partDir, 'recording.json'), JSON.stringify({ frames, scenes, cuts, marks, scale }))
 		return { frames: frames.length, scenes: scenes.length, cuts: cuts.length }
 	}
 

@@ -33,6 +33,7 @@ type Recording = {
 	scenes: { id: string; start: number; end: number }[]
 	cuts?: { start: number; end: number }[]
 	marks?: { name: string; t: number; box?: { x: number; y: number; width: number; height: number } }[]
+	scale?: number
 }
 
 const [command, ...args] = process.argv.slice(2)
@@ -232,7 +233,7 @@ async function mux(video: string, audio: string, out: string) {
 async function live(partFile: string) {
 	const dir = partDir(partFile)
 	const timing = await readTiming(dir)
-	const { frames, scenes, cuts = [], marks = [] }: Recording = await Bun.file(join(dir, 'recording.json')).json()
+	const { frames, scenes, cuts = [], marks = [], scale = 1 }: Recording = await Bun.file(join(dir, 'recording.json')).json()
 
 	const recordedIds = scenes.map((scene) => scene.id)
 	const timingIds = timing.map((scene) => scene.id)
@@ -264,7 +265,11 @@ async function live(partFile: string) {
 	const narration = await buildNarration(dir, timing, durations)
 	const out = join(dir, 'video.mp4')
 	const total = durations.reduce((sum, seconds) => sum + seconds, 0)
-	await $`ffmpeg -v error -y -f concat -safe 0 -i ${list} -i ${narration} -t ${total} -map 0:v -map 1:a -vf scale=${SIZE.width}:${SIZE.height}:force_original_aspect_ratio=decrease,pad=${SIZE.width}:${SIZE.height}:-1:-1:color=black,fps=30 ${ENCODE} -c:a aac -b:a 160k ${out}`
+	// The video keeps the recorded density (3840x2160 at scale 2), so crops stay sharp;
+	// `concat` scales parts to the film size.
+	const width = SIZE.width * scale
+	const height = SIZE.height * scale
+	await $`ffmpeg -v error -y -f concat -safe 0 -i ${list} -i ${narration} -t ${total} -map 0:v -map 1:a -vf scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:-1:-1:color=black,fps=30 -c:v libx264 -preset medium -crf 14 -pix_fmt yuv420p -c:a aac -b:a 160k ${out}`
 	console.log(out)
 
 	// Marks in video time, with a crop for each marked element (even sizes, as x264 needs).
@@ -275,7 +280,7 @@ async function live(partFile: string) {
 	const placed = marks.map(({ name, t, box }) => ({
 		name,
 		t: round(videoTime(t)),
-		crop: box && `crop=${even(box.width)}:${even(box.height)}:${even(box.x)}:${even(box.y)}`
+		crop: box && `crop=${even(box.width * scale)}:${even(box.height * scale)}:${even(box.x * scale)}:${even(box.y * scale)}`
 	}))
 	await writeFile(join(dir, 'marks.json'), JSON.stringify(placed, null, 2))
 	for (const { name, t, crop } of placed) console.log(`mark ${t.toFixed(2)}s  ${name}${crop ? `  ${crop}` : ''}`)
