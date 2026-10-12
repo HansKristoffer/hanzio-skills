@@ -1,0 +1,8 @@
+{
+	"name": "product-video-skill",
+	"private": true,
+	"type": "module",
+	"dependencies": {
+		"playwright-core": "^1.61.1"
+	}
+}
