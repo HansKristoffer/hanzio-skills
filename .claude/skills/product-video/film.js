@@ -52,13 +52,15 @@
 						animation.pause()
 						animation.currentTime = t * 1000
 					}
-					// <video data-start="3.2" data-from="1.5" data-rate="2">: starts at 3.2 s on the
-					// film clock, playing the clip from 1.5 s in at double speed.
+					// <video data-start="3.2" data-from="1.5" data-rate="2" data-until="9">: starts at
+					// 3.2 s on the film clock, playing the clip from 1.5 s in at double speed, and
+					// holds its 9 s frame from then on (a beat that ends on its payoff).
 					const videos = [...document.querySelectorAll('video[data-start]')]
 					await Promise.all(
 						videos.map((video) => {
-							const { start, from = 0, rate = 1 } = video.dataset
-							return seekVideo(video, (t - Number(start)) * Number(rate) + Number(from))
+							const { start, from = 0, rate = 1, until = Infinity } = video.dataset
+							const clipTime = (t - Number(start)) * Number(rate) + Number(from)
+							return seekVideo(video, Math.min(clipTime, Number(until)))
 						})
 					)
 				}

@@ -46,6 +46,7 @@ const commands: Record<string, (...args: string[]) => Promise<void>> = {
 	stills,
 	render,
 	live,
+	crop,
 	card,
 	concat,
 	check
@@ -284,6 +285,41 @@ async function live(partFile: string) {
 	}))
 	await writeFile(join(dir, 'marks.json'), JSON.stringify(placed, null, 2))
 	for (const { name, t, crop } of placed) console.log(`mark ${t.toFixed(2)}s  ${name}${crop ? `  ${crop}` : ''}`)
+}
+
+/**
+ * Crops a recorded part to a mark's element (`live` prints them) or an explicit `W:H:X:Y`,
+ * with `--pad` video pixels around it, and writes a preview frame to check the edges.
+ * `crop <part>.json <mark|W:H:X:Y> <out.mp4> [--pad 0] [--at <seconds>]`
+ */
+async function crop(partFile: string, region: string, output: string, ...rest: string[]) {
+	if (!partFile || !region || !output) throw new Error('usage: crop <part>.json <mark|W:H:X:Y> <out.mp4> [--pad 0] [--at 1]')
+	const { values } = parseArgs({ args: rest, options: { pad: { type: 'string' }, at: { type: 'string' } } })
+	const dir = partDir(partFile)
+	const source = join(dir, 'video.mp4')
+
+	let box = region.split(':').map(Number)
+	if (box.length !== 4 || box.some(Number.isNaN)) {
+		const marks: { name: string; t: number; crop?: string }[] = await Bun.file(join(dir, 'marks.json')).json()
+		const mark = marks.find((entry) => entry.name === region)
+		if (!mark?.crop) throw new Error(`no mark "${region}" with an element in ${dir}/marks.json`)
+		box = mark.crop.slice('crop='.length).split(':').map(Number)
+	}
+
+	// Pad, keep inside the frame, and keep every number even for x264.
+	const [frameWidth, frameHeight] = (await $`ffprobe -v error -select_streams v -show_entries stream=width,height -of csv=p=0 ${source}`.text()).trim().split(',').map(Number)
+	const pad = Number(values.pad ?? 0)
+	const even = (value: number) => Math.round(value / 2) * 2
+	const x = even(Math.max(0, box[2] - pad))
+	const y = even(Math.max(0, box[3] - pad))
+	const width = even(Math.min(frameWidth - x, box[0] + pad * 2))
+	const height = even(Math.min(frameHeight - y, box[1] + pad * 2))
+	const filter = `crop=${width}:${height}:${x}:${y}`
+
+	await $`ffmpeg -v error -y -i ${source} -vf ${filter} -an -c:v libx264 -preset medium -crf 14 -pix_fmt yuv420p ${output}`
+	const preview = output.replace(/\.mp4$/, '') + '.preview.png'
+	await $`ffmpeg -v error -y -ss ${values.at ?? '1'} -i ${output} -frames:v 1 ${preview}`
+	console.log(`${output}  ${filter}\npreview: ${preview}`)
 }
 
 /** Joins parts (recorded videos or any clip, such as a logo intro) into one video. */

@@ -86,6 +86,7 @@ Never repeat the key in a reply, write it into a repository or print it to a log
 | `stills <part>.html [--every 0.5 \| --at 1,2.5]` | Frames at chosen times and a contact sheet, in seconds. |
 | `render <part>.html [--fps 60] [--audio-only]` | The composition rendered frame by frame, mixed with its narration, music and cues, to `<part>/video.mp4`. `--audio-only` remixes the sound onto the last frames. |
 | `live <part>.json` | A recorded live walkthrough assembled to `<part>/video.mp4`. |
+| `crop <part>.json <mark\|W:H:X:Y> <out.mp4> [--pad 8] [--at 1]` | A recorded part cropped to a mark's element or a box, with a preview frame to check the edges. |
 | `card <out.mp4> <title> [--eyebrow x] [--style <part>.html]` | A chapter title card in the brand's style. |
 | `concat <out.mp4> <part.mp4>...` | Joins parts, embeds chapters from cards and prints YouTube chapters. |
 | `check <video.mp4>` | Contact sheet, frozen time and loudness. |

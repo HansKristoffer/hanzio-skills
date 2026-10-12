@@ -54,15 +54,22 @@ const OVERLAY_SCRIPT = `(() => {
 function locate(selector, smooth) {
 	const visible = (el) => {
 		const rect = el.getBoundingClientRect()
-		return rect.width > 0 && rect.height > 0 && getComputedStyle(el).visibility !== 'hidden'
+		// Left of the page is off-canvas (a closed drawer, a copy for small screens): no scroll
+		// reaches it, and the pointer aims at the centre. Content to the right may sit in a
+		// carousel that scrollIntoView brings in.
+		const onCanvas = rect.left + rect.width / 2 > 0
+		return rect.width > 0 && rect.height > 0 && onCanvas && getComputedStyle(el).visibility !== 'hidden'
 	}
 
 	let el
-	if (selector.startsWith('text=')) {
-		const wanted = selector.slice(5).trim().toLowerCase()
-		const matches = [...document.querySelectorAll('body *')].filter(
-			(node) => visible(node) && node.textContent?.trim().toLowerCase() === wanted
-		)
+	if (selector.startsWith('text=') || selector.startsWith('text*=')) {
+		// `text=` matches the whole text, `text*=` any part of it; the innermost match wins.
+		const partial = selector.startsWith('text*=')
+		const wanted = selector.slice(partial ? 6 : 5).trim().toLowerCase()
+		const matches = [...document.querySelectorAll('body *')].filter((node) => {
+			const text = node.textContent?.trim().toLowerCase() ?? ''
+			return visible(node) && (partial ? text.includes(wanted) : text === wanted)
+		})
 		el = matches.find((node) => !matches.some((other) => other !== node && node.contains(other)))
 	} else {
 		el = [...document.querySelectorAll(selector)].find(visible)
@@ -71,9 +78,12 @@ function locate(selector, smooth) {
 
 	el.scrollIntoView(smooth ? { behavior: 'smooth', block: 'center' } : { block: 'nearest', inline: 'nearest' })
 	const rect = el.getBoundingClientRect()
-	// A loading overlay or a dialog can sit over an element the DOM reports as visible.
+	// A loading screen or a dialog, a fixed layer, can sit over an element the DOM reports as
+	// visible. A sibling on top inside the same row (a stretched link, say) does not count.
 	const top = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)
-	const covered = Boolean(top) && !el.contains(top) && !top.contains(el)
+	let layer = top
+	while (layer && getComputedStyle(layer).position !== 'fixed') layer = layer.parentElement
+	const covered = Boolean(layer) && !layer.contains(el)
 	return { x: rect.x, y: rect.y, width: rect.width, height: rect.height, covered }
 }
 
@@ -175,10 +185,14 @@ export async function record(page, partDir, { cursor = true, rehearse = false, s
 	async function box(selector, smooth = false) {
 		const expression = `(${locate})(${JSON.stringify(selector)}, ${smooth})`
 		let inPage = await page.evaluate(expression)
-		// Wait out an overlay, so a click lands and a mark measures what the viewer sees.
-		for (let tries = 0; inPage?.covered && tries < 50; tries++) {
+		// Wait out an overlay and any entrance animation, so a click lands and a mark measures
+		// what the viewer sees: the element must be uncovered and hold still for 100 ms.
+		for (let tries = 0; inPage && tries < 50; tries++) {
 			await sleep(100)
-			inPage = await page.evaluate(expression)
+			const again = await page.evaluate(expression)
+			const settled = again && Math.abs(again.x - inPage.x) < 1 && Math.abs(again.y - inPage.y) < 1
+			inPage = again
+			if (settled && !again.covered) break
 		}
 		if (inPage?.covered) console.warn(`${selector} is still covered by another element`)
 		if (inPage) return inPage
