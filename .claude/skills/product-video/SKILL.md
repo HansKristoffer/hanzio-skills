@@ -20,7 +20,15 @@ A video is one or more **parts** joined in order. Each part is a script of scene
 
 ## Voice
 
-Narration uses ElevenLabs (`eleven_v4_turbo`, voice Sarah). The key is `ELEVENLABS_API_KEY` from the environment, otherwise from `$SKILL/.env` (one line, `ELEVENLABS_API_KEY=...`, mode 600, gitignored). Never print the key, copy it into a repository or show it in a reply. Without a key, narration falls back to macOS `say`, and the command says so.
+Narration uses ElevenLabs (`eleven_v4_turbo`, voice Sarah). The key is `ELEVENLABS_API_KEY` from the environment, otherwise from `$SKILL/.env` (mode 600, gitignored).
+
+When `narrate` exits with `NO_ELEVENLABS_KEY`, or ElevenLabs rejects the key, stop and ask the user in the chat for their ElevenLabs API key. Mention that macOS `say` is the free alternative. When they paste the key, store it without echoing it:
+
+```bash
+printf '%s' '<key>' | bun $SKILL/video.ts set-key
+```
+
+Then run `narrate` again. The key now persists for every project. Never repeat the key in a reply, write it into a repository or print it to a log. If the user would rather not use ElevenLabs, run `narrate <part>.json --say`.
 
 Optional environment: `VOICE=<ElevenLabs voice id>`, `MODEL=<model id>`, `LANGUAGE=da` (ISO 639-1, for non-English narration), `SAY_VOICE=<say voice>`.
 
@@ -33,7 +41,7 @@ Optional environment: `VOICE=<ElevenLabs voice id>`, `MODEL=<model id>`, `LANGUA
 5. **Narrate.** `bun $SKILL/video.ts narrate <build>/<part>.json` writes `<part>/audio/` and `<part>/timing.json` with each scene's length. Re-run it after any text change.
 6. **Make each part** (below).
 7. **Join.** `bun $SKILL/video.ts concat <repo>/<slug>.mp4 <build>/<part>/video.mp4 ...`. Any clip can be a part, such as a logo intro the project already has. Parts are scaled to 1920x1080, and silent clips get a silent track.
-8. **Check it.** `bun $SKILL/video.ts check <repo>/<slug>.mp4` writes a 12-frame contact sheet; look at it. Then tell the user the path and length, and say if the narration fell back to `say`.
+8. **Check it.** `bun $SKILL/video.ts check <repo>/<slug>.mp4` writes a 12-frame contact sheet; look at it. Then tell the user the path and length, and say if the narration used `say`.
 
 ## Match the brand
 

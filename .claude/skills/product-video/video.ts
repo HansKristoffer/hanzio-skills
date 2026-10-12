@@ -3,7 +3,7 @@
 // live ego-browser run in time with it, and join the parts. Usage is in SKILL.md.
 import { $ } from 'bun'
 import { existsSync } from 'node:fs'
-import { appendFile, copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { appendFile, chmod, copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 
@@ -23,6 +23,7 @@ const [command, ...args] = process.argv.slice(2)
 const commands: Record<string, (...args: string[]) => Promise<void>> = {
 	init,
 	narrate,
+	'set-key': setKey,
 	preview,
 	slides,
 	live,
@@ -70,16 +71,26 @@ async function init(slug: string) {
 	console.log(JSON.stringify({ root, build, output: join(root, `${slug}.mp4`) }, null, 1))
 }
 
-/** Voices every scene of `<part>.json` into `<part>/audio/` and writes `<part>/timing.json`. */
-async function narrate(partFile: string) {
+/**
+ * Voices every scene of `<part>.json` into `<part>/audio/` and writes `<part>/timing.json`.
+ * Without an ElevenLabs key it stops so the agent can ask for one; `--say` uses macOS `say`.
+ */
+async function narrate(partFile: string, flag?: string) {
+	const useSay = flag === '--say'
+	const key = useSay ? undefined : await elevenLabsKey()
+	if (!key && !useSay) {
+		console.error(
+			'NO_ELEVENLABS_KEY: ask the user for their ElevenLabs API key, then store it with ' +
+				'`bun video.ts set-key` (key on stdin). Or rerun with --say to narrate with macOS `say`.'
+		)
+		process.exit(2)
+	}
+
 	const scenes: Scene[] = await Bun.file(partFile).json()
 	const dir = partDir(partFile)
 	const audioDir = join(dir, 'audio')
 	await rm(audioDir, { recursive: true, force: true })
 	await mkdir(audioDir, { recursive: true })
-
-	const key = await elevenLabsKey()
-	if (!key) console.warn('No ElevenLabs key: narrating with macOS `say` instead.')
 
 	const timing: Timing = []
 	for (const [index, scene] of scenes.entries()) {
@@ -290,6 +301,20 @@ async function launchBrowser() {
 	}
 }
 
+/** Stores the key from stdin in `$SKILL/.env` (mode 600) without printing it. */
+async function setKey() {
+	const key = (await Bun.stdin.text()).trim()
+	if (!key) throw new Error('usage: printf %s "<key>" | bun video.ts set-key')
+
+	const envFile = join(SKILL_DIR, '.env')
+	const others = existsSync(envFile)
+		? (await readFile(envFile, 'utf8')).split('\n').filter((line) => line && !line.startsWith('ELEVENLABS_API_KEY='))
+		: []
+	await writeFile(envFile, `${[...others, `ELEVENLABS_API_KEY=${key}`].join('\n')}\n`, { mode: 0o600 })
+	await chmod(envFile, 0o600)
+	console.log(`stored ElevenLabs key in ${envFile}`)
+}
+
 async function elevenLabsKey() {
 	if (process.env.ELEVENLABS_API_KEY) return process.env.ELEVENLABS_API_KEY
 
@@ -314,6 +339,9 @@ async function speakElevenLabs(text: string, path: string, key: string) {
 		headers: { 'xi-api-key': key, 'content-type': 'application/json' },
 		body: JSON.stringify(body)
 	})
+	if (response.status === 401) {
+		throw new Error('ElevenLabs rejected the key (401): ask the user for a valid key and store it with `set-key`')
+	}
 	if (!response.ok) throw new Error(`ElevenLabs ${response.status}: ${await response.text()}`)
 
 	await Bun.write(path, await response.arrayBuffer())
