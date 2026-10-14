@@ -21,8 +21,8 @@ Replace every `<...>` placeholder. Drop a section that has nothing in it rather 
 ## Price
 
 - **<total> DKK in total** excl. VAT. The price per phase is in each phase heading below.
+- **Payment:** 50% when we start and 50% when the app is live.
 - The price assumes <access to X by date>, <final design before the build starts>, <data shown as the APIs provide it>.
-- Operations after launch: <monthly price and what it covers>, agreed separately.
 
 ## Phase 1: <What the user gets> (<price> DKK)
 
@@ -39,6 +39,24 @@ Replace every `<...>` placeholder. Drop a section that has nothing in it rather 
 ## Later or optional
 
 - [ ] <Feature> (<price> DKK if priced)
+
+## How we work together
+
+- **You are in the loop all the way.** You see the app as it grows, try it on your own phone along the way, and tell us what to change.
+- **Plans change once building starts, and that is fine.** Adjustments along the way are usually included. A large new feature gets a price before we start on it, and you decide.
+
+## After launch
+
+- **Operations: <price> DKK a month.** We keep the system running and up to date, and you can write to us with small changes whenever you need them.
+- **You own everything:** the code, the store accounts and the hosting. You pay hosting and other services directly to the providers, so you are never locked in to us.
+- **Your data stays in the EU,** and we sign a data processing agreement with you.
+
+## What can delay the project
+
+- **<Apple and Google>:** <creating the developer accounts can take a couple of weeks, and every release must pass their review>.
+- **<Access to the system's API>:** <we need it, and a test account, before we can connect the app>.
+- **<Agreements with a vendor>:** <must be in place before we can use their data>.
+- **<Designs and texts>:** <the build waits if they arrive later than planned>.
 
 ## Questions for <customer>
 
@@ -107,7 +125,7 @@ Each question has our recommendation, and a "yes" is enough. The first ones bloc
 
 ## Hosting and operations
 
-<Environments, deployment, monitoring, backups, support, and what the operations agreement covers.>
+<Environments, deployment, monitoring, backups, support, and what the operations agreement covers. The hosting and service accounts are the customer's own, paid directly by them; list each one and who creates it.>
 
 ## Features by phase
 
@@ -156,7 +174,7 @@ Hi <name>,
 
 **Estimate:** <total> excl. VAT and about <n> weeks, split into <n> phases. The phases and what each includes are in the attached scope checklist. The price assumes <the two or three assumptions that matter most>.
 
-**Operations:** <monthly price and what it covers>, or <two simple tiers>.
+**Operations:** <monthly price>, which keeps the system running and covers small changes. You own the code and the hosting and pay the providers directly.
 
 **GDPR:** <who is data controller and who is processor, where data is hosted, and that we sign a data processing agreement>.
 

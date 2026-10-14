@@ -28,8 +28,8 @@ An app where Pedal & Co's customers book a bike service, follow the repair and p
 ## Price
 
 - **120,000 DKK in total** excl. VAT. The price per phase is in each phase heading below.
+- **Payment:** 50% when we start and 50% when the app is live.
 - The price assumes access to the shop system's API and a test workshop by the start date, final designs before the build starts, and data shown as the shop system provides it.
-- Operations after launch: 6,000 DKK a month for hosting, monitoring, updates and up to four support hours, agreed separately.
 
 ## Phase 1: Book and follow a service (55,000 DKK)
 
@@ -77,6 +77,24 @@ Can be moved to any point in the plan.
 - [ ] Chat with the workshop about a repair
 - [ ] Sell accessories in the app (15,000 DKK)
 - [ ] Reminder when the bike is due for its yearly service (5,000 DKK)
+
+## How we work together
+
+- **You are in the loop all the way.** You see the app as it grows, try it on your own phone along the way, and tell us what to change.
+- **Plans change once building starts, and that is fine.** Adjustments along the way are usually included. A large new feature gets a price before we start on it, and you decide.
+
+## After launch
+
+- **Operations: 5,000 DKK a month.** We keep the app and the admin running and up to date, and you can write to us with small changes whenever you need them.
+- **You own everything:** the code, the store accounts and the hosting. You pay hosting and other services directly to the providers, so you are never locked in to us.
+- **Your data stays in the EU,** and we sign a data processing agreement with you.
+
+## What can delay the project
+
+- **Apple and Google:** creating the developer accounts can take a couple of weeks, and every release must pass their review.
+- **The shop system:** we need API access and a test workshop from the vendor before we can show real bookings.
+- **Payment in the app:** your payment provider must approve payments in an app, which can take a while.
+- **Designs:** the quote and payment screens are not designed yet, and phase 2 waits for them.
 
 ## Questions for Pedal & Co
 

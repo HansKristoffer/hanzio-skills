@@ -92,7 +92,7 @@ The scope is only right when we agree how to build it. Interview the user until 
 - how each integration is reached: with the user's own login, a server key, or a vendor agreement not yet signed;
 - what we reuse from the template, and what we deliberately leave out;
 - what makes phase 1, and what can wait;
-- how we price: day rate, fixed price or not, buffer, operations;
+- how we price: day rate, buffer, and the monthly operations price;
 - what we will not promise.
 
 **Rounds.** The frontier is every decision whose prerequisites are already settled. Ask the whole frontier in one round, then wait for the answers:
@@ -151,6 +151,14 @@ Use the skeletons in [references/templates.md](references/templates.md). [refere
 - **`scope.md`**:
   - Short lines a customer reads in two minutes, with the price in each phase heading.
   - It is sent to the customer as it is, so it has no links to files. It makes no mention of `technical.md`, the template or its product, internal tools, day estimates or our notes.
+  - Keep it as short as possible: two pages at most, so the customer quickly understands how we see the project. "How we work together", "After launch" and "What can delay the project" get two to four lines each, and stay general.
+  - It states our terms the same way every time, unless we agreed otherwise in the interview:
+    - **Payment:** 50% when we start and 50% when the app is live.
+    - **Changes:** plans change once building starts, and that is fine. Adjustments along the way are usually included; a large new feature gets a price before we start on it.
+    - **Operations:** a fixed monthly price. It keeps the system running and covers small changes the customer writes to us about.
+    - **Ownership:** the customer owns the code, the store accounts and the infrastructure, and pays hosting and services directly to the providers.
+  - "How we work together" tells the customer they are in the loop all the way, without promising a meeting schedule.
+  - "What can delay the project" lists what is outside our control and specific to this project: store accounts and review, API access, vendor agreements, late designs or content. Take them from the integration findings and the customer's tasks.
   - It ends with the questions for the customer:
     - Each question is one line the customer can answer with a word or a choice, followed by our recommendation.
     - The questions that block the start come first.
@@ -172,7 +180,7 @@ Before handing off, confirm:
 
 - Every scope checklist line has a feature entry under the same phase in `technical.md`, and the other way round.
 - Phase days and prices add up to the totals in `scope.md` and in the estimate table in `technical.md`.
-- `scope.md` can be sent as it is. It has no links to files, no mention of `technical.md` or the template, and no internal notes.
+- `scope.md` can be sent as it is. It is two pages at most, with no links to files, no mention of `technical.md` or the template, and no internal notes.
 - Every decision in `scope.md` is also in the decisions in `technical.md`.
 - Every price, time and promise in `reply.md` matches `scope.md`.
 - No credentials or personal data have been copied in.
