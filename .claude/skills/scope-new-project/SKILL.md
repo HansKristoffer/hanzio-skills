@@ -23,7 +23,7 @@ Output: one project folder with these documents.
 
 | Document | Reader | What it is |
 | --- | --- | --- |
-| `scope.md` | The customer and us | A simple checklist: decisions taken, time, price, phases with a price each, and plain feature lines under each phase. It is what we agree on together and in which order. |
+| `scope.md` | The customer, sent as it is | A simple checklist: decisions taken, time, price, phases with a price each, and plain feature lines under each phase. It is what we agree on together and in which order. |
 | `questions.md` | The customer | Questions we need answered, each with our recommendation, so the customer can decide fast. |
 | `technical.md` | Us | Everything we know and decided about how to build it. It can be long. It is the starting point for planning the features, so it must always match `scope.md`. |
 | `reply.md` | The customer, sent by the user | A draft answer to the customer's email, when they asked for an estimate or next steps. Written only when the sources contain such a request. |
@@ -104,7 +104,11 @@ Use the skeletons in [references/templates.md](references/templates.md). [refere
 
 - **`scope.md`**:
   - Short lines a customer reads in two minutes, with the price in each phase heading.
-  - Links to the other two documents at the top.
+  - It is sent to the customer as it is, so it stands alone:
+    - no links to files;
+    - no mention of `technical.md`, the template or its product, internal tools, day estimates or our notes.
+    
+    Refer to the questions as "the attached questions".
   - Its "Open questions" lists only what blocks pricing or starting a phase. The full list lives in `questions.md`.
 - **`questions.md`**:
   - Each question is one line the customer can answer with a word or a choice, followed by our recommendation.
@@ -128,6 +132,7 @@ Before handing off, confirm:
 - Every scope checklist line has a feature entry under the same phase in `technical.md`, and the other way round.
 - Phase days and prices add up to the totals in `scope.md` and in the estimate table in `technical.md`.
 - Every open question in `scope.md` is also in `questions.md`.
+- `scope.md` can be sent as it is. It has no links, no mention of `technical.md` or the template, and no internal notes.
 - Every decision in `scope.md` is also in the decisions in `technical.md`.
 - Every price, time and promise in `reply.md` matches `scope.md`.
 - No credentials or personal data have been copied in.

@@ -7,7 +7,7 @@ Replace every `<...>` placeholder. Drop a section that has nothing in it rather 
 ```markdown
 # <Project>: scope checklist
 
-<One sentence on what we build and for whom.> This checklist is for deciding which features to build and in what order. Technical decisions and notes live in [technical.md](technical.md), and the questions we need answered are in [questions.md](questions.md).
+<One sentence on what we build and for whom.> This checklist is for deciding together which features to build and in what order. The questions we need answered are in the attached list.
 
 ## Decisions taken
 

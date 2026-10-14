@@ -6,7 +6,7 @@ A fictional scope checklist for a customer app. It sets the tone and level of de
 
 # Pedal & Co service app: scope checklist
 
-An app where Pedal & Co's customers book a bike service, follow the repair and pay, built on the shop system the workshops already use. This checklist is for deciding which features to build and in what order. Technical decisions and notes live in [technical.md](technical.md), and the questions we need answered are in [questions.md](questions.md).
+An app where Pedal & Co's customers book a bike service, follow the repair and pay, built on the shop system the workshops already use. This checklist is for deciding together which features to build and in what order. The questions we need answered are in the attached list.
 
 ## Decisions taken
 
