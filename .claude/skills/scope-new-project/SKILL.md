@@ -4,25 +4,29 @@ description: >-
   Turn a new consulting project's raw material (emails, meeting notes,
   transcripts, scope PDFs, designs, API links) into three working documents:
   a technical document, a scope checklist with price, time and phases, and a
-  short list of questions for the customer. It reads the template repository
-  it runs in to see what can be reused and what must be built. Use when a new
-  customer project arrives ("here is the email and the transcript, scope it"),
-  when the customer answers questions or the scope changes and the documents
-  must be updated, or when asked for an estimate on a new project built from
-  this template.
+  short list of questions for the customer, plus a draft reply when the
+  customer asked for one. It reads the template repository it runs in to see
+  what can be reused and what must be built. When the scope is agreed, it
+  splits the technical document into self-contained task documents for
+  parallel AI agents. Use when a new customer project arrives ("here is the
+  email and the transcript, scope it"), when the customer answers questions or
+  the scope changes and the documents must be updated, when asked for an
+  estimate on a new project built from this template, or when asked to split
+  an agreed scope into tasks.
 ---
 
 # Scope a new project
 
 Input: whatever the user has about the project, such as emails, meeting notes or transcripts, a scope document, designs, links to the customer's systems and APIs, a budget or a deadline. More can arrive later.
 
-Output: one project folder with three documents.
+Output: one project folder with these documents.
 
 | Document | Reader | What it is |
 | --- | --- | --- |
 | `scope.md` | The customer and us | A simple checklist: decisions taken, time, price, phases with a price each, and plain feature lines under each phase. It is what we agree on together and in which order. |
 | `questions.md` | The customer | Questions we need answered, each with our recommendation, so the customer can decide fast. |
 | `technical.md` | Us | Everything we know and decided about how to build it. It can be long. It is the starting point for planning the features, so it must always match `scope.md`. |
+| `reply.md` | The customer, sent by the user | A draft answer to the customer's email, when they asked for an estimate or next steps. Written only when the sources contain such a request. |
 
 The skill is written for any template repository (a full-stack platform, a Shopify app, ...). Everything it knows about the template, it learns by reading the repository it runs in.
 
@@ -110,6 +114,10 @@ Use the skeletons in [references/templates.md](references/templates.md). [refere
   - Everything a developer planning the features needs: sources, the template fit, architecture, integrations with their findings, data model, auth, admin, notifications, privacy and compliance, hosting and operations.
   - One feature entry per scope checklist line, under the same phase, with requirements, acceptance and an estimate.
   - Decisions with their reason, risks, and open technical questions.
+- **`reply.md`**, when the customer asked for something:
+  - Answer each thing they asked, in their order: interest, estimate, operations, GDPR, next steps, or whatever else they raised.
+  - Take every number from `scope.md`, and attach the scope and the questions rather than repeating them.
+  - It is a draft. The user reviews and sends it; you never send it.
 
 Write the customer documents in the customer's language, and `technical.md` in the team's working language unless told otherwise. Keep the template's own product name out of the customer documents.
 
@@ -121,6 +129,7 @@ Before handing off, confirm:
 - Phase days and prices add up to the totals in `scope.md` and in the estimate table in `technical.md`.
 - Every open question in `scope.md` is also in `questions.md`.
 - Every decision in `scope.md` is also in the decisions in `technical.md`.
+- Every price, time and promise in `reply.md` matches `scope.md`.
 - No credentials or personal data have been copied in.
 
 ## 7. Hand off
@@ -130,7 +139,8 @@ Reply with:
 - the folder path;
 - the headline: total price, time, and phase count;
 - the three questions that block the start;
-- what you could not settle from the sources.
+- what you could not settle from the sources;
+- that `reply.md` is ready for them to review and send, when you wrote one.
 
 Do not repeat the documents in chat.
 
@@ -147,5 +157,12 @@ Update all three documents in the same pass, so `technical.md` always matches th
    - Rewrite every section the answer touches. Do not append a changelog.
    - Update the matching feature entries and the estimate.
    - Note the decision with its source and date.
-4. Run the checks in step 6 again.
-5. Tell the user what changed in the price or time, and which new questions arose.
+4. If tasks have been split, rewrite the unstarted tasks the change touches, and their index.
+5. Run the checks in step 6 again.
+6. Tell the user what changed in the price or time, and which new questions arose.
+
+## Split into tasks
+
+When the customer has agreed the scope, or the user asks for it, split `technical.md` into self-contained task documents. Each one goes to a separate AI agent in a fresh thread. Follow [references/task-split.md](references/task-split.md).
+
+Before splitting, check that `technical.md` is complete enough to split. Every feature entry in the approved phases needs requirements and acceptance, and every integration it touches needs its interfaces. Gaps become open questions in the task index; never invent the answer.

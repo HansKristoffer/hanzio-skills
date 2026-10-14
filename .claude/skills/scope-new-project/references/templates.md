@@ -155,3 +155,28 @@ Day rate: <rate>. Buffer: <what it covers>.
 
 - [ ] <Question>
 ```
+
+## reply.md
+
+A draft for the user to send. Answer each thing the customer asked, in their order and language. Keep it to what fits in an email they read in two minutes.
+
+```markdown
+Subject: <their subject, or "<Project>: estimate and next steps">
+
+Hi <name>,
+
+<Yes, we are interested, and one sentence on why the project fits us.>
+
+**Estimate:** <total> excl. VAT and about <n> weeks, split into <n> phases. The phases and what each includes are in the attached scope checklist. The price assumes <the two or three assumptions that matter most>.
+
+**Operations:** <monthly price and what it covers>, or <two simple tiers>.
+
+**GDPR:** <who is data controller and who is processor, where data is hosted, and that we sign a data processing agreement>.
+
+**Next steps:**
+1. <You answer the questions in the attached list; the ones marked first block the start.>
+2. <We agree the phases and sign.>
+3. <We start on date, and the first version is ready to test about n days later.>
+
+<Sign-off>
+```
