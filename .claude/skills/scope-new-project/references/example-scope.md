@@ -6,7 +6,7 @@ A fictional scope checklist for a customer app. It sets the tone and level of de
 
 # Pedal & Co service app: scope checklist
 
-An app where Pedal & Co's customers book a bike service, follow the repair and pay, built on the shop system the workshops already use. This checklist is for deciding together which features to build and in what order. The questions we need answered are in [questions.md](questions.md).
+An app where Pedal & Co's customers book a bike service, follow the repair and pay, built on the shop system the workshops already use. This checklist is for deciding together which features to build and in what order. The questions we need answered are at the end.
 
 ## Decisions taken
 
@@ -78,7 +78,13 @@ Can be moved to any point in the plan.
 - [ ] Sell accessories in the app (15,000 DKK)
 - [ ] Reminder when the bike is due for its yearly service (5,000 DKK)
 
-## Open questions
+## Questions for Pedal & Co
 
-- [ ] Can the shop system send an update when the repair status changes, or do we have to check it every few minutes?
-- [ ] Which payment provider, and does it support payment in an app?
+Each question has our recommendation, and a "yes" is enough. The first ones block the start.
+
+- [ ] **May we contact the shop system vendor directly about API access?** We recommend yes, as it saves weeks of forwarded emails.
+  Answer:
+- [ ] **Should the app use the payment provider your webshop already uses?** We recommend yes, so all payments land in the same place.
+  Answer:
+- [ ] **Should every quote for extra work need the customer's approval in the app?** We recommend approval only above 300 DKK; below that the workshop just does the work.
+  Answer:

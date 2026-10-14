@@ -7,7 +7,7 @@ Replace every `<...>` placeholder. Drop a section that has nothing in it rather 
 ```markdown
 # <Project>: scope checklist
 
-<One sentence on what we build and for whom.> This checklist is for deciding together which features to build and in what order. The questions we need answered are in [questions.md](questions.md).
+<One sentence on what we build and for whom.> This checklist is for deciding together which features to build and in what order. The questions we need answered are at the end.
 
 ## Decisions taken
 
@@ -40,26 +40,13 @@ Replace every `<...>` placeholder. Drop a section that has nothing in it rather 
 
 - [ ] <Feature> (<price> DKK if priced)
 
-## Open questions
+## Questions for <customer>
 
-- [ ] <Only what blocks pricing or starting a phase>
-```
-
-## questions.md
-
-```markdown
-# <Project>: questions for <customer>
-
-Each question has our recommendation. A "yes" to the recommendation is enough. Questions that block the start come first.
-
-## Before we can start
+Each question has our recommendation, and a "yes" is enough. The first ones block the start.
 
 - [ ] **<Question answered with a word or a choice>?** We recommend <answer>, because <one short reason>.
   Answer:
-
-## <Topic>
-
-- [ ] **<Question>?** Options: <A>, <B>. We recommend <A>.
+- [ ] **<Question>?** Options: <A> or <B>. We recommend <A>.
   Answer:
 ```
 
@@ -174,7 +161,7 @@ Hi <name>,
 **GDPR:** <who is data controller and who is processor, where data is hosted, and that we sign a data processing agreement>.
 
 **Next steps:**
-1. <You answer the questions in the attached list; the ones marked first block the start.>
+1. <You answer the questions at the end of the scope; the first ones block the start.>
 2. <We agree the phases and sign.>
 3. <We start on date, and the first version is ready to test about n days later.>
 

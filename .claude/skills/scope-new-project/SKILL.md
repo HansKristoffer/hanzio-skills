@@ -2,10 +2,10 @@
 name: scope-new-project
 description: >-
   Turn a new consulting project's raw material (emails, meeting notes,
-  transcripts, scope PDFs, designs, API links) into three working documents:
-  a technical document, a scope checklist with price, time and phases, and a
-  short list of questions for the customer, plus a draft reply when the
-  customer asked for one. It reads the template repository it runs in to see
+  transcripts, scope PDFs, designs, API links) into a scope checklist for the
+  customer (price, time, phases and the questions they must answer) and a
+  technical document for us, plus a draft reply when the customer asked for
+  one. It reads the template repository it runs in to see
   what can be reused and what must be built, and interviews us in rounds
   about how to build it before writing anything. When the scope is agreed, it
   splits the technical document into self-contained task documents for
@@ -24,8 +24,7 @@ Output: one project folder with these documents.
 
 | Document | Reader | What it is |
 | --- | --- | --- |
-| `scope.md` | The customer, sent as it is | A simple checklist: decisions taken, time, price, phases with a price each, and plain feature lines under each phase. It is what we agree on together and in which order. |
-| `questions.md` | The customer | Questions we need answered, each with our recommendation, so the customer can decide fast. |
+| `scope.md` | The customer, sent as it is | A simple checklist: decisions taken, time, price, phases with a price each, plain feature lines under each phase, and the questions the customer must answer. It is what we agree on together and in which order. |
 | `technical.md` | Us | Everything we know and decided about how to build it. It can be long. It is the starting point for planning the features, so it must always match `scope.md`. |
 | `reply.md` | The customer, sent by the user | A draft answer to the customer's email, when they asked for an estimate or next steps. Written only when the sources contain such a request. |
 
@@ -120,7 +119,7 @@ Word each question so "yes" accepts your recommendation.
 
 **Who decides.** Some decisions belong to the customer, not to us.
 
-- When we answer "ask the customer", the question goes into `questions.md` with our recommendation.
+- When we answer "ask the customer", the question goes into the questions in `scope.md`, with our recommendation.
 - The branch under that question is scoped on the recommendation, and the price names it as an assumption.
 - Don't put the customer's business decisions to us, and don't put questions about how we build to the customer.
 
@@ -151,20 +150,18 @@ Use the skeletons in [references/templates.md](references/templates.md). [refere
 
 - **`scope.md`**:
   - Short lines a customer reads in two minutes, with the price in each phase heading.
-  - It is sent to the customer together with `questions.md`, so its only link is a relative link to `questions.md`.
-  - It makes no mention of `technical.md`, the template or its product, internal tools, day estimates or our notes.
-  - Its "Open questions" lists only what blocks pricing or starting a phase. The full list lives in `questions.md`.
-- **`questions.md`**:
-  - Each question is one line the customer can answer with a word or a choice, followed by our recommendation.
-  - Order by what blocks the start first, grouped by topic.
-  - Aim for the fewest questions that settle the build. A question we can default becomes a decision instead.
+  - It is sent to the customer as it is, so it has no links to files. It makes no mention of `technical.md`, the template or its product, internal tools, day estimates or our notes.
+  - It ends with the questions for the customer:
+    - Each question is one line the customer can answer with a word or a choice, followed by our recommendation.
+    - The questions that block the start come first.
+    - Ask the fewest questions that settle the build. A question we can default becomes a decision instead.
 - **`technical.md`**:
   - Everything a developer planning the features needs: sources, the template fit, architecture, integrations with their findings, data model, auth, admin, notifications, privacy and compliance, hosting and operations.
   - One feature entry per scope checklist line, under the same phase, with requirements, acceptance and an estimate.
   - Decisions with their reason, risks, and open technical questions.
 - **`reply.md`**, when the customer asked for something:
   - Answer each thing they asked, in their order: interest, estimate, operations, GDPR, next steps, or whatever else they raised.
-  - Take every number from `scope.md`, and attach the scope and the questions rather than repeating them.
+  - Take every number from `scope.md`, and attach the scope rather than repeating it.
   - It is a draft. The user reviews and sends it; you never send it.
 
 Write the customer documents in the customer's language, and `technical.md` in the team's working language unless told otherwise. Keep the template's own product name out of the customer documents.
@@ -175,8 +172,7 @@ Before handing off, confirm:
 
 - Every scope checklist line has a feature entry under the same phase in `technical.md`, and the other way round.
 - Phase days and prices add up to the totals in `scope.md` and in the estimate table in `technical.md`.
-- Every open question in `scope.md` is also in `questions.md`.
-- `scope.md` can be sent with `questions.md` as they are. Its only link is to `questions.md`, and it has no mention of `technical.md` or the template, and no internal notes.
+- `scope.md` can be sent as it is. It has no links to files, no mention of `technical.md` or the template, and no internal notes.
 - Every decision in `scope.md` is also in the decisions in `technical.md`.
 - Every price, time and promise in `reply.md` matches `scope.md`.
 - No credentials or personal data have been copied in.
@@ -195,20 +191,20 @@ Do not repeat the documents in chat.
 
 ## When answers arrive or the scope changes
 
-If the change opens decisions about how we build, run interview rounds as in step 4 before you write. Then update all three documents in the same pass, so `technical.md` always matches the current scope.
+If the change opens decisions about how we build, run interview rounds as in step 4 before you write. Then update both documents in the same pass, so `technical.md` always matches the current scope.
 
-1. **`questions.md`**: tick the question and write the answer under it.
-2. **`scope.md`**:
-   - Move the answer into "Decisions taken".
+1. **`scope.md`**:
+   - Remove the answered question and move its answer into "Decisions taken".
+   - Add any new questions the answer raises.
    - Add, move or remove checklist lines.
    - Re-estimate the phases that changed, and update the time and price.
-3. **`technical.md`**:
+2. **`technical.md`**:
    - Rewrite every section the answer touches. Do not append a changelog.
    - Update the matching feature entries and the estimate.
    - Note the decision with its source and date.
-4. If tasks have been split, rewrite the unstarted tasks the change touches, and their index.
-5. Run the checks in step 7 again.
-6. Tell the user what changed in the price or time, and which new questions arose.
+3. If tasks have been split, rewrite the unstarted tasks the change touches, and their index.
+4. Run the checks in step 7 again.
+5. Tell the user what changed in the price or time, and which new questions arose.
 
 ## Split into tasks
 
