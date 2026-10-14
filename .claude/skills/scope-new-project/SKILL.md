@@ -104,11 +104,8 @@ Use the skeletons in [references/templates.md](references/templates.md). [refere
 
 - **`scope.md`**:
   - Short lines a customer reads in two minutes, with the price in each phase heading.
-  - It is sent to the customer as it is, so it stands alone:
-    - no links to files;
-    - no mention of `technical.md`, the template or its product, internal tools, day estimates or our notes.
-    
-    Refer to the questions as "the attached questions".
+  - It is sent to the customer together with `questions.md`, so its only link is a relative link to `questions.md`.
+  - It makes no mention of `technical.md`, the template or its product, internal tools, day estimates or our notes.
   - Its "Open questions" lists only what blocks pricing or starting a phase. The full list lives in `questions.md`.
 - **`questions.md`**:
   - Each question is one line the customer can answer with a word or a choice, followed by our recommendation.
@@ -132,7 +129,7 @@ Before handing off, confirm:
 - Every scope checklist line has a feature entry under the same phase in `technical.md`, and the other way round.
 - Phase days and prices add up to the totals in `scope.md` and in the estimate table in `technical.md`.
 - Every open question in `scope.md` is also in `questions.md`.
-- `scope.md` can be sent as it is. It has no links, no mention of `technical.md` or the template, and no internal notes.
+- `scope.md` can be sent with `questions.md` as they are. Its only link is to `questions.md`, and it has no mention of `technical.md` or the template, and no internal notes.
 - Every decision in `scope.md` is also in the decisions in `technical.md`.
 - Every price, time and promise in `reply.md` matches `scope.md`.
 - No credentials or personal data have been copied in.
