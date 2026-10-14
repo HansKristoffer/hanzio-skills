@@ -19,7 +19,7 @@ Name each document `<phase>.<track> – <short-name>.md`, for example `1.2 – a
   - the database schema and shared types;
   - API contracts;
   - environment and config.
-- Two tasks share a phase only if they edit none of the same files. If they would, merge them or move one to a later phase. Shared registries count: a route index, a schema file, a translation catalog, a navigation config.
+- Two tasks share a phase only if they edit none of the same files. If they would, merge them or move one to a later phase. Shared registries count: a route index, a schema file, a translation catalog, a navigation config. The one exception is `0.0 – index.md`, where every task updates its own status row.
 - Maximise parallelism, but don't split work so small that coordinating it costs more than the task.
 
 ## Each task document contains
@@ -45,15 +45,25 @@ Name each document `<phase>.<track> – <short-name>.md`, for example `1.2 – a
 10. **Definition of done**:
     - it builds, type-checks and passes lint;
     - its tests pass;
-    - no TODOs are left in owned files.
+    - no TODOs are left in owned files;
+    - its status row in `0.0 – index.md` says Done, with a link to its PR.
     
     Add the repository's own required checks from its `AGENTS.md`.
+
+    Every task document ends with a **Status** section. It tells the agent to update its own row in `0.0 – index.md`, and no other row:
+    - set it to In progress when it starts;
+    - set it to Blocked, with the reason, when it cannot go on;
+    - set it to Done, with its PR link, as the last step.
 
 Write for a capable engineer with zero context: specific, no hand-waving, no "as discussed above".
 
 ## Also write `0.0 – index.md`
 
-- A table of all tasks with these columns: ID, name, phase, depends on, files owned, rough size (S/M/L).
+- A table of all tasks with these columns: ID, name, phase, depends on, files owned, rough size (S/M/L), status, PR.
+  - Status is Not started, In progress, Blocked (with the reason) or Done. Every task starts as Not started.
+  - Each task updates its own row as it works, so the table always shows where the build stands.
+  - A phase may start only when every row in the previous phase says Done.
+  - If two tasks' status edits conflict in a merge, keep both rows' values.
 - A Mermaid diagram of the dependencies, grouped by phase.
 - The open questions or ambiguities in the master document that block a task. Flag each one with the tasks it blocks; never invent an answer.
 
