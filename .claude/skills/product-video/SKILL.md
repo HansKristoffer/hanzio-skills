@@ -1,6 +1,6 @@
 ---
 name: product-video
-description: Make professional product videos in any repository, from code-built motion graphics rendered frame by frame at 60 fps, live ego-browser recordings of the real product, ElevenLabs narration, music and sound effects, checked by measurement and an independent critic. Covers SaaS launch films in the style seen on X, feature explainers, product demos and chaptered walkthroughs. Use when asked for a product video, launch video, promo, explainer, demo, walkthrough or screen recording with voice-over.
+description: Make professional product videos in any repository, from code-built motion graphics rendered frame by frame at 60 fps, live Chrome recordings of the real product, ElevenLabs narration, music and sound effects, checked by measurement and an independent critic. Covers SaaS launch films in the style seen on X, feature explainers, product demos and chaptered walkthroughs. Use when asked for a product video, launch video, promo, explainer, demo, walkthrough or screen recording with voice-over.
 ---
 
 # Product video
@@ -8,7 +8,7 @@ description: Make professional product videos in any repository, from code-built
 Every video is one or more **parts** joined in order:
 
 - **Composition**: an HTML page animated with GSAP on one timeline and rendered frame by frame, so every frame is exact. It can be music-led (a launch film) or timed to narration (an explainer), and it can embed real screenshots and recorded clips.
-- **Live**: a scripted ego-browser session on the real product, screencast while the narration plays (`references/walkthrough.md`).
+- **Live**: a scripted Chrome session on the real product, recorded while the narration plays (`references/walkthrough.md`).
 
 `SKILL` below means the absolute path of the folder holding this file, for example `~/.claude/skills/product-video`. Every command is `bun $SKILL/video.ts <command>`.
 
@@ -50,7 +50,8 @@ The bar is a professionally edited launch film: the real product, the brand's ow
 
 - Build files go in `<repo>/.video-build/<slug>/`. `init` adds that folder to `.git/info/exclude`, so it never shows in `git status`. Outside a git repository, the current directory is the root.
 - The finished video goes to `<repo>/<slug>.mp4`, also excluded from git; commit it only when asked.
-- Requires `bun` and `ffmpeg`, and Google Chrome or a Playwright Chromium. `video.ts` installs its own `playwright-core` and `gsap` on first use. Live parts need the `ego-browser` CLI and its skill; ego-browser is also the way to read brands and capture product screenshots.
+- Requires `bun`, `ffmpeg` and a browser: Google Chrome, or Playwright's Chromium, which `video.ts` downloads on first use when Chrome is missing. `video.ts` installs its own `playwright-core` and `gsap`, and drives the browser both to render compositions and to record, read and screenshot the real product.
+- **On a new machine or a server, run `bun $SKILL/video.ts doctor` first**, and `doctor --fix` to install what is missing (ffmpeg, the browser's system libraries, fonts, espeak-ng; it uses apt and sudo unless root). It works headless: without a display, `walk` and `site` run without a window. A server without a GPU draws every frame in software: `render` stays fast through its parallel workers, but a `walk` captures the page's own animations (a dialog fading in, a toast, an autoplaying video) at only 1-3 frames per second, while scrolls and pointer glides stay smooth. Record clips where those animations matter on a computer with a GPU and copy the part folder over, or record at `--scale 2` on the server, which captures about twice as often as 3x. A product behind a login needs the sign-ins from a computer with a screen: run `browse` there, sign in, close the window, and copy `~/.cache/product-video/chrome-state.json` to the same path on the server; the next `walk` there signs in from it.
 
 ## ElevenLabs key
 
@@ -62,16 +63,16 @@ When a command exits with `NO_ELEVENLABS_KEY`, or ElevenLabs rejects the key, st
 printf '%s' '<key>' | bun $SKILL/video.ts set-key
 ```
 
-Never repeat the key in a reply, write it into a repository or print it to a log. Without ElevenLabs, narration can use macOS `say` (`narrate <part>.json --say`), and music can be a licensed track the user supplies.
+Never repeat the key in a reply, write it into a repository or print it to a log. Without ElevenLabs, narration can use macOS `say` or espeak-ng on Linux (`narrate <part>.json --say`), and music can be a licensed track the user supplies.
 
 ## Workflow
 
 1. **Brief.** `bun $SKILL/video.ts init <slug>` creates the build folder with `brief.md`, `film.html` (the launch template) and `assets/` and `sfx/` folders; `init <slug> --narrated` starts from the narrated explainer with `film.json`. Fill in the brief: product, audience, the one message, the CTA, true claims with sources, length, format and sound. Ask the user only for what you cannot find yourself.
-2. **Brand and assets.** Follow `references/assets.md`: the brand's colors, type and logo, the real product imagery, and the facts, each with its source in `assets/SOURCES.md`.
+2. **Brand and assets.** Start with `site <url>` on the product's website or running app, then follow `references/assets.md`: the brand's colors, type and logo, the real product imagery, and the facts, each with its source in `assets/SOURCES.md`.
 3. **Storyboard.** Before building, write a table in the brief: time, what the viewer sees, what the beat says, the transition out and what carries across it. Use 12-15 compositions per 30 s and name three signature moments. Follow `references/motion.md`.
 4. **Sound first for a launch film.** Generate the music to the storyboard's length, and the effect kit (`references/audio.md`). For narrated films, write `film.json` (one `{ "id", "text" }` per scene, plain spoken sentences, the product's own words) and run `narrate`, which sets each scene's length.
 5. **Build** the composition from the template: restyle the brand tokens, replace the mock product with the real imagery, and choreograph each beat with the Film helpers. Check `stills` after every meaningful change.
-6. **Render** a draft with `render --fps 15` (four times faster) and `check` it: frozen time and loudness read the same. Fix the holds, then render at 60 fps and `check` again.
+6. **Render** a draft with `render --fps 15 --scale 1` (much faster) and `check` it: frozen time and loudness read the same. Fix the holds, then render at 60 fps and `check` again.
 7. **Critic loop.** A fresh agent reviews the render against the quality bar; fix the largest gaps and verify with a new critic (`references/review.md`).
 8. **Join and deliver.** `concat` the parts into `<repo>/<slug>.mp4` when there is more than one, run `check` once more, and report the result honestly.
 
@@ -80,16 +81,20 @@ Never repeat the key in a reply, write it into a repository or print it to a log
 | Command | Does |
 | --- | --- |
 | `init <slug> [--narrated]` | Creates the build folder, git-excluded, from a template. |
-| `narrate <part>.json [--say]` | Voices each scene into `<part>/timing.json`; reports words per minute. `SPEED=0.7-1.2` slows or speeds it up. Also `VOICE`, `MODEL`, `LANGUAGE`. |
+| `narrate <part>.json [--say]` | Voices each scene into `<part>/timing.json`; reports words per minute. `--say` is a keyless draft voice: macOS `say`, or espeak-ng on Linux. `SPEED=0.7-1.2` slows or speeds it up. Also `VOICE`, `MODEL`, `LANGUAGE`. |
 | `music <out.mp3> --seconds N --prompt "..."` | A music bed from ElevenLabs Music, trimmed to start on the beat; prints loudness per second. |
 | `sfx --kit <dir>` / `sfx <out.mp3> "<description>" [--seconds 0.6]` | Clean sound effects from ElevenLabs. |
-| `stills <part>.html [--every 0.5 \| --at 1,2.5]` | Frames at chosen times and a contact sheet, in seconds. |
-| `render <part>.html [--fps 60] [--audio-only]` | The composition rendered frame by frame, mixed with its narration, music and cues, to `<part>/video.mp4`. `--audio-only` remixes the sound onto the last frames. |
-| `live <part>.json` | A recorded live walkthrough assembled to `<part>/video.mp4`. |
+| `site <url> [--out dir]` | A website or running app read for a film: brand colours and type, logo, web fonts with `fonts.css`, and a 2x screenshot of every section, with a short summary. |
+| `stills <part>.html [--every 0.5 \| --at 1,2.5]` | Frames at chosen times and a contact sheet with each tile labelled by its time. |
+| `render <part>.html [--fps 60] [--scale 2] [--workers N] [--audio-only]` | The composition rendered frame by frame at twice the pixels and scaled down so text and footage stay sharp, mixed with its narration, music and cues, to `<part>/video.mp4`. Stretches of the film render in parallel browsers (a quarter of the cores, up to 8), and clips with distant keyframes get a fast-seeking copy, made once. `--scale 1` is faster for drafts. Music or effects not made yet are left out with a warning, so the picture can be finished first; `--audio-only` then remixes the sound onto the last frames. |
+| `browse [url]` | Chrome with the video profile, for the user to sign in once; waits until the window closes. |
+| `walk <part>.walk.mjs [--rehearse] [--scale 3] [--headless]` | Runs a walkthrough script in that Chrome and records the part to `<part>/video.mp4` at 60 fps, with its marks in `<part>/video.marks.json`. Any other script name runs without recording. |
+| `live <part>.json` | Reassembles a recorded part from its frames. |
 | `crop <part>.json <mark\|W:H:X:Y> <out.mp4> [--pad 8] [--at 1]` | A recorded part cropped to a mark's element or a box, with a preview frame to check the edges. |
 | `card <out.mp4> <title> [--eyebrow x] [--style <part>.html]` | A chapter title card in the brand's style. |
 | `concat <out.mp4> <part.mp4>...` | Joins parts, embeds chapters from cards and prints YouTube chapters. |
-| `check <video.mp4>` | Contact sheet, frozen time and loudness. |
+| `check <video.mp4>` | Contact sheet, frozen time, judder (frames that stall mid-motion) and loudness. |
+| `doctor [--fix]` | Checks this machine (bun, ffmpeg, browser and its codecs, fonts, display, key, sign-ins) and prints each fix; `--fix` installs what it can. |
 
 ## Reuse
 
