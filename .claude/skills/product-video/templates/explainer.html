@@ -86,7 +86,8 @@ Film.create({
 		const scenes = Film.scenes()
 		const sections = [...document.querySelectorAll('.scene')]
 
-		// Held reading beats still move: the background drifts for the whole film.
+		// Held reading beats still move: the background glows for the whole film, while the
+		// content itself holds still so a screenshot in it stays sharp and readable.
 		tl.to('.glow.a', { x: 520, y: 260, duration: film.duration, ease: 'none' }, 0)
 		tl.to('.glow.b', { x: -480, y: -220, duration: film.duration, ease: 'none' }, 0)
 
@@ -97,7 +98,6 @@ Film.create({
 			const last = index === sections.length - 1
 
 			Film.show(tl, section, scene.start, scene.end)
-			Film.drift(tl, inner, scene.start, scene.end, { scale: 1.06 })
 			for (const el of section.querySelectorAll('[data-f]')) {
 				// Frame 0 is a finished composition: the opening's data-f="0" elements are already there.
 				if (index === 0 && Number(el.dataset.f) === 0) continue

@@ -12,7 +12,9 @@ Measured by `check`:
 
 | Check | Target |
 | --- | --- |
-| Frozen time | Under about 1 s per 30 s; no hold over 0.6 s except the end card |
+| Frozen time | In graphics beats, under about 1 s per 30 s and no hold over 0.6 s except the end card. Product footage may read as frozen while only the pointer or a value moves; nothing at all moving for over 1.5 s is a defect |
+| Sharpness | `render` and `stills` print no "turns soft" warning; `live` prints no "enlarged" warning |
+| Judder | `check` reports none: every moving stretch changes on every frame (a 30 fps clip shows as half-rate footage, which is expected) |
 | Loudness | About -14 LUFS music-led, -16 narrated; true peak at or below -1 dBFS |
 | Loudness range | About 3 LU or more for energetic films |
 
@@ -24,6 +26,8 @@ Judged on frames:
 - Equal spacing and shared left edges in lists and rows.
 - The lead subject fills 60-85 % of the frame in feature beats.
 - Labels and callouts sit on the thing they name.
+- The camera holds still between moves on product footage: no creeping zoom or drift. Each zoom lands on the action it is about, with the pointer and the element in frame, and none happens without a reason.
+- Footage is sharp at its closest zoom, and scrolls and pointer glides are smooth (step through them frame by frame).
 - Transitions carry an object or match a direction; never an unrelated slide-in after another.
 - Imagery is bright and clear unless the brand is dark.
 - On mute, a first-time viewer can say what the product does and the one next action. The CTA is readable at phone size for at least 1.5 s.

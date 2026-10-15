@@ -11,11 +11,21 @@
 	CustomEase.create('leave', 'M0,0 C0.6,0 0.9,0.35 1,1')
 	CustomEase.create('swap', 'M0,0 C0.7,0 0.2,1 1,1')
 
+	// Seeks a clip and waits until that frame is on screen. The target sits 1 ms inside the
+	// frame: a time exactly on a frame boundary rounds either way, which shows one frame twice
+	// and skips the next, so a smooth scroll in the clip would strobe in the film.
 	const seekVideo = (video, time) =>
 		new Promise((resolve) => {
-			const target = Math.min(Math.max(time, 0), Math.max((video.duration || 0) - 0.001, 0))
+			// A hidden clip is not seeked: it presents no frame, so the wait would only time out.
+			if (video.checkVisibility?.({ opacityProperty: true, visibilityProperty: true }) === false) return resolve()
+			const target = Math.min(Math.max(time, 0) + 0.001, Math.max((video.duration || 0) - 0.001, 0))
 			if (Math.abs(video.currentTime - target) < 0.0005) return resolve()
-			video.addEventListener('seeked', resolve, { once: true })
+			const presented = () => {
+				if (!video.requestVideoFrameCallback) return resolve()
+				video.requestVideoFrameCallback(() => resolve())
+				setTimeout(resolve, 60) // a frame already on screen (a 30 fps clip in a 60 fps film) fires none
+			}
+			video.addEventListener('seeked', presented, { once: true })
 			video.currentTime = target
 		})
 
@@ -120,6 +130,9 @@
 		 */
 		split(el, type = 'words') {
 			const split = SplitText.create(el, { type: `lines,${type}`, mask: 'lines' })
+			// A mask the height of the line box clips descenders (y, g, p) in a tight line-height;
+			// extend it below the baseline without moving the layout.
+			for (const mask of split.masks ?? []) Object.assign(mask.style, { paddingBottom: '0.22em', marginBottom: '-0.22em' })
 			const repainted = new Set()
 			for (const piece of [...split.words, ...split.chars]) {
 				const painted = piece.parentElement?.closest('[style*="background-clip"], .gradient-text')
@@ -178,7 +191,10 @@
 			tl.to(el, { scale, autoAlpha: 0, filter: 'blur(14px)', duration: dur, ease: 'leave' }, at)
 		},
 
-		/** A slow push so a held composition never freezes. */
+		/**
+		 * A slow push so a held graphic (type, a number, an end card) never freezes. Never on
+		 * product footage, a screenshot or a camera that focuses: they hold still between moves.
+		 */
 		drift(tl, el, from, to, { scale = 1.04, x, y } = {}) {
 			// Only the properties asked for, so an exit tween on x or y can share the element.
 			const start = { scale: 1, ...(x === undefined ? {} : { x: 0 }), ...(y === undefined ? {} : { y: 0 }) }
@@ -192,45 +208,125 @@
 		},
 
 		/**
-		 * Moves the camera onto a region: `camera` (a positioned wrapper) scales so `target`,
-		 * somewhere inside it, fills `fill` of the frame width, centred. Uses layout offsets,
-		 * not rendered boxes, so tweens already on the timeline do not skew the measurement.
+		 * Moves the camera onto a region and holds it there, still, until the next move. `camera` is
+		 * a positioned wrapper that nothing else transforms (no drift on it or inside it): it scales
+		 * and pans so the region sits in the middle of its parent's frame. `target` is an element
+		 * inside the camera, or `[video, mark]`: the name of a mark in the clip's marks (a click
+		 * centres on the pointer, framed to its element) or a box `{ x, y, width, height }` in the
+		 * clip's pixels. The region fills `fill` of the frame, or `scale` sets the zoom. The camera
+		 * stops at the clip's edges (or its own), so the region may sit off-centre near an edge, and
+		 * never enlarges a clip past its recorded pixels: it caps the zoom there and warns.
+		 * `Film.focus(tl, camera, null, at)` zooms back out; focus again to pan to the next action.
+		 * Returns the region's box in the frame once the move ends, to place a callout beside it.
 		 */
-		focus(tl, camera, target, at, { fill = 0.6, dur = 1.1, ease = 'swap' } = {}) {
-			const frame = camera.offsetParent
-			let x = 0
-			let y = 0
-			for (let node = target; node && node !== camera; node = node.offsetParent) {
-				x += node.offsetLeft
-				y += node.offsetTop
+		focus(tl, camera, target, at, { fill = 0.6, scale, dur = 1, ease = 'swap' } = {}) {
+			if (!target) {
+				tl.to(camera, { transformOrigin: '0 0', scale: 1, x: 0, y: 0, duration: dur, ease }, at)
+				return
 			}
-			const scale = (frame.clientWidth * fill) / target.offsetWidth
-			const cx = x + target.offsetWidth / 2
-			const cy = y + target.offsetHeight / 2
-			tl.to(
-				camera,
-				{
-					transformOrigin: '0 0',
-					scale,
-					x: frame.clientWidth / 2 - camera.offsetLeft - cx * scale,
-					y: frame.clientHeight / 2 - camera.offsetTop - cy * scale,
-					duration: dur,
-					ease
-				},
-				at
-			)
+			const frame = camera.offsetParent
+			// Layout offsets, not rendered boxes, so tweens already on the timeline do not skew them.
+			const offset = (el) => {
+				let x = 0
+				let y = 0
+				for (let node = el; node && node !== camera; node = node.offsetParent) {
+					x += node.offsetLeft
+					y += node.offsetTop
+				}
+				return { x, y }
+			}
+
+			let region
+			let bounds = { x: 0, y: 0, width: camera.offsetWidth, height: camera.offsetHeight }
+			let limit = Number.POSITIVE_INFINITY
+			let source
+			if (Array.isArray(target)) {
+				const media = typeof target[0] === 'string' ? document.querySelector(target[0]) : target[0]
+				const shown = Film.contentBox(media)
+				const origin = offset(media)
+				const box = typeof target[1] === 'string' ? Film.clipMark(media, target[1]).region : target[1]
+				if (!box) throw new Error(`mark "${target[1]}" has no element to frame: give rec.mark a selector`)
+				region = { x: origin.x + shown.x + box.x * shown.ratio, y: origin.y + shown.y + box.y * shown.ratio, width: box.width * shown.ratio, height: box.height * shown.ratio }
+				// Inset by 2 px, so a border or shadow just outside the clip never shows at the frame's edge.
+				bounds = { x: origin.x + Math.max(0, shown.x) + 2, y: origin.y + Math.max(0, shown.y) + 2, width: Math.min(media.offsetWidth, shown.width) - 4, height: Math.min(media.offsetHeight, shown.height) - 4 }
+				limit = 1 / shown.ratio
+				source = media.getAttribute('src')
+			} else {
+				region = { ...offset(target), width: target.offsetWidth, height: target.offsetHeight }
+			}
+
+			let zoom = scale ?? Math.min((frame.clientWidth * fill) / region.width, (frame.clientHeight * fill) / region.height)
+			if (zoom > limit + 0.01) {
+				console.warn(`Film.focus at ${at.toFixed(2)}s: ${source} turns soft past ${limit.toFixed(2)}x and was asked for ${zoom.toFixed(2)}x; capped. Record it with 'walk --scale 3' or zoom less.`)
+				zoom = limit
+			}
+
+			// Centre the region, then keep the bounds covering the frame (or inside it, when smaller).
+			const place = (size, origin, start, length, centre) => {
+				const wanted = size / 2 - origin - centre * zoom
+				const a = size - origin - (start + length) * zoom
+				const b = -origin - start * zoom
+				return Math.min(Math.max(a, b), Math.max(Math.min(a, b), wanted))
+			}
+			const x = place(frame.clientWidth, camera.offsetLeft, bounds.x, bounds.width, region.x + region.width / 2)
+			const y = place(frame.clientHeight, camera.offsetTop, bounds.y, bounds.height, region.y + region.height / 2)
+			tl.to(camera, { transformOrigin: '0 0', scale: zoom, x, y, duration: dur, ease }, at)
+			// Where the region lands in the frame once the move ends: put a callout beside it.
+			return {
+				x: camera.offsetLeft + x + region.x * zoom,
+				y: camera.offsetTop + y + region.y * zoom,
+				width: region.width * zoom,
+				height: region.height * zoom
+			}
+		},
+
+		/**
+		 * Where a `<video>` or `<img>` draws its picture inside its own box, honouring object-fit:
+		 * `{ x, y, width, height }` in CSS pixels and `ratio`, CSS pixels per source pixel.
+		 */
+		contentBox(media) {
+			const sourceWidth = media.videoWidth || media.naturalWidth
+			const sourceHeight = media.videoHeight || media.naturalHeight
+			const fit = getComputedStyle(media).objectFit
+			const across = media.offsetWidth / sourceWidth
+			const down = media.offsetHeight / sourceHeight
+			const ratio = fit === 'cover' ? Math.max(across, down) : fit === 'fill' ? across : Math.min(across, down)
+			const width = sourceWidth * ratio
+			const height = sourceHeight * ratio
+			return { x: (media.offsetWidth - width) / 2, y: (media.offsetHeight - height) / 2, width, height, ratio }
+		},
+
+		/**
+		 * A mark of a clip, from the `<clip>.marks.json` that `live` and `crop` write beside it:
+		 * `t` is the film time it happens, `clipTime` the clip's own, and `region` the box to frame
+		 * in the clip's pixels (around the pointer for a click). End a beat on a mark with
+		 * `video.dataset.until = mark.clipTime + 0.6`: the clip holds that frame.
+		 */
+		clipMark(video, name) {
+			const el = typeof video === 'string' ? document.querySelector(video) : video
+			const src = el.getAttribute('src')
+			const marks = window.CLIPS?.[src]?.marks ?? []
+			const mark = marks.find((entry) => entry.name === name)
+			if (!mark) throw new Error(`no mark "${name}" for ${src}; it has: ${marks.map((entry) => entry.name).join(', ') || 'no marks file'}`)
+			if (!mark.box && !mark.point) return { t: Film.clipAt(el, mark.t), clipTime: mark.t, region: null }
+			const box = mark.box ?? { x: mark.point.x - 1, y: mark.point.y - 1, width: 2, height: 2 }
+			const region = mark.point ? { ...box, x: mark.point.x - box.width / 2, y: mark.point.y - box.height / 2 } : box
+			return { t: Film.clipAt(el, mark.t), clipTime: mark.t, region }
 		},
 
 		/** Cards arrive one after another and stack; earlier cards recede. */
 		stack(tl, cards, at, { gap = 0.45, offset = 26 } = {}) {
 			cards.forEach((card, index) => {
 				const t = at + index * gap
-				tl.from(card, { y: 260, autoAlpha: 0, scale: 0.94, filter: 'blur(8px)', duration: 0.7, ease: 'land' }, t)
+				// One filter list throughout (blur, then brightness): GSAP interpolates mismatched lists
+				// number by number, which flashed a receding card nearly black.
+				tl.fromTo(card, { y: 260, autoAlpha: 0, scale: 0.94, filter: 'blur(8px) brightness(1)' }, { y: 0, autoAlpha: 1, scale: 1, filter: 'blur(0px) brightness(1)', duration: 0.7, ease: 'land', immediateRender: index > 0 }, t)
 				cards.slice(0, index).forEach((earlier, back) => {
 					const depth = index - back
-					tl.to(earlier, { y: -offset * depth, scale: 1 - 0.05 * depth, filter: `brightness(${1 - 0.12 * depth})`, duration: 0.6, ease: 'land' }, t)
-					// A covered card keeps its edge but not its text, which would read through.
-					if (depth === 1) tl.to(earlier.children, { autoAlpha: 0, duration: 0.3 }, t)
+					tl.to(earlier, { y: -offset * depth, scale: 1 - 0.05 * depth, filter: `blur(0px) brightness(${1 - 0.12 * depth})`, duration: 0.6, ease: 'land' }, t)
+					// A covered card keeps its edge but not its text, which would read through: it goes
+					// just before the new card arrives, so two titles never cross.
+					if (depth === 1) tl.to(earlier.children, { autoAlpha: 0, duration: 0.12 }, t - 0.12)
 				})
 			})
 		},
@@ -244,9 +340,14 @@
 			return before
 		},
 
-		/** Counts `el` from `from` to `to`; renders whole numbers. */
-		counter(tl, el, at, { from = 0, to, dur = 1.2 } = {}) {
-			tl.fromTo(el, { textContent: from }, { textContent: to, snap: { textContent: 1 }, duration: dur, ease: 'land' }, at)
+		/** Counts `el` from `from` to `to` with `decimals` places (8.4: `decimals: 1`); shows `from` until then. */
+		counter(tl, el, at, { from = 0, to, dur = 1.2, decimals = 0 } = {}) {
+			const value = { n: from }
+			const show = () => {
+				el.textContent = value.n.toFixed(decimals)
+			}
+			show()
+			tl.to(value, { n: to, duration: dur, ease: 'land', onUpdate: show }, at)
 		},
 
 		/**
