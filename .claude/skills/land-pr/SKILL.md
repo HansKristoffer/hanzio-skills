@@ -85,6 +85,8 @@ bash "$SKILL_DIR/scripts/wait-for-checks.sh" "$PR" --repo "$REPO" --sha "$HEAD_S
 
 The script waits until every check on the pinned head has finished, then prints each check's result and the PR's mergeability. It exits 0 when the checks finished (failures are in the output) or the PR is closed or merged, 2 when the head moved, 3 on timeout (default 60 minutes), 4 when the GitHub CLI fails three times in a row, and 5 when no checks appeared within five minutes. It already covers the cases hand-written loops get wrong: an empty check list right after a push, a stale head, and CLI errors that read as success.
 
+After a rerun, wait with the script, never the harness's PR watcher alone. A rerun keeps the head and usually ends in the same state the watcher already reported, so a second failure of the same check can wake nobody. Pass the run and the attempt the rerun starts (the current attempt plus one): `--run "$RUN_ID" --attempt "$NEXT_ATTEMPT"`. Without them the script returns at once, because the PR still shows the old attempt's failure until the new one registers.
+
 Tell the user when something changes (a check fails, a fix is pushed, the PR turns green), not on a timer.
 
 - If the head changes, invalidate the previous result and follow the new SHA. Reconcile any in-progress local fix with that head before committing or pushing.
@@ -115,7 +117,11 @@ Read the failing command in the current workflow and any composite action it use
 - For schema or migration failures, follow the repository's database guidance. A CI hint to generate a migration is not user authorization to create one. Never reset data to clear CI.
 - For missing credentials or permission failures, finish independent checks and report the exact access blocker. Do not replace secrets or weaken checks.
 
-Make the smallest change that fixes the demonstrated cause while preserving intended behavior. Do not disable tests, loosen assertions, remove required jobs, or add `continue-on-error` to manufacture green CI. For a demonstrated transient runner/network failure, one authorized failed-job rerun per SHA is reasonable (`gh run rerun "$RUN_ID" --repo "$REPO" --failed`); record it and monitor the new attempt. Repeatedly rerunning a deterministic failure is not a fix.
+Make the smallest change that fixes the demonstrated cause while preserving intended behavior. Do not disable tests, loosen assertions, remove required jobs, or add `continue-on-error` to manufacture green CI. For a demonstrated transient runner/network failure, one authorized failed-job rerun per SHA is reasonable (`gh run rerun "$RUN_ID" --repo "$REPO" --failed`); record it and wait on the new attempt as described in **Watch the current head**. Repeatedly rerunning a deterministic failure is not a fix.
+
+"Transient" needs evidence beyond the failing summary line. Read the full data first: the job's report or results artifact, every sample of a benchmark rather than its percentile, the exact error text. A timing failure where many samples are slow is not one outlier, and an error with a cause inside the test harness (a port picked from the ephemeral range, an unawaited cleanup, a fixed sleep) is a bug to fix on the PR, not noise to rerun.
+
+Before proposing to remove or rename a job, read the base branch's required checks (`gh api "repos/$REPO/branches/$BASE/protection" --jq .required_status_checks.contexts` and `gh api "repos/$REPO/rules/branches/$BASE"`). A required check whose job no longer exists never reports, so the PR stays blocked until branch protection changes too, which needs its own authorization.
 
 ## Publish and continue
 
