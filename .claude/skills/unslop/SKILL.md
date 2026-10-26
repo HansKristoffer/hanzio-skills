@@ -5,7 +5,7 @@ description: Simplify and refactor working code after a feature or fix, or when 
 
 # Unslop
 
-Apply this **after** a feature or fix is working, on the **files touched** (and closely related helpers), unless the user asks for a wider sweep. When the request is only about text (a doc, a PR description, copy), go straight to [references/prose.md](references/prose.md). When it is about tests (writing them, an audit, a sweep), go straight to [references/tests.md](references/tests.md); a whole-subsystem test campaign also needs [references/test-campaign.md](references/test-campaign.md).
+Apply this **after** a feature or fix is working, on the **files touched** (and closely related helpers), unless the user asks for a wider sweep. When the request is only about text (a doc, a PR description, copy), go straight to [references/prose.md](references/prose.md). When it is about tests (writing them, an audit, a sweep), go straight to [references/tests.md](references/tests.md); a whole-subsystem test campaign also needs [references/test-campaign.md](references/test-campaign.md). When it is a sweep over a whole codebase or app, especially one split across several agents, read [references/sweep.md](references/sweep.md) first.
 
 ## Learn the repository first
 
