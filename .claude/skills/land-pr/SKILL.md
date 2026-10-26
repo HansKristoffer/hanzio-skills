@@ -1,11 +1,13 @@
 ---
 name: land-pr
-description: Write or update a pull request's body, watch its CI checks, resolve merge conflicts, fix failed jobs, and repeat verification after authorized pushes until the PR is green; offer to merge it when green and, in repositories that use release-please, to carry the resulting release PR through to merge. Use when asked to open or land a PR, write its description, watch a PR, resolve its conflicts, fix failing CI, keep checking until checks pass, or ship a release-please release.
+description: Write or update a pull request's body, watch its CI checks and review bots, resolve merge conflicts, fix failed jobs and real review findings, and repeat verification after authorized pushes until the PR is green; offer to merge it when green and, in repositories that use release-please, to carry the resulting release PR through to merge. Use when asked to open or land a PR, write its description, watch or babysit a PR, resolve its conflicts, fix failing CI or answer review findings, keep checking until checks pass, or ship a release-please release, and when the user says "full send" (finish the change, prove it, land and merge it unattended) or "full stop" (the same, stopping before the merge).
 ---
 
 # Land a PR
 
-Carry the selected PR through a describe → watch → resolve conflicts/fix failures → verify → push → watch loop. Waiting for CI happens outside the conversation, through the harness's PR watcher or one background command, so the session is only woken when there is something to act on. It works in any GitHub repository: discover the checks, commands and conventions from the repository instead of assuming them.
+Carry the selected PR through a describe → watch → resolve conflicts/fix failures/answer reviews → verify → push → watch loop. Waiting for CI happens outside the conversation, through the harness's PR watcher or one background command, so the session is only woken when there is something to act on. It works in any GitHub repository: discover the checks, commands and conventions from the repository instead of assuming them.
+
+When the user says "full send" or "full stop", read [references/unattended.md](references/unattended.md) before anything else. That run starts earlier, by finishing and proving the change, grants more, and replaces the questions below with its own rules.
 
 ## Learn the repository
 
@@ -29,7 +31,7 @@ For an explicit PR, pass its number/URL. Record the base repository (`OWNER/REPO
 
 Verify the checkout belongs to the selected PR and starts from its current head before editing. Preserve unrelated local changes; use a separate worktree if needed. Never switch a dirty checkout, overwrite another contributor's work, or force-push to reconcile divergence.
 
-The default requested workflow is automatic: resolve conflicts or fix CI errors, verify locally, commit and push to the selected PR branch, then watch the new run and repeat until green. When the user invokes this workflow for a PR, carry out that commit/push loop without asking for confirmation on every iteration. Respect an explicit narrower request such as watch-only, local-fixes-only, or no pushing; automatic skill discovery alone does not authorize remote writes. Reuse session authorization. If required push authorization is missing, first prepare and verify the concrete fix, then stop and ask immediately before pushing. Writing the body of the user's own PR is part of this workflow; on someone else's PR, ask before replacing their description. Do not merge the PR, post comments, change secrets or branch protection, deploy, or trigger unrelated workflows without authorization covering those actions and targets. The merge question is how merges, and release-please releases, get authorized.
+The default requested workflow is automatic: resolve conflicts or fix CI errors, verify locally, commit and push to the selected PR branch, then watch the new run and repeat until green. When the user invokes this workflow for a PR, carry out that commit/push loop without asking for confirmation on every iteration. Respect an explicit narrower request such as watch-only, local-fixes-only, or no pushing; automatic skill discovery alone does not authorize remote writes. Reuse session authorization. If required push authorization is missing, first prepare and verify the concrete fix, then stop and ask immediately before pushing. Writing the body of the user's own PR is part of this workflow; on someone else's PR, ask before replacing their description. Replying to and resolving review-bot threads on the user's own PR is part of this workflow (see **Answer reviews**). Do not merge the PR, post other comments, change secrets or branch protection, deploy, or trigger unrelated workflows without authorization covering those actions and targets. The merge question is how merges, and release-please releases, get authorized.
 
 ## Write the PR body
 
@@ -85,6 +87,8 @@ bash "$SKILL_DIR/scripts/wait-for-checks.sh" "$PR" --repo "$REPO" --sha "$HEAD_S
 
 The script waits until every check on the pinned head has finished, then prints each check's result and the PR's mergeability. It exits 0 when the checks finished (failures are in the output) or the PR is closed or merged, 2 when the head moved, 3 on timeout (default 60 minutes), 4 when the GitHub CLI fails three times in a row, and 5 when no checks appeared within five minutes. It already covers the cases hand-written loops get wrong: an empty check list right after a push, a stale head, and CLI errors that read as success.
 
+Exit 4, or a PR watcher that stops because it could not read the PR, is often GitHub's GraphQL rate limit rather than authentication: check `gh api rate_limit --jq .resources.graphql`. `gh pr view`, `gh pr checks` and `gh pr create` all spend GraphQL, and every watcher on the account shares that limit. REST has its own limit and usually still has room: read the PR with `gh api "repos/$REPO/pulls/$PR"`, its checks with `gh api "repos/$REPO/commits/$HEAD_SHA/check-runs"`, and open a PR with `gh api "repos/$REPO/pulls" -f title=<title> -f head=<branch> -f base=<base> -F body=@<file>`. Wait for the GraphQL `reset` time with one background command before you start the script or the watcher again.
+
 After a rerun, wait with the script, never the harness's PR watcher alone. A rerun keeps the head and usually ends in the same state the watcher already reported, so a second failure of the same check can wake nobody. Pass the run and the attempt the rerun starts (the current attempt plus one): `--run "$RUN_ID" --attempt "$NEXT_ATTEMPT"`. Without them the script returns at once, because the PR still shows the old attempt's failure until the new one registers.
 
 Tell the user when something changes (a check fails, a fix is pushed, the PR turns green), not on a timer.
@@ -94,8 +98,9 @@ Tell the user when something changes (a check fails, a fix is pushed, the PR tur
 - If no checks appear (exit 5) and there are no conflicts, inspect workflow triggers, path filters, runs waiting for approval (`status: action_required` or `waiting`), and API errors; report missing checks as blocked or unverified, never green. Approving runs on the user's own PR is part of watching it; on someone else's fork PR, ask first, since approval runs their code with this repository's tokens.
 - Queued, waiting, and in-progress runs are pending. A cancelled run may have been superseded; discover its replacement. Cancellation, timeout, skipped, neutral, or action-required conclusions are not proof of success.
 - If the PR closes or merges, stop and report its state.
+- If a review or review comment arrives, handle it with **Answer reviews**.
 
-Success requires every relevant check to have completed successfully for the still-current head and confirmed absence of merge conflicts against the current base (`mergeable: MERGEABLE`). Re-fetch PR metadata and the latest runs/attempts before declaring success. Jobs skipped by the workflow's own path or condition logic are acceptable only as designed; they are not evidence that those tests ran. Do not infer success from a bot summary comment or from workflows unrelated to the PR.
+Success requires every relevant check to have completed successfully for the still-current head, confirmed absence of merge conflicts against the current base (`mergeable: MERGEABLE`), and finished reviews as **Answer reviews** defines them. Re-fetch PR metadata and the latest runs/attempts before declaring success. Jobs skipped by the workflow's own path or condition logic are acceptable only as designed; they are not evidence that those tests ran. Do not infer success from a bot summary comment or from workflows unrelated to the PR.
 
 ## Diagnose and fix failures
 
@@ -123,6 +128,10 @@ Make the smallest change that fixes the demonstrated cause while preserving inte
 
 Before proposing to remove or rename a job, read the base branch's required checks (`gh api "repos/$REPO/branches/$BASE/protection" --jq .required_status_checks.contexts` and `gh api "repos/$REPO/rules/branches/$BASE"`). A required check whose job no longer exists never reports, so the PR stays blocked until branch protection changes too, which needs its own authorization.
 
+## Answer reviews
+
+When a review, a review comment or a review thread arrives, and before declaring success on a PR that has any, follow [references/reviews.md](references/reviews.md). Reviews are finished when every gating review bot (Greptile, Macroscope) has reviewed the current head, every unresolved thread is fixed or answered, and no human review still requests changes. CodeRabbit is advisory and never gates.
+
 ## Publish and continue
 
 After local verification, inspect the diff and stage only the intended fix. Follow the repository's commit message convention, run required pre-commit checks, and commit without bypassing hooks. Immediately before pushing, re-read the remote PR head; if someone updated it, integrate safely and rerun affected checks. Push normally to the verified PR head remote/branch only when authorized, then record the new SHA and return to watching. A successful push or local test run does not complete the task.
@@ -131,7 +140,7 @@ Default limits are three pushed fix iterations and 60 minutes of total watching/
 
 ## Finish
 
-Finish in the conversation with a short completion message and what changed, if anything, including whether you created the PR or rewrote its body. For example: “PR #123 checks passed and there are no merge conflicts. Resolved the base-branch conflict in the router and fixed the failing typecheck.” If nothing changed, say “PR #123 checks passed and there are no merge conflicts. No changes needed.” A PR or run link can be inline; omit commit hashes and a detailed check-by-check report unless requested. Mention material verification gaps or intentional test skips briefly. If blocked or budget-limited, state that it is unfinished, summarize what was done, and ask the user the specific question needed to continue. Do not add a GitHub comment or send another notification as part of completion.
+Finish in the conversation with a short completion message and what changed, if anything, including whether you created the PR or rewrote its body. For example: “PR #123 checks passed and there are no merge conflicts. Resolved the base-branch conflict in the router and fixed the failing typecheck.” If nothing changed, say “PR #123 checks passed and there are no merge conflicts. No changes needed.” A PR or run link can be inline; omit commit hashes and a detailed check-by-check report unless requested. Mention material verification gaps or intentional test skips briefly, and list declined review items worth doing later as follow-ups, one line each. If blocked or budget-limited, state that it is unfinished, summarize what was done, and ask the user the specific question needed to continue. Do not add a GitHub comment or send another notification as part of completion.
 
 If the user chose to merge, do not finish here: report the green PR in one line and continue with the merge below. If they chose to leave it open, finish as above.
 
@@ -140,6 +149,8 @@ If the user chose to merge, do not finish here: report the green PR in one line 
 Run this only after the user chose to merge, once the watched PR is green. The answer authorizes exactly what the question stated, nothing more.
 
 A failing check that is not required does not block the merge on GitHub, but the PR is not green either. Before merging over one, name the check and why it fails, and ask.
+
+Right before merging, run `git fetch` and re-read the PR. Merge only when it passes the **merge gate** on its latest head: the success conditions in **Watch the current head**, `mergeStateStatus` other than `BEHIND`, and no base commits since the green run that touch this PR's files. GitHub reports a branch that is behind its base as `CLEAN` unless branch protection requires it to be up to date, so compare the files yourself: `git diff --name-only "$GREEN_BASE" "origin/$BASE"` against `gh pr diff "$PR" --repo "$REPO" --name-only`, where `GREEN_BASE` is the `baseRefOid` you recorded while watching the green head. When it is `BEHIND` or the files overlap, merge the base in as in **Resolve merge conflicts**, push, and wait for green again.
 
 Merge with a method the repository allows (`gh repo view --repo "$REPO" --json squashMergeAllowed,mergeCommitAllowed,rebaseMergeAllowed`). Use the same method as recent merges into the base branch; with release-please, prefer squash when allowed, since release-please builds the changelog from the commits that land on the branch. Guard the head: `gh pr merge "$PR" --repo "$REPO" --squash --match-head-commit "$HEAD_SHA"` (or `--merge` / `--rebase`). Never use `--admin` or bypass branch protection. If a required review or another rule blocks the merge, stop and ask. If someone else is merging it, poll until it merges and treat a close without merge as the end of the task. Record the merge commit (`gh pr view "$PR" --repo "$REPO" --json mergeCommit`).
 
