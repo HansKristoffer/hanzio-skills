@@ -46,7 +46,8 @@ h2 { margin: 0; font-size: 96px; line-height: 1.02; letter-spacing: -0.035em; fo
 #hook .inner { display: flex; flex-direction: column; align-items: center; gap: 36px; }
 .mark { width: 92px; height: 92px; border-radius: 26px; background: linear-gradient(135deg, var(--accent), var(--accent-2)); box-shadow: 0 20px 60px var(--accent-soft); }
 
-/* Product: camera > push > window, so focus, drift and tilt never fight over one transform. */
+/* Product: camera > window, so focus and tilt never fight over one transform. Nothing drifts:
+   the camera holds still between deliberate moves, as a product shot should. */
 #product { perspective: 2200px; }
 #cam { position: relative; }
 #window {
@@ -120,7 +121,7 @@ h2 { margin: 0; font-size: 96px; line-height: 1.02; letter-spacing: -0.035em; fo
 </section>
 
 <section class="layer" id="product">
-	<div id="cam"><div id="push">
+	<div id="cam">
 		<div id="window">
 			<div class="titlebar"><i></i><i></i><i></i><span class="url">app.product.com</span></div>
 			<div class="sidebar">
@@ -139,7 +140,7 @@ h2 { margin: 0; font-size: 96px; line-height: 1.02; letter-spacing: -0.035em; fo
 			</div>
 			<div class="callout" id="callout">Shared with your team in one click</div>
 		</div>
-	</div></div>
+	</div>
 </section>
 
 <section class="layer" id="features">
@@ -210,7 +211,6 @@ Film.create({
 		Film.show(tl, '#product', 2.3, 9.4)
 		Film.tilt(tl, '#window', 2.35)
 		Film.rise(tl, '#window .row:not(#result)', 2.9, { stagger: 0.12, y: 24 })
-		Film.drift(tl, '#push', 3.3, 9.1, { scale: 1.09, y: -30 })
 
 		// 3. Cause, then effect: the cursor clicks, and the new project materialises.
 		tl.set('#result', { autoAlpha: 0 }, 0)

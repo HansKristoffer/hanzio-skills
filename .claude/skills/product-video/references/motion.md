@@ -18,12 +18,23 @@ How to build a composition that reads as a professionally edited launch film rat
 A recorded clip plays inside a composition on the film clock, frame-exact:
 
 1. Write a silent part, for example `clip-agents.json` with `[{ "id": "agents", "dur": 9 }]`, and run `narrate` on it (no key needed for silent parts).
-2. Record it with a walkthrough script (`references/walkthrough.md`): reach the start state before `record`, then do the action inside `rec.scene`. Pass `{ cursor: false }` when nothing is clicked. Start with the subject just out of view when the product animates on arrival, so the animation happens on camera.
-3. `bun $SKILL/video.ts live clip-agents.json` prints every `rec.mark` and click with its time in the clip and a `crop=W:H:X:Y` for the marked element (also in `clip-agents/marks.json`). Recordings are 2x density (3840x2160), so a crop can be enlarged about 2x in the film and stay sharp; crops are in those video pixels. Mark the region you will crop to (the widget, the panel) as well as the events. Crop with `bun $SKILL/video.ts crop clip-agents.json <mark> assets/clip-agents.mp4 --pad 8`, or with an explicit `W:H:X:Y` in video pixels, and look at the preview frame it writes for anything outside the subject at its edges.
+2. Record it with a walkthrough script (`references/walkthrough.md`): reach the start state before `record()`, then do the action inside `rec.scene`. Pass `record({ cursor: false })` when nothing is clicked. Start with the subject just out of view when the product animates on arrival, so the animation happens on camera.
+3. `bun $SKILL/video.ts walk clip-agents.walk.mjs` records the clip and prints every `rec.mark` and click with its time in the clip and a `crop=W:H:X:Y` for the marked element, and writes them to `clip-agents/video.marks.json`. Recordings are 2x density (3840x2160) at 60 fps, so a crop can be enlarged about 2x in the film and stay sharp; crops are in those video pixels. Mark the region you will crop to (the widget, the panel) as well as the events. Crop with `bun $SKILL/video.ts crop clip-agents.json <mark> assets/clip-agents.mp4 --pad 8`, or with an explicit `W:H:X:Y` in video pixels, and look at the preview frame it writes for anything outside the subject at its edges. The crop gets `assets/clip-agents.marks.json` beside it, with every mark moved into its pixels.
 4. Play it in a frame: `<video src="assets/clip-agents.mp4" data-start="13.3" data-from="1.15" data-rate="0.85" data-until="9.4" muted></video>`. `data-start` is the film time it begins, `data-from` the clip's in-point, `data-rate` its speed, and `data-until` the clip time it holds on, so the beat ends on its payoff instead of whatever the recording did next.
-5. Time the beat from the marks, never by hand: `const sent = Film.clipAt('#agents video', 5.0)` is the film time the clip reaches its 5.0 s mark; put the caption, the cue and the camera push there.
+5. Time and aim the beat from the marks, never by hand. `Film.clipMark('#agents video', 'click text=Send').t` is the film time of that click, and `.clipTime` the clip's own (`video.dataset.until = mark.clipTime + 0.5` holds the clip on a payoff that is on screen only briefly, such as a toast); `Film.clipAt('#agents video', 5.0)` the film time the clip reaches 5.0 s. Put the caption, the cue and the camera move there, and aim the camera at the mark itself (below).
 
-The screencast captures about 13 frames per second during motion, so prefer clips where the UI changes in steps (text streaming, panels filling, states changing) over fast scrolling, and let the composition provide the smooth camera motion around it.
+Scrolls and pointer glides in a recording are captured frame by frame at 60 fps, so they play smoothly. The page's own animations (a dialog opening, a toast) are captured at 10-30 fps; show fast animation in a composition instead.
+
+## The camera on product footage
+
+The viewer reads the product, so the camera behaves like a careful editor's, not a screensaver:
+
+- **Still, move, still.** Between deliberate moves the camera does not move at all: no drift, no slow push, no creeping zoom on footage, a screenshot or a window the camera focuses. A slow scale change on screen text shimmers and reads as lag. Life in a product shot comes from the product: the pointer, values changing, a result landing.
+- **A zoom is an event with a reason.** Zoom in when the detail the narration or caption names is too small to read at full view, or to point at the payoff. Not on every beat, and never into a region where nothing happens.
+- **Aim at the action, from the marks.** `Film.focus(tl, camera, ['#clip video', 'click text=Apply changes'], at, { scale: 1.8 })` frames the click with the pointer in the middle; a mark with a selector frames that element. Never guess pixel offsets. The camera stops at the clip's edges, so an action near an edge sits off-centre but whole, pointer included.
+- **Timing.** Start the zoom about 0.6-0.9 s before the click so it lands (1 s, `swap` ease) just before the pointer presses; hold through the result; pan to the next action with another `Film.focus`; zoom out with `Film.focus(tl, camera, null, at)` when the viewer needs the whole screen again. Keep the camera still while text is being read.
+- **How far.** 1.5-2.2x is a good close-up for a 2x recording. `Film.focus` never enlarges a clip past its recorded pixels: it caps the zoom and `render` and `stills` print a warning. When a closer shot is needed, record that clip with `walk --scale 3` or crop closer; never accept the warning.
+- **One transform.** The camera wrapper is the only thing that scales footage: no drift or tilt on it or inside it while it focuses, or the region it measured is no longer where it aims.
 
 ## Six rules
 
@@ -56,16 +67,17 @@ These come up in nearly every first cut; build them in from the start.
 - **Before a camera move into the product, the title makes way.** Text on top of busy UI is unreadable; the title leaves, and the product fills the frame.
 - **Fly through compact things, lift wide text out.** A logo, a mark or a short word can scale through the camera; a full-width headline clips at the frame edges, so it leaves with `Film.leave` (lift and blur) while the next scene rises.
 - **End a clip beat on its payoff.** When a recorded clip finishes its action, cut to the next beat within about 0.5 s, and make sure the crossfade into it has finished before the action starts.
-- **A footage beat needs its own camera move.** Screen footage changes in small regions, so `check` reads it as frozen; give the frame a drift of about 8-10 % plus a push onto the payoff (eased out over 2-3 s, not a fast landing that then sits still).
+- **A footage beat moves through the product, not the camera.** Screen footage changes in small regions, so `check` reads it as frozen; that is fine while the pointer or the product moves. Give the beat a zoom onto the action and a payoff, not a drift (see "The camera on product footage").
 - **A claim stays on screen until its proof appears.** "Answers straight away" must still be up when the answer lands. Cut a wait out of a clip with a jump cut: two `<video>` elements of the same clip in one frame, the first playing up to the action, the second from just before the result (`Film.show` switches them). Speed up typing with `data-rate`, not the answer.
 - **A dark logo intro over a living background:** `mix-blend-mode: lighten` on the video drops its flat dark field and keeps the letters, so the end card does not jump to a flat colour.
 - **Check the first and last frames of every video asset.** A logo intro or a recorded clip often starts empty or ends on a dead frame; set `data-from` past the lead-in so the beat opens on something.
+- **Count only what is true on the way.** A counter shows every value it passes: a share or a count of things can count up, a price, a rating or a date cannot ("From 105 DKK" is a false claim for a few frames). Land those with a scale or blur settle instead.
 - **Size for a phone.** On a 1080p frame, anything that must be read is at least 28 px, callouts at least 32 px; the CTA is a 48-60 px pill held at least 1.8 s; a concept label is at least 24 px and not dimmed.
 
 ## Pacing
 
 - About 12-15 compositions in 30 s; beats of 1.4-3.5 s.
-- No motionless stretch over 0.6 s; a held beat still gets a slow 3-5 % push (`Film.drift`) plus a tertiary change. `check` measures this.
+- In graphics beats (type, numbers, cards, the end card) no motionless stretch over 0.6 s; a held graphic gets a slow 3-5 % push (`Film.drift`) plus a tertiary change. `check` measures this. Product footage is the exception: the camera holds still while the product acts.
 - Hold longest on the frames that carry the message: the product doing its job, the number, the CTA.
 - End card: 1.5-2 s readable, gently drifting, music resolving on it.
 - Launch films: 15-45 s, music-led, no narration, every claim on screen. Explainers: as long as the narration needs.
@@ -78,13 +90,14 @@ These come up in nearly every first cut; build them in from the start.
 | `Film.headline(tl, el, at, { out })` | Kinetic type: words rise through a line mask with a stagger and leave upward at `out`. Gradient text survives the split. |
 | `Film.rise(tl, els, at)` / `Film.leave(tl, els, at)` | Supporting elements lift, sharpen and fade in; they leave accelerating. |
 | `Film.flyThrough(tl, el, at)` | Foreground fly-through transition. |
-| `Film.drift(tl, el, from, to, { scale, x, y })` | A slow push so holds stay alive. |
+| `Film.drift(tl, el, from, to, { scale, x, y })` | A slow push so held graphics stay alive; never on product footage. |
 | `Film.tilt(tl, el, at)` | A product surface swings in from a 3D tilt; give a parent a `perspective`. |
-| `Film.focus(tl, camera, target, at, { fill })` | The camera moves onto a region of the UI (selection to expansion). |
+| `Film.focus(tl, camera, target, at, { fill, scale })` | The camera moves onto an element, or a clip's mark (`[video, 'click text=Save']`), and holds still; `null` zooms out. Stays inside the clip's edges, caps the zoom where footage turns soft, and returns where the region lands in the frame, so a callout can sit right beside it. |
+| `Film.clipMark(video, name)` | A clip's mark: `t`, its film time, and `region`, the box it frames. |
 | `Film.cursor(tl, cursor, points)` | A cursor that glides and clicks, with a ripple. |
 | `Film.swap(tl, el, at, text)` | A value or status changes state with a pop. |
 | `Film.stack(tl, cards, at)` | Cards arrive and stack; covered cards recede. |
-| `Film.counter(tl, el, at, { to })` | A number counts up. |
+| `Film.counter(tl, el, at, { to, decimals })` | A number counts up; `decimals: 1` for 8.4. |
 | `film.cue(t, sound, gainDb)` | A sound effect from `sfx/` at `t` (see `audio.md`). |
 | `film.dip(from, to, gainDb)` | Pulls the music down, e.g. a dead stop before the logo hit. |
 
