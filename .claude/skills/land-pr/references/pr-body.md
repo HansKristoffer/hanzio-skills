@@ -3,6 +3,8 @@
 Use this template when creating a PR or rewriting an existing body. Adapted from the [show-me skill](https://github.com/humanlayer/skills/blob/main/plugins/show-me/skills/show-me/SKILL.md) by Dex Horthy (HumanLayer).
 
 ```markdown
+<the problem, then the fix, in one or two plain sentences>
+
 ## Summary
 
 <diagram, diff-sketch, or tree>
@@ -25,7 +27,11 @@ Use this template when creating a PR or rewriting an existing body. Adapted from
 
 If the repository has a PR template (`.github/pull_request_template.md`, `.github/PULL_REQUEST_TEMPLATE/`, `docs/pull_request_template.md`), it wins: fill its headings and put these sections inside or after them where they fit. Keep anything below that is not ours to drop: closing keywords and issue links (`Closes #12`), a human-written description or reviewer notes, checklists, bot-managed blocks (release notes, preview links, stacked-PR tables). Fold the useful parts of an existing description into the new sections instead of deleting them.
 
-Skip all preambles and keep prose brief. Use the domain language from the repository's glossary (`GLOSSARY.md`, `CONTEXT.md` or equivalent) when it has one. The title follows the repository's commit convention.
+Skip all preambles and keep prose brief. Use the domain language from the repository's glossary (`GLOSSARY.md`, `CONTEXT.md` or equivalent) when it has one. The title follows the repository's commit convention and says what the change does for its user rather than how: `perf(server): cut websocket frame size by 70%`, not `perf(server): negotiate permessage-deflate on the websocket`.
+
+## Opening
+
+Before the first heading, say in one or two plain sentences what was wrong, in the terms of the user's request, then what the PR does about it: "New threads ignored the default worktree setting. Now they always use it." Save the inventory of changed functions and files for **Summary**.
 
 ## Summary
 
