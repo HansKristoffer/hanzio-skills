@@ -41,6 +41,7 @@ A question in a normal message goes unseen and the thread looks done. Ask with t
 - the merge gate cannot pass and you cannot fix that yourself;
 - the budget in **Publish and continue** is spent;
 - the next step is outside the grant;
+- the diff makes a change the user's request did not name and that needs a person to agree to it: new or changed auth or permission logic, a new category of personal or payment data, CORS rules, a file upload handler, a destructive migration, payment flows, a deploy, or a secret;
 - the goal is ambiguous in a way that changes the result;
 - another PR makes this one obsolete.
 

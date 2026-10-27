@@ -92,15 +92,15 @@ SHOW CLIENTS;
 SHOW STATS;
 ```
 
-Watch `cl_waiting` in `SHOW POOLS` — clients waiting for a connection. Non-zero values indicate the pool is undersized or the database is saturated.
+Watch `cl_waiting` in `SHOW POOLS`, the number of clients waiting for a connection. Non-zero values indicate the pool is undersized or the database is saturated.
 
 ### When to Use Pooling
 
 | Scenario                          | Recommendation                          |
 | --------------------------------- | --------------------------------------- |
-| Serverless (Lambda, Edge, Vercel) | Always — cold starts spike connections  |
+| Serverless (Lambda, Edge, Vercel) | Always, cold starts spike connections   |
 | Long-running app servers          | Recommended when > 50 app instances     |
-| Single-process application        | Optional — built-in pool may suffice    |
+| Single-process application        | Optional, built-in pool may suffice     |
 | `LISTEN`/`NOTIFY` consumers       | Session mode or direct connection       |
 | Background workers                | Direct connection, long-lived processes |
 
@@ -304,9 +304,9 @@ async function getPostsPage(cursor?: { createdAt: Date; id: number }) {
 
 | Aspect             | OFFSET Pagination        | Keyset Pagination          |
 | ------------------ | ------------------------ | -------------------------- |
-| Deep pages         | O(N) — gets slower       | O(log N) — constant cost   |
+| Deep pages         | O(N), gets slower        | O(log N), constant cost    |
 | Jump to page N     | Supported                | Not supported              |
-| Consistent results | No — inserts shift pages | Yes — stable cursor        |
+| Consistent results | No, inserts shift pages  | Yes, stable cursor         |
 | Index required     | Optional                 | Required (on sort columns) |
 
 ### Queue Processing with FOR UPDATE SKIP LOCKED
@@ -408,7 +408,7 @@ A `hot_pct` below 50% on a frequently updated table suggests removing unnecessar
 
 ### NULLS NOT DISTINCT (PostgreSQL 15+)
 
-Standard SQL treats `NULL` as distinct from every other value, including other `NULL`s. A unique index on a nullable column allows multiple rows with `NULL` in that column. `NULLS NOT DISTINCT` changes this — `NULL` is treated as a regular value for uniqueness purposes.
+Standard SQL treats `NULL` as distinct from every other value, including other `NULL`s. A unique index on a nullable column allows multiple rows with `NULL` in that column. `NULLS NOT DISTINCT` changes this, so `NULL` is treated as a regular value for uniqueness purposes.
 
 ```sql
 -- PG15+: Only one row with NULL allowed in email
@@ -420,7 +420,7 @@ ALTER TABLE users
 ADD CONSTRAINT uq_users_email UNIQUE NULLS NOT DISTINCT (email);
 ```
 
-**Composite unique constraint example** — useful for soft-delete patterns where `deleted_at` is nullable:
+**Composite unique constraint example**, useful for soft-delete patterns where `deleted_at` is nullable:
 
 ```sql
 -- Allow multiple deleted rows with the same username, but only one active row
@@ -428,7 +428,7 @@ CREATE UNIQUE INDEX idx_users_username_active
 ON users (username, deleted_at) NULLS NOT DISTINCT;
 ```
 
-Without `NULLS NOT DISTINCT`, the index allows unlimited rows where `deleted_at IS NULL` and `username = 'alice'` — the opposite of the intended constraint.
+Without `NULLS NOT DISTINCT`, the index allows unlimited rows where `deleted_at IS NULL` and `username = 'alice'`, the opposite of the intended constraint.
 
 **Pre-PostgreSQL 15 workaround:**
 
