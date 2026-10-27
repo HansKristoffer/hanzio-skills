@@ -87,7 +87,7 @@ Name what you skipped and when it becomes necessary, in the design doc, so the n
 
 ## Start a new engine
 
-1. **Write the design doc first**, short and numbered: domain glossary, the kinds, the flow (intent to receipt, or less), the guarantees you promise and the ones you don't, open questions. Number the decisions so later work can cite them.
+1. **Write the design doc first**, short and numbered: domain glossary, the kinds, the flow (intent to receipt, or less), the guarantees you promise and the ones you don't, open questions. Number the decisions so later work can cite them. Settle the open questions with the user by calling the Skill tool with `grill`.
 2. **Probe the external system** for every assumption the design rests on (idempotency, ordering, error shapes, limits, what "success" really returns). Record results; fix the design before writing code.
 3. **Write the contracts and the rulebook.** One `AGENTS.md` in the engine package with numbered rules (start from the principles above, cut what you don't need). Add the bundle-boundary test and the strict tsconfig flags (`exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`).
 4. **Prove the hard parts with one vertical slice**: one kind, one adapter, one route, one rendered field, end to end, with its conformance suite and type tests, and one case of every command family the contracts must carry. Fix the contracts now; this is the last cheap moment.
