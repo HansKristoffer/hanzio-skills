@@ -17,10 +17,11 @@ Use this only when the user explicitly says "full send" or "full stop", or asks 
 2. **Prove it** (see **Proof**).
 3. **Open the PR** with **Write the PR body**; its **Evidence** is your proof.
 4. **Land it** with the normal loop: watch, fix CI, resolve conflicts, answer reviews. Prove each fix before you push it.
-5. **Finish at the merge gate** from **Merge** in `SKILL.md`, with one more condition: your proof covers every change in the final diff. Full send merges; full stop stops.
-6. **Report:** the PR link, the merge commit (full stop: the final head and that the PR is open and unmerged), your proof, every decision you made for the user, and declined review items worth doing later.
+5. **Run the done check** (see **Done check**).
+6. **Finish at the merge gate** from **Merge** in `SKILL.md`, with two more conditions: your proof covers every change in the final diff, and the done check has no line short of green. Full send merges; full stop stops.
+7. **Report:** the PR link, the merge commit (full stop: the final head and that the PR is open and unmerged), the done check table, every decision you made for the user, and declined review items worth doing later.
 
-Stay active from step 1 to step 6. Each turn ends with the PR watcher or a background wait running, because nobody will prompt you again. Stop the watch (`unwatch_pull_request`) only when you hand off or ask.
+Stay active from step 1 to step 7. Each turn ends with the PR watcher or a background wait running, because nobody will prompt you again. Stop the watch (`unwatch_pull_request`) only when you hand off or ask.
 
 ## Proof
 
@@ -32,6 +33,17 @@ Proof is evidence you observed yourself in this session: command output, a repro
 - For UI and runtime behavior, run the app and look at it; green mocked tests leave the user experience unproven.
 
 A change you cannot prove is a reason to ask.
+
+## Done check
+
+Re-read what the user asked for in their own words: the message that started the task and every later message that changed it, plus the plan's acceptance criteria when there is one. Write one line per thing they asked for: the ask, the evidence, and how far it got, using the weakest level that is true:
+
+- **claimed:** you say it is done, and nothing shows it yet;
+- **pushed:** it is in a commit on the PR branch;
+- **green:** it is proven (see **Proof**) and the checks passed on the final head;
+- **merged:** it is on the base branch.
+
+A line at claimed or pushed is not done: prove it, or ask. An ask you dropped on purpose gets its line too, with the reason.
 
 ## Asking
 

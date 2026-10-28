@@ -28,6 +28,9 @@ This run is read-only for code and data: do not edit files, create branches, sta
    **Fine / Can't tell:** the rest, a few words each.
    **Skipped:** PRs with nothing running in production.
    **Be aware of:** PRs that never reached production, odd traffic. Write "Nothing" if there is nothing.
+   **Outcome:** ACTED (the issues opened or commented), NOOP (why nothing needed filing) or BLOCKED (what a person must fix for this check to run).
+
+Revised: 2026-10-28
 ```
 
 ## Daily flaky test report (fixed time, weekdays 07:30)
@@ -49,4 +52,7 @@ This run is read-only for code: do not edit files, create branches, start the st
    **Worst:** each of the top three: test, how often, cause in a few words, issue and whether you opened, updated or reopened it.
    **Also flaky:** the rest, one line each with its count.
    **Be aware of:** unreadable logs, infrastructure failures, a test that flakes on almost every run. Write "Nothing" if there is nothing.
+   **Outcome:** ACTED (the issues opened, updated or reopened), NOOP (no flakes in the window) or BLOCKED (what a person must fix for this report to run).
+
+Revised: 2026-10-28
 ```

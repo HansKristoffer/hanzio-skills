@@ -27,6 +27,7 @@ Name each document `<phase>.<track> – <short-name>.md`, for example `1.2 – a
 
 1. **Goal**: one or two sentences on what this delivers and why. Name the task by what can be shown when it is done; an "and" in the name means two tasks.
 2. **Context**: the parts of the master document this task needs, copied in, not referenced. Include:
+   - the master document's Ask, quoted verbatim, when it has one;
    - the business rules and the decisions that bind this task;
    - the integration findings: auth, endpoints, data shapes, limits;
    - the repository conventions it must follow, with the paths of the files to copy patterns from.

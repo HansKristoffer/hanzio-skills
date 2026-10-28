@@ -58,7 +58,8 @@ Implementers already running keep going. Running this skill again resumes from t
 ### Close
 
 9. When every task is Done, call the Skill tool with `unslop` over the integration branch's whole diff against its base, for what only shows across tasks: duplicated helpers, two shapes for one thing.
-10. Remove every implementer worktree and every merged `task/<slug>-*` branch.
-11. Report the tasks done, the merges, and anything skipped or flagged. Then call the Skill tool with `land-pr` to open the PR for the integration branch, with each task's proof as its evidence; "full send" lands it unattended.
+10. **Done check.** Re-read the master document's Ask, when it has one, and every acceptance criterion in the task documents. For each, cite the evidence the implementer reported and check it still holds on the integration branch: rerun the test or command, since it may have passed only on the task branch. A criterion without evidence is not done: start one more implementer for it, or list it in the report.
+11. Remove every implementer worktree and every merged `task/<slug>-*` branch.
+12. Report the tasks done, the merges, the done check, and anything skipped or flagged. Then call the Skill tool with `land-pr` to open the PR for the integration branch, with each task's proof as its evidence; "full send" lands it unattended.
 
 Without subagents, run the tasks one by one in index order on the integration branch, committing each one, scoped to its owned files.
