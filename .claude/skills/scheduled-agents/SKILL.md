@@ -62,7 +62,7 @@ Prompts drift away from what people want, and a scheduled agent keeps repeating 
 
 - **Check merged PRs in production.** Did the fix hold, and did anything that does not throw get quieter: a job, a webhook, an integration's call volume.
 - **Flaky tests.** CI retries hide them. Read the test runner's flaky summary from CI logs and keep one diagnosed issue per test.
-- **Error triage.** On a new or reopened error tracking issue: find the root cause and open a fix, merging only under explicit rules.
+- **Error triage.** On a new or reopened error tracking issue: find the root cause and open a fix, merging only under explicit rules. Build the prompt on the `dispatched-run` skill, which holds the branch, stop, merge and write-back rules such runs share; the same goes for feedback and user requests pushed by a webhook.
 - **Frustration signals.** Rage clicks or dead clicks from product analytics, checked against the code before anything is filed.
 - **Docs drift.** Docs that newly merged code made wrong: removed or renamed features, changed defaults, stale beta labels.
 - **Repro gate.** On a new bug issue: write the smallest test that asserts the reported behavior and run it on the default branch. Label the issue reproduced only when that test fails for the reported reason (not an import error, a missing fixture or a timeout), and push the test to a `repro/<issue>` branch; otherwise comment what was tried and what detail is missing.

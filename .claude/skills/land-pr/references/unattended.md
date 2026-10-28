@@ -19,9 +19,10 @@ Use this only when the user explicitly says "full send" or "full stop", or asks 
 4. **Land it** with the normal loop: watch, fix CI, resolve conflicts, answer reviews. Prove each fix before you push it.
 5. **Run the done check** (see **Done check**).
 6. **Finish at the merge gate** from **Merge** in `SKILL.md`, with two more conditions: your proof covers every change in the final diff, and the done check has no line short of green. Full send merges; full stop stops.
-7. **Report:** the PR link, the merge commit (full stop: the final head and that the PR is open and unmerged), the done check table, every decision you made for the user, and declined review items worth doing later.
+7. **Full send: check the deploy** with **Check the deploy** in `SKILL.md` when merging deploys.
+8. **Report:** the PR link, the merge commit (full stop: the final head and that the PR is open and unmerged), the deploy check, the done check table, every decision you made for the user, and declined review items worth doing later.
 
-Stay active from step 1 to step 7. Each turn ends with the PR watcher or a background wait running, because nobody will prompt you again. Stop the watch (`unwatch_pull_request`) only when you hand off or ask.
+Stay active from step 1 to step 8. Each turn ends with the PR watcher or a background wait running, because nobody will prompt you again. Stop the watch (`unwatch_pull_request`) only when you hand off or ask.
 
 ## Proof
 

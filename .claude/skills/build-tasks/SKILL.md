@@ -1,6 +1,6 @@
 ---
 name: build-tasks
-description: Split an agreed plan or technical document into self-contained task documents with a status index, and run them with parallel AI agents, one per ready task in its own git worktree, merged phase by phase into one branch. Use when asked to split a plan or scope into tasks, to build or run the tasks, to fan work out to parallel agents, or to resume a half-finished task set.
+description: Split an agreed plan or technical document into self-contained task documents with a status index, and run them with parallel AI agents, one per ready task in its own git worktree (subagents, or T3 Code threads that each open a PR), merged into one integration branch. Use when asked to split a plan or scope into tasks, to build or run the tasks, to fan work out to parallel agents, or to resume a half-finished task set.
 ---
 
 # Build from tasks
@@ -20,6 +20,8 @@ Done when every task document exists, the index lists them all, and no file is o
 ## Run
 
 You are the **orchestrator**: you own the integration branch and the index, and you write no feature code.
+
+In T3 Code, run each task as its own thread instead of a subagent when tasks take hours, need their own dev stack, or the user wants to watch and steer each one, or asked for threads. Follow [references/threads.md](references/threads.md) for that; it replaces **Fan out** and **Merge and refill** below.
 
 ### Gate
 
