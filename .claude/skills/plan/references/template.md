@@ -5,6 +5,10 @@ Leave out a section that would be empty. Code and file paths belong in Current s
 ```markdown
 # <Feature name>
 
+## Ask
+
+> <The user's request in their own words, quoted, with the date. Add each later message that changed it.>
+
 ## Problem
 
 What is wrong or missing today, for whom, and how we will know it is fixed. Two to five sentences.

@@ -1,6 +1,6 @@
 ---
 name: debug
-description: Find the cause of a bug by building a loop that goes red on it first, then testing ranked hypotheses against that loop, and lock the fix in with a regression test. Use when a bug's cause is unknown, a test is flaky, something is broken, throwing or slow, performance regressed, or a CI failure is not explained by its log. Built for TypeScript monorepos (Bun or Node, Prisma, Zod, oRPC, hanzio, Vue or React/Expo); reads the repository's own rules first and lets them win.
+description: Find the cause of a bug by building a loop that goes red on it first, then testing ranked hypotheses against that loop, and lock the fix in with a regression test. Use when a bug's cause is unknown, a test is flaky, something is broken, throwing or slow, performance regressed, a fix has failed twice, or a CI failure is not explained by its log. Built for TypeScript monorepos (Bun or Node, Prisma, Zod, oRPC, hanzio, Vue or React/Expo); reads the repository's own rules first and lets them win.
 ---
 
 # Debug
@@ -77,7 +77,7 @@ Test the top hypothesis against its prediction, changing **one variable at a tim
 
 - Prefer a debugger or REPL when the runtime has one (`bun --inspect`, `node --inspect`, Vue/React devtools). One breakpoint beats ten logs.
 - Otherwise add targeted logs at the boundaries that tell the hypotheses apart. Tag every one with a single prefix such as `[DEBUG-a4f2]`, so one grep removes them all.
-- **Performance.** Measure a baseline first (a timing harness, `performance.now()`, a profile), then bisect or change one thing and measure again. For a slow query or endpoint backed by Postgres, call the Skill tool with `postgres-tuning`.
+- **Performance.** Measure a baseline first (a timing harness, `performance.now()`, a profile), then bisect or change one thing and measure again. For a slow query or endpoint backed by Postgres, call the Skill tool with `postgres-tuning`. When there is no single cause to find, only a metric to improve, call the Skill tool with `optimize`.
 
 **Done when** one hypothesis's prediction held: changing that one thing turns the loop green, and putting it back turns it red again.
 
@@ -95,7 +95,7 @@ Put the new test through the authoring gate: call the Skill tool with `unslop` f
 
 ## Phase 6: done
 
-- [ ] The original loop is green.
+- [ ] The original loop is green. For a flaky bug, green means zero failures in at least 3 / p runs, where p is the failure rate before the fix: 60 runs for a 5% flake, 300 for 1%. Fewer clean runs than that cannot tell a fix from luck at about 95% confidence.
 - [ ] A regression test went red before the fix and green after, or the missing seam is written down.
 - [ ] Grepping the debug prefix returns nothing.
 - [ ] Throwaway scripts and harnesses are deleted, or moved somewhere clearly marked.

@@ -41,6 +41,7 @@ Call the Skill tool with `grill`. Decisions are recorded in the plan's Decisions
 
 Put it where the repository keeps plans. Without a convention, use `.plans/<slug>.md` when `git check-ignore -q .plans` succeeds, otherwise ask. Use [references/template.md](references/template.md).
 
+- **Quote the ask.** The Ask section holds the user's words verbatim, never a paraphrase: task documents copy it, and the done check at the end reads it.
 - **Interfaces are given, not designed.** Every type, route, table, event and job the slices share is written out exactly, so two builders cannot invent two shapes for it.
 - **Slices are vertical.** Each slice goes through every layer it needs (schema, service, API, UI, tests) and can be shown working on its own. Name it by what you can demo when it is done ("Revenue visible end to end"), never by a layer. An "and" in the title means two slices.
 - **Every acceptance criterion is checkable**: it names a test, a command, or a file and its content. A slice with more than five criteria is two slices.
@@ -66,7 +67,9 @@ Before any code, have the plan reviewed by a subagent on a different model when 
 - requirements with no slice, and slices nobody asked for;
 - interfaces that do not match the code they extend;
 - criteria that cannot be checked, and proofs that would not prove anything;
-- claims about tooling or libraries the plan did not verify.
+- claims about tooling or libraries the plan did not verify;
+- assumptions the plan rests on that are wrong, and what it will be unable to measure or prove;
+- constraints the goal does not need, and the simplest plan that reaches the same outcome.
 
 Fix each finding or answer it in the plan's review log. Two rounds at most; whatever is still open after that is a question for the user.
 
