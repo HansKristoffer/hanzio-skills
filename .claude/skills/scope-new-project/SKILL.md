@@ -82,9 +82,9 @@ List every feature the sources ask for and match it to the template map. Then dr
 
 ## 4. Settle the build with us
 
-The scope is only right when we agree how to build it. Interview the user until every decision that shapes the scope is made, before you write any document.
+The scope is only right when we agree how to build it. Interview the user until every decision that shapes the scope is made, before you write any document: call the Skill tool with `grill`, with these additions.
 
-**The decision tree.** Map the decisions as a tree, where each decision opens the decisions that hang off it. For example, "who owns the user account" opens "how does the user log in", which opens "how do we link their account in the external system". Typical roots:
+**Typical roots** for a new project:
 
 - what the customer is buying: a product we build and run, or a build they take over;
 - who owns the user accounts and the data;
@@ -95,27 +95,7 @@ The scope is only right when we agree how to build it. Interview the user until 
 - how we price: day rate, buffer, and the monthly operations price;
 - what we will not promise.
 
-**Rounds.** The frontier is every decision whose prerequisites are already settled. Ask the whole frontier in one round, then wait for the answers:
-
-- Number each question.
-- Give each question your recommendation.
-- A question that depends on another question in the same round waits for the next round.
-
-Each answer moves the frontier, so recompute it and ask the next round. Format a round like this:
-
-```
-**Q1 – <title>**: <the question, with the options and what each means for price, time or risk>
-
-→ <your recommendation, and why in one sentence>
-
----
-
-**Q2 – <title>**: ...
-```
-
-Word each question so "yes" accepts your recommendation.
-
-**Facts are yours, decisions are ours.** Never ask us what the sources, the template or the vendor docs can answer. Look it up instead, with a sub-agent when it takes a while. Only the questions that depend on a running lookup wait for it; ask the rest of the frontier now.
+Each question's options say what they mean for price, time or risk. The facts to look up are in the sources, the template and the vendor docs.
 
 **Who decides.** Some decisions belong to the customer, not to us.
 
@@ -123,11 +103,7 @@ Word each question so "yes" accepts your recommendation.
 - The branch under that question is scoped on the recommendation, and the price names it as an assumption.
 - Don't put the customer's business decisions to us, and don't put questions about how we build to the customer.
 
-**Done.** The interview ends when the frontier is empty: every branch visited, nothing silently assumed. Sum up the decisions in a few lines and ask us to confirm before you write the documents.
-
 Record each decision in `technical.md` under Decisions, with "team" and the date as its source. The decisions the customer should see also go under "Decisions taken" in `scope.md`, so the customer can object.
-
-If the user says to skip the interview, use your recommendations, write the documents, and list every recommendation we have not confirmed at the top of the hand-off.
 
 ## 5. Estimate
 
@@ -216,6 +192,4 @@ If the change opens decisions about how we build, run interview rounds as in ste
 
 ## Split into tasks
 
-When the customer has agreed the scope, or the user asks for it, split `technical.md` into self-contained task documents. Each one goes to a separate AI agent in a fresh thread. Follow [references/task-split.md](references/task-split.md).
-
-Before splitting, check that `technical.md` is complete enough to split. Every feature entry in the approved phases needs requirements and acceptance, and every integration it touches needs its interfaces. Gaps become open questions in the task index; never invent the answer.
+When the customer has agreed the scope, or the user asks for it, call the Skill tool with `build-tasks` to split `technical.md` into self-contained task documents, one folder per approved scope phase. It can also run them with parallel agents once the user says so.

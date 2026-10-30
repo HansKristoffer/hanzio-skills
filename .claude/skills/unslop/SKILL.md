@@ -5,7 +5,7 @@ description: Simplify and refactor working code after a feature or fix, or when 
 
 # Unslop
 
-Apply this **after** a feature or fix is working, on the **files touched** (and closely related helpers), unless the user asks for a wider sweep. When the request is only about text (a doc, a PR description, copy), go straight to [references/prose.md](references/prose.md). When it is about tests (writing them, an audit, a sweep), go straight to [references/tests.md](references/tests.md); a whole-subsystem test campaign also needs [references/test-campaign.md](references/test-campaign.md).
+Apply this **after** a feature or fix is working, on the **files touched** (and closely related helpers), unless the user asks for a wider sweep. When the request is only about text (a doc, a PR description, copy), go straight to [references/prose.md](references/prose.md). When it is about tests (writing them, an audit, a sweep), go straight to [references/tests.md](references/tests.md); a whole-subsystem test campaign also needs [references/test-campaign.md](references/test-campaign.md). When it is a sweep over a whole codebase or app, especially one split across several agents, read [references/sweep.md](references/sweep.md) first.
 
 ## Learn the repository first
 
@@ -28,7 +28,7 @@ For each block you are about to keep, rewrite, or extract, stop at the first run
 2. **Does the repo already have it?** A util, composable, hook, formatter, schema, registry, mapping, or Prisma enum a few files over. Re-implementing what already lives here is the single most common artifact in an AI diff - grep before you extract.
 3. **Does the stdlib or runtime cover it?** `Intl`, `URL`, `structuredClone`, array/object built-ins, Bun or Node APIs.
 4. **Does a platform feature cover it?** A DB constraint over app-level checks, a Prisma enum over a string union, CSS over JS, an existing UI-library component over a hand-rolled one.
-5. **Does an installed dependency cover it?** Zod, hanzio, TanStack Query, the repo's own workspace packages. Never add a new dependency during a cleanup pass.
+5. **Does an installed dependency cover it?** Zod, hanzio, TanStack Query, the repo's own workspace packages. Check its docs for the version in the lockfile, not the API you remember. Never add a new dependency during a cleanup pass.
 6. **Can it be one line?** One line.
 7. **Only then** keep the hand-written version.
 
@@ -223,6 +223,7 @@ The logic is unchanged. Each line now says one thing, the phases are visible at 
 8. **Verify**
    - Run the repo's lint/format, typecheck and focused tests on affected packages, plus any package-specific gate the touched area has (design vocabulary, i18n catalogs, browser-export checks) - the repo's `AGENTS.md` lists them.
    - Fix new issues introduced by the pass; do not relax lint rules without an explicit user ask.
+   - The pass lowers no floor: it adds no suppression (`@ts-ignore`, `eslint-disable`, `as any`), skips or deletes no test, removes no assertion and softens no CI step. `land-pr` runs this as a script before every push, so fix it here.
 
 ## Never clean away
 
@@ -246,3 +247,5 @@ Not everything that looks defensive is bloat. Leave these unless the user explic
 Summarize what changed: files and intent, plus anything deliberately left, as `left [X], revisit when [Y]`.
 
 Keep it shorter than the diff. Every paragraph defending a simplification is complexity smuggled back in as prose - if the write-up is longer than what you deleted, cut the write-up. If nothing needed improvement, say so in one sentence.
+
+Next: land the change with `land-pr`.
