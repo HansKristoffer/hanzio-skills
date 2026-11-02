@@ -37,6 +37,7 @@ Go through every group and note each sign you find with where it lives. Each lin
 - Groups that sit closer to their neighbours than to their own items → smaller gaps inside groups, bigger between them
 - Uneven padding inside sibling cards → one padding
 - Big empty gaps above a section and cramped space below it → balanced rhythm
+- Content that starts a few pixels to the side of the page header → one left edge, measured
 
 ## Copy
 
@@ -59,6 +60,9 @@ Go through every group and note each sign you find with where it lives. Each lin
 - Equal cards side by side, each with the same chart or layout → one main chart, compact stats, varied widths
 - Logo as a gradient tile with a sparkle and a gradient wordmark → product name as text plus a simple flat mark
 - Logo mark as a glossy orb, a gradient ball or a glowing dot → a flat glyph in one solid color, or the wordmark alone
+- Raw markup showing in the interface, like `- [ ]`, `[[Note]]`, `**bold**` or JSON → rendered dots, checkboxes and link text
+- A detail panel that is a stack of input boxes → values as text that become a field on hover or focus
+- The page title in the header and again as the content's own heading → a breadcrumb in the header
 
 ## Landing pages and heroes
 
