@@ -60,6 +60,8 @@ Tighten the diff by stripping patterns that often appear after AI-assisted edits
 - **Curated enum lists**: Derive option lists from the repo's enum or curated list (a Prisma enum, a `languageCodes`-style tuple), not `Object.entries(...)` plus a cast.
 - **Hardcoded keyword / language / locale lists**: A literal array of words or path fragments used to *classify* input is almost always the wrong shape. See **Keyword and language lists** below.
 - **Vue SFCs**: pass-through computeds, duplicated fields and slot casts - see [references/vue.md](references/vue.md).
+- **Async UI states**: an empty state computed from `data ?? []`, a hand-kept `loading` flag around an `await`, a fetched record copied into a form, a "Saving…" row that pushes the layout. These are behavior bugs - see [references/ui-states.md](references/ui-states.md).
+- **Mode options**: a `kind` / `mode` option or boolean prop that picks between two implementations becomes two explicit functions or components - see [references/typescript.md](references/typescript.md#options-that-pick-an-implementation).
 
 ### Keyword and language lists
 
@@ -189,7 +191,7 @@ The logic is unchanged. Each line now says one thing, the phases are visible at 
    - Replace overly clever patterns with readable equivalents, and space out compressed code per **Readable layout**.
    - Replace keyword / language / locale lists used for classification with shape-based or structural signals.
    - Apply **Common AI artifacts** above where applicable.
-   - **UI code**: move touched call sites onto the repo's design tokens and its one component per concept (row, list states, button, dialog shell), as its UI contract names them. If the repo has a vocabulary gate, a cleanup must never reintroduce what it bans.
+   - **UI code**: move touched call sites onto the repo's design tokens and its one component per concept (row, list states, button, dialog shell), as its UI contract names them. If the repo has a vocabulary gate, a cleanup must never reintroduce what it bans. Every touched loading, empty, error and saving state passes [references/ui-states.md](references/ui-states.md).
 
 2. **Types & contracts** - details in [references/typescript.md](references/typescript.md).
    - **Function parameters**: Inline `input: { … }` on the function. Do not keep a separate `type XInput` unless another file imports it.

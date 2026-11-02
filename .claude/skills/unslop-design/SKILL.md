@@ -1,5 +1,5 @@
 ---
-name: unslop
+name: unslop-design
 description: Turns vibecoded, AI-looking UI into a designed interface with its own character. Finds a direction from the product itself, then fixes spacing, color, icons, copy, type, layout, details, visuals and motion in that order, and can generate a real hero visual with an image tool when one is available. Use when the user asks to unslop, polish, clean up or redesign a screen so it stops looking AI-generated, or when a UI shows the usual tells like purple gradients, glows, gradient text, emoji labels, "New ✨" badges, glossy blobs, uppercase tracked labels, pulsing elements or uneven spacing. Works on React, Tailwind, HTML and CSS, for dashboards, apps and landing pages.
 license: CC-BY-4.0
 metadata:
@@ -133,6 +133,9 @@ If the product already has a real brand, like a logo file, a color or a typeface
 - Long headlines align left. Centered text works for one or two short lines.
 - One primary action and at most one secondary action next to it. Anything else moves out of the hero.
 - Navigation stays quiet. Logo, the existing links, one button. Log in is a quiet text link next to it, not a second button. A floating pill header is not required. On small screens the links collapse into one menu button.
+- Every permanent element earns its space. A heading that repeats what the screen already shows, a status line for the normal case like `Connected` or `Viewing dashboard`, and a strip kept empty for messages that rarely come all go. A region whose visible title goes keeps its accessible name.
+- One control per intent. A page and a widget embedded in it are one screen, so two buttons that both reconnect or refresh become one. Rare or destructive actions like stop, reset or delete move from the main toolbar into a menu unless they are the task of this screen. The capability stays, only its place changes.
+- Loading, empty and error states sit in the frame of the loaded screen, with the same padding and alignment, so nothing jumps when the data arrives. A button that starts saving keeps its size and shows the progress itself, like `Saving…`, instead of a new status row under the form.
 - Compose the first screen as a whole. The hero fills the viewport height without a dead empty band. If the content is shorter, center it or let the product view start low and run past the bottom edge, so the page invites a scroll.
 - On small screens everything stacks in reading order, the headline drops to the mobile size from the tokens and the visual comes after the actions. A dense preview gets simpler on mobile, with fewer rows and columns, instead of being zoomed down. No text in it goes below 11px.
 
@@ -229,5 +232,6 @@ It adds a few minutes, so make it only when the user wants it.
 - [ ] Nested radii add up
 - [ ] A hero has a real visual or a product preview with at least one moment, never filler and never a labeled placeholder
 - [ ] The first screen is composed as a whole with no dead empty band
+- [ ] No redundant heading, duplicate control or status line for the normal case, and loading, empty and error states keep the loaded layout
 - [ ] No looping or bouncy motion, one easing curve, no animated layout properties
 - [ ] Template check. If you swapped the product name for another product's, would the screen still fit? If yes, push the direction harder in the copy, the visual and the signature detail

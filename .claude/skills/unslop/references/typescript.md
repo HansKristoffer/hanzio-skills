@@ -153,6 +153,12 @@ typedSwitch(props.status, {
 
 Without hanzio, use a `switch` with a `const _exhaustive: never = value` default. Either way, replace loose ternary chains on enums and `Record<string, Component>` for closed registries (`Record<RenderKind, Component>` makes a missing key a compile error). Template `v-if` chains on discriminated types are fine when they narrow props for child components.
 
+### Options that pick an implementation
+
+A `kind` or `mode` option, or a boolean prop, whose only job is to send a function or component down one of two implementations is two things wearing one name: `attach({ kind: 'terminal' | 'computer', sessionId })` branching into two bodies, or `<Composer isNative>` rendering a different tree. Split it into explicit functions or components (`attachTerminal`, `attachComputer`; `NativeComposer`, `WebComposer`) that share their common helpers. Moving the same branch into a private helper changes nothing.
+
+Ordinary data stays a parameter: ids, limits, an abort signal, `disabled`, and a discriminant that describes the state a value is in, which is what `typedSwitch` branches on.
+
 ---
 
 ## 8. Anti-patterns (remove on sight)
