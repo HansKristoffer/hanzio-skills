@@ -63,17 +63,21 @@ Prefer **one grouped computed** over several pass-through aliases:
 
 ```ts
 const listState = computed(() => {
-  const items = dataQuery.data.value?.items ?? []
+  const items = itemsQuery.data.value?.items
   return {
-    items,
-    isLoading: dataQuery.isLoading.value,
-    isEmpty: items.length === 0,
-    count: items.length,
+    items: items ?? [],
+    hasData: items !== undefined,
+    isEmpty: items?.length === 0,
+    isFirstLoad: items === undefined && itemsQuery.isFetching.value,
+    error: itemsQuery.error.value,
+    count: items?.length ?? 0,
   }
 })
 ```
 
-Template: `listState.items`, `listState.isLoading`, `listState.isEmpty`, `listState.count`.
+Template: `listState.items`, `listState.hasData`, `listState.isEmpty`, `listState.isFirstLoad`, `listState.error`, `listState.count`.
+
+`undefined` means no answer yet, and `[]` is a successful empty list, so `isEmpty` is false until data arrives. Computing `isEmpty` from `data?.items ?? []` shows the empty state while loading and after an error. The order to branch in the template is in [ui-states.md](ui-states.md#1-data-first).
 
 Derive **repeated template expressions** (`items.length` in three places) into this object - do not repeat the same chain in markup.
 
@@ -184,7 +188,7 @@ For each touched `.vue` file:
 2. Find repeated template expressions → add to grouped computed.
 3. Find duplicate keys on the same object (`label` + `displayLabel`) → single canonical field.
 4. Find `(item as …)` in slots → fix generic typing on the child component.
-5. Find copy-pasted async UI blocks → reuse repo shared component if one exists.
+5. Find copy-pasted async UI blocks → reuse repo shared component if one exists. Check each one branches on data first, keeps content through refetch and errors, and shows saving on its button ([ui-states.md](ui-states.md)).
 6. Find raw colours, arbitrary sizes or library chrome where the repo has design tokens or wrapper components → move them onto the repo's vocabulary.
 7. Find loose mode/view branching in script → `typedSwitch` (or a `never`-checked switch).
 8. Run typecheck and the package's UI gates in the affected package.
