@@ -1,6 +1,6 @@
 # Typed contracts cleanup
 
-Read this when cleaning up **type assertions**, **loose `string` ids**, or **manual shape mirrors** between a backend and its clients. The examples assume branded ids (`Id<'Model'>`, `asId`, `zId`), Prisma, and an oRPC router; translate them to the repo's equivalents, and follow its `AGENTS.md` where it names its own types and helpers.
+Read this when cleaning up **type assertions**, **loose `string` ids**, **manual shape mirrors** between a backend and its clients, or **typed registries**. The examples assume branded ids (`Id<'Model'>`, `asId`, `zId`), Prisma, and an oRPC router; translate them to the repo's equivalents, and follow its `AGENTS.md` where it names its own types and helpers.
 
 ## Table of contents
 
@@ -8,7 +8,7 @@ Read this when cleaning up **type assertions**, **loose `string` ids**, or **man
 2. [Backend formatters and Prisma query results](#2-backend-formatters-and-prisma-query-results)
 3. [Router-derived shapes on the client](#3-router-derived-shapes-on-the-client)
 4. [Branded id boundaries](#4-branded-id-boundaries)
-5. [Enums and curated literals](#5-enums-and-curated-literals)
+5. [Enums, curated literals and registries](#5-enums-curated-literals-and-registries)
 6. [Casts inside generic helpers](#6-casts-inside-generic-helpers)
 7. [Exhaustive branching](#7-exhaustive-branching)
 8. [Anti-patterns (remove on sight)](#8-anti-patterns-remove-on-sight)
@@ -21,7 +21,7 @@ Read this when cleaning up **type assertions**, **loose `string` ids**, or **man
 **Do not** add client helpers whose only job is re-branding ids from the API:
 
 ```ts
-// ❌ Shim sprawl - every caller needs the helper
+// Shim sprawl, since every caller needs the helper
 export function brandOrderId(order: { id: string }) {
   return asId<'Order'>(order.id)
 }
@@ -47,8 +47,8 @@ export type OrderListRow = ExtendedFindManyRow<
 
 export function formatOrderListItem(row: OrderListRow) {
   return {
-    id: row.id, // Id<'Order'> - flows into the router output
-    organizationId: row.organizationId, // Id<'Organization'> - no asId()
+    id: row.id, // Id<'Order'>, flows into the router output
+    organizationId: row.organizationId, // Id<'Organization'>, no asId()
   }
 }
 ```
@@ -63,18 +63,18 @@ return {
   id: asId<'Order'>(row.id),
   organizationId: asId<'Organization'>(row.organizationId),
 }
-// ❌ Redundant when the row comes from the extended client - ids are already branded
+// Redundant when the row comes from the extended client, whose ids are already branded
 ```
 
 Return each key explicitly and let inference carry branded ids through route handlers.
 
-**Direct `prisma.*` calls** (providers, jobs, sync): use result fields as-is. Do not re-wrap them with `asId`. If a field still types as `string`, the column has no `@relation` in the schema or the extension needs a manual mapping for it, or the row type came from raw `GetPayload` - fix that once.
+**Direct `prisma.*` calls** (providers, jobs, sync): use result fields as-is. Do not re-wrap them with `asId`. If a field still types as `string`, the column has no `@relation` in the schema or the extension needs a manual mapping for it, or the row type came from raw `GetPayload`. Fix that once.
 
 ---
 
 ## 3. Router-derived shapes on the client
 
-Derive client shapes from the router - do not mirror them by hand.
+Derive client shapes from the router instead of mirroring them by hand.
 
 ```ts
 import type { RouterInput, RouterOutput } from '@scope/backend'
@@ -93,7 +93,7 @@ const input = {
 await orpc.inbox.markRead.call(input)
 ```
 
-Shared client types (a protocol package, shared schemas) come from that package - not local duplicates or `Pick<RouterOutput, …>` re-shapes.
+Shared client types (a protocol package, shared schemas) come from that package, not from local duplicates or `Pick<RouterOutput, …>` re-shapes.
 
 ---
 
@@ -108,13 +108,13 @@ Shared client types (a protocol package, shared schemas) come from that package 
 | Test fixtures | `asId<'Model'>('fixture-id')` |
 | Webhook / JSON / env / untrusted string | `zId('Model').parse(…)` (or `asId` after validation) **once** at the parse boundary |
 
-**React / Expo screens:** if hooks require `Id<'Model'>` but the route param may be missing, split the screen - guard in the outer component and render an inner one that receives `id: Id<'Model'>`, so hooks are never fed `null` or empty-string placeholders.
+**React / Expo screens:** if hooks require `Id<'Model'>` but the route param may be missing, split the screen. Guard in the outer component and render an inner one that receives `id: Id<'Model'>`, so hooks are never fed `null` or empty-string placeholders.
 
 **Vue props:** type `orderId: Id<'Order'>` on connected components; do not accept `string` and cast at every query site.
 
 ---
 
-## 5. Enums and curated literals
+## 5. Enums, curated literals and registries
 
 Use the shared curated list, not `Object.entries` plus a cast:
 
@@ -124,13 +124,15 @@ import { languageCodeMapping, languageCodes } from '@scope/utils'
 languageCodes.map((value) => ({ value, label: languageCodeMapping[value] }))
 ```
 
-**Prisma enums** - import them from the generated client or the repo's Prisma package; do not re-declare string unions.
+**Prisma enums** come from the generated client or the repo's Prisma package, never a re-declared string union.
+
+**Typed registries**: keep concrete registration arrays in the repo's registry files, so feature wiring stays visible, and the reusable lookup or factory logic in the owning feature module. Derive key and payload types (`FooKey`, `FooByKey`, `FooPayload<K>`) from the `as const satisfies …` registration tuple instead of re-declaring string unions, and keep literal keys in `defineX()` helpers with a `TKey extends string` generic. For dynamic or persisted keys, erase explicitly to `FooAny | undefined` at the validated boundary.
 
 ---
 
 ## 6. Casts inside generic helpers
 
-A generic infrastructure helper (a live-query or subscription wrapper, a typed fetch layer) may genuinely need a cast where the library's typing gives out. That is acceptable **only inside the shared helper** - not copied into every feature wrapper. When touching such a helper, fix its generic once rather than adding `as never` at each call site, and do not add new escapes in feature code to avoid fixing it.
+A generic infrastructure helper (a live-query or subscription wrapper, a typed fetch layer) may genuinely need a cast where the library's typing gives out. That is acceptable **only inside the shared helper**, never copied into every feature wrapper. When touching such a helper, fix its generic once rather than adding `as never` at each call site, and do not add new escapes in feature code to avoid fixing it.
 
 ---
 
@@ -152,12 +154,6 @@ typedSwitch(props.status, {
 - Constrained return: `typedSwitch<ReturnType>(discriminator, { … })`
 
 Without hanzio, use a `switch` with a `const _exhaustive: never = value` default. Either way, replace loose ternary chains on enums and `Record<string, Component>` for closed registries (`Record<RenderKind, Component>` makes a missing key a compile error). Template `v-if` chains on discriminated types are fine when they narrow props for child components.
-
-### Options that pick an implementation
-
-A `kind` or `mode` option, or a boolean prop, whose only job is to send a function or component down one of two implementations is two things wearing one name: `attach({ kind: 'terminal' | 'computer', sessionId })` branching into two bodies, or `<Composer isNative>` rendering a different tree. Split it into explicit functions or components (`attachTerminal`, `attachComputer`; `NativeComposer`, `WebComposer`) that share their common helpers. Moving the same branch into a private helper changes nothing.
-
-Ordinary data stays a parameter: ids, limits, an abort signal, `disabled`, and a discriminant that describes the state a value is in, which is what `typedSwitch` branches on.
 
 ---
 
@@ -182,9 +178,9 @@ Ordinary data stays a parameter: ids, limits, an abort signal, `disabled`, and a
 
 For touched backend formatters, API consumers and list code:
 
-1. Grep touched files for `\bas\b`, `as never`, `as unknown`, `: any` - eliminate or document at a single boundary.
+1. Grep touched files for `\bas\b`, `as never`, `as unknown` and `: any`; eliminate each or document it at a single boundary.
 2. Backend formatters and providers: row types come from the extended client when returning branded ids; **no `asId` on Prisma query fields**.
-3. Clients: consume router input/output types and shared protocol packages - no parallel shapes.
+3. Clients: consume router input/output types and shared protocol packages, never parallel shapes.
 4. Route params: **`asId` once** at the boundary; props typed as `Id<'Model'>` downstream.
 5. Enum/union maps: **`typedSwitch`** or a `never`-checked switch.
 6. Run the typecheck for every affected package.
