@@ -37,6 +37,7 @@ factory start --title "<title>" --body-file /tmp/<file> --source "<the item's UR
 - `earlier`: the factory worked this item before. Put each earlier outcome, summary and PR into research's context.
 - `configError`: the project's `factory.config.yaml` is broken and was left out. Ask a `blocked` decision that quotes the error (step 3); when the user says it is fixed, run `factory start` again.
 - With a tracker named in the starting message, claim the item there now (move it to in progress, comment that the factory took it).
+- A starting message that says never to merge, or to ask before merging: `factory update --merge never` (or `ask`). It can only tighten the project's setting.
 
 **Done when** `factory start` answered with an issue id, and you have its page `url`.
 
@@ -48,7 +49,7 @@ Read `settings` from the answer. When this thread runs on another provider, mode
 
 ## 3. Every turn starts with `factory status`
 
-It prints the stage, the runs, every decision with its answer, `mergeHeld`, and the settings this issue started with. It is the truth when your memory and it disagree, after a summary or a restart. A message listing decision ids you already acted on changes nothing.
+It prints the stage, the runs with their results, every decision with its answer, the findings, the PR's last synced state with its `gate`, what the issue waits on, and the settings this issue started with. It is the truth when your memory and it disagree, after a summary or a restart. A message listing decision ids you already acted on changes nothing.
 
 Ask the user only through `factory ask`, never in a plain message or the question tool. Read [references/decisions.md](references/decisions.md) before your first ask: most questions are provisional, and you keep working.
 
@@ -89,13 +90,13 @@ Read [references/plan-flow.md](references/plan-flow.md) and follow it: a plan ru
 3. `important` findings go to a new implement run; the service lists the open ones with their ids, and the implementer reports each as `fixed` or `declined`. The next review covers only the new commits, sees every earlier finding with its outcome, and can uphold a decline. Stop after `reviewRounds` rounds.
 4. Fix `nit` findings yourself, in this worktree, on the PR branch, and record each with `factory finding <id> --fixed <commit>`. Keep `pre-existing` findings for step 9.
 
-**Done when** the last review of the PR's current head has no `important` finding, or the rounds are used up (which makes the merge a decision, see step 8).
+**Done when** the last review of the PR's current head has no `important` finding, or the rounds are used up (then the gate holds the merge until a `merge` decision on that head is answered Merge).
 
-## 8. Land
+## 8. The review on GitHub, then land
 
-Read [references/land.md](references/land.md) and follow it: `land-pr`'s full send, with its questions sent through `factory ask`, the factory's extra merge conditions, and the deploy check.
+Read [references/review-loop.md](references/review-loop.md) and follow it: the PR goes ready, bots and the project's reviewers review it, you fix, answer or decline every comment, and `factory gate` says when it may merge. Then [references/land.md](references/land.md): `land-pr`'s own gate, the merge and the deploy check.
 
-**Done when** the PR is merged and the deploy is checked, or a decision holds the merge.
+**Done when** the PR is merged and the deploy is checked, or the issue waits on someone named, or a decision holds the merge.
 
 ## 9. Close and write back
 

@@ -1,21 +1,15 @@
 # Land
 
-`factory run --stage land` starts the land run and answers with the project's land note: how it deploys, how to check it, and whether to ship its release. Then call the Skill tool with `land-pr` and follow its **full send** (`references/unattended.md` there) from its step 2, since the change exists: prove it, write the PR body, watch, fix CI, answer reviews, run the done check, merge at the gate, check the deploy.
+The PR reaches this file when `factory gate` says `ready` (see `review-loop.md`). The gate holds every condition the factory adds: the reviews, the approvals, the risk verdict, the decisions and the project's `merge` setting. What is left is `land-pr`'s own gate, the merge and the deploy check.
 
-## What changes for a factory thread
+1. **`land-pr`'s gate.** Call the Skill tool with `land-pr` and follow its **Merge** section: the branch is not behind its base in a way the repository forbids, the base's newer commits do not overlap the change, the done check has no line short of green, and the head did not move. Anything that fails and you cannot fix is a `blocked` decision.
+2. **Merge** with `land-pr`'s command, guarded by `--match-head-commit` on the head the gate was `ready` for. Never `--admin`, and never past branch protection.
+3. **Check the deploy** with `land-pr`'s **Check the deploy**, as the land run's note says. Ship a release-please release only when the note says so.
+4. **End the run:** `factory report --run <land run> --done -` with the merge commit and the deploy result on stdin.
 
-- **Mark the PR ready first.** Implement opened a draft, and a draft cannot be merged. Once the last internal review of the head is clean, run `gh pr ready <number>` before `land-pr`'s step 2, since many workflows and review bots run only on a ready PR.
-- **Questions.** Where `land-pr` would ask with the question tool, ask a factory decision instead (`decisions.md`): its budget running out (three pushed fixes, 60 minutes, the same failure twice) and a step outside its grant are `blocked`; a merge it cannot make is `merge`. End the turn and wait.
-- **The PR body.** Its **Evidence** is the implementer's claims with their evidence, plus anything you proved yourself; its **Merge Danger** comes from the last review's `risk`.
-- **The merge gate** gets four more conditions. Merge only when all hold:
-  - a review of the PR's current head found no `important` finding (dropped when `reviewRounds` is 0); a push after the last review needs another round first;
-  - `factory status` shows `mergeHeld: false`;
-  - none of the leave-open rules in the `dispatched-run` skill's step 7 holds (a flow change, money, a migration or data change, new access, a new outbound call, over about 400 lines, something unverified, a second fix for an item that came back);
-  - the starting message allows merging. "Never merge" means a `merge` decision on every PR.
+With the project's `merge` set to `never`, people merge: the gate says `merge-setting`, and you wait on the merge (`factory wait --on merge`). When the PR is merged, check the deploy (step 3) and end the run (step 4). When it is closed without a merge, close the issue as `dropped`.
 
-  When one fails and you cannot fix it, ask a `merge` decision with what failed and your recommendation, and end the turn.
-- **Release.** Ship a release-please release only when the land note says so.
-- **End the run.** After the deploy check: `factory report --run <land run> --done -` with the merge commit and the deploy result on stdin.
+**Questions** go through `factory ask`, never the question tool: where `land-pr` would stop and ask, ask a `blocked` decision and end the turn.
 
 ## The deploy result
 
@@ -30,6 +24,7 @@ The report file for `factory close`, readable in a minute:
 **What happened:** what failed or what was asked, for whom and how often, in one or two sentences.
 **Cause:** the root cause in plain words. "None" for a feature.
 **Fix:** what changed, in behavior terms, not file names. "None" if you stopped.
+**Review:** who reviewed, how many rounds, what was declined and why. "None" if nobody reviewed.
 **Deploy:** verified / unverified (what was not checked) / none.
 **Be aware of:** what was left out, what a reviewer should check, anything unverified. "Nothing" if there is nothing.
 **Links:** the PR, the item, any earlier PR.

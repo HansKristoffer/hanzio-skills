@@ -15,8 +15,8 @@ A **blocking** question waits. End your turn after asking it, and ask it when no
 | Kind | When |
 | --- | --- |
 | `plan` | The user approves a plan (see `plan-flow.md`). Options Approve and Change; the plan goes in `--body-file`. |
-| `merge` | A merge condition in `land.md` fails and you cannot fix it. |
-| `blocked` | Something only the user can give: access, a secret, a broken `factory.config.yaml`, a model this machine does not offer, a step `land-pr` would stop for. |
+| `merge` | `factory gate` is blocked by `risk`, or by the `ask` merge setting (see `review-loop.md` step 6). Give `--head <sha>`; the options are always Merge and Do not merge, and only Merge on that head clears the gate. |
+| `blocked` | Something only the user can give: access, a secret, a broken `factory.config.yaml`, a model this machine does not offer, a step `land-pr` would stop for. With `--round`, whether to go on past the review round budget; its options are Go on and Stop. |
 | `question` without `--provisional` | A one-way door: a schema, a public API, a data migration, a deletion, money, permissions. |
 
 The service refuses `--provisional` on `plan`, `merge` and `blocked`.
@@ -30,5 +30,5 @@ The service refuses `--provisional` on `plan`, `merge` and `blocked`.
 ## When the answer comes
 
 1. `factory status` shows every decision with its answer.
-2. For a provisional answer that differs from the recommendation, rework what you built on the guess before anything is merged. `mergeHeld` stays true while any decision has no answer.
+2. For a provisional answer that differs from the recommendation, rework what you built on the guess before anything is merged. The gate stays blocked by `decisions` while any decision has no answer.
 3. A message that lists only ids you already acted on changes nothing.

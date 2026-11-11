@@ -107,3 +107,18 @@ describe('the service', () => {
 		expect(status.body.runs.map((r: { model: string }) => r.model)).toEqual(['claude-sonnet-5-5', 'gpt-6-luna'])
 	})
 })
+
+test('the review keys validate, resolve by layer with a list replacing the list below, and name a bad login', () => {
+	const file = validate({ reviewers: ['anna', 'acme/backend'], bots: ['greptile-apps[bot]'], approval: 'required', merge: 'never', ignore: ['copilot-pull-request-reviewer'], reviewOverdueHours: 48 })
+	const { settings, sources } = resolve({ global: { reviewers: ['bob'], trust: ['contractor'] }, file, repo: { merge: 'ask' } })
+	expect(settings.reviewers).toEqual(['anna', 'acme/backend'])
+	expect(settings.trust).toEqual(['contractor'])
+	expect(settings.merge).toBe('ask')
+	expect(settings.approval).toBe('required')
+	expect(sources).toMatchObject({ reviewers: 'file', trust: 'global', merge: 'repo', bots: 'file', reviewOverdueHours: 'file' })
+	expect(() => validate({ reviewers: ['@anna'] })).toThrow('reviewers[0]: @anna is not a GitHub login or org/team')
+	expect(() => validate({ trust: ['two words'] })).toThrow('trust[0]')
+	expect(() => validate({ merge: 'sometimes' })).toThrow('merge: must be one of auto, ask, never')
+	expect(() => validate({ reviewOverdueHours: 0 })).toThrow('reviewOverdueHours: must be a whole number from 1 to 720')
+	expect(resolve({}).settings).toMatchObject({ reviewers: [], bots: [], approval: 'auto', merge: 'auto', trust: [], ignore: [], reviewOverdueHours: 24 })
+})

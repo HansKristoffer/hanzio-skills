@@ -52,6 +52,14 @@
 	.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
 	.src { font-size: 12px; color: var(--muted); }
 	.empty { color: var(--muted); }
+	.tag.ok { color: var(--ok); border-color: var(--ok); }
+	.tag.bad { color: var(--bad); border-color: var(--bad); }
+	ul.plain { margin: 6px 0 0; padding-left: 18px; }
+	.item { border-top: 1px solid var(--line); padding: 8px 0; }
+	.item:first-child { border-top: 0; }
+	.quote { border-left: 3px solid var(--line); padding-left: 10px; margin: 6px 0; white-space: pre-wrap; }
+	.quote.hidden { color: var(--muted); font-style: italic; }
+	details summary { cursor: pointer; }
 </style>
 </head>
 <body>
@@ -138,6 +146,8 @@ function decisionCard(issue, d, onDone) {
 		try { await api('POST', `/api/issues/${encodeURIComponent(issue.id)}/deliver`, {}) } catch (e) { error.textContent = e.message }
 	}
 	const answered = d.answer !== null
+	// A merge decision, and one about going on past the round budget, take only their two answers.
+	const fixed = d.kind === 'merge' || d.round !== null
 	const card = h('div', { class: 'card wait' },
 		h('div', { class: 'row' },
 			h('span', { class: 'tag warn' }, d.provisional ? 'provisional' : d.kind),
@@ -149,15 +159,20 @@ function decisionCard(issue, d, onDone) {
 		d.body ? h('pre', {}, d.body) : null,
 		answered
 			? h('div', {}, h('p', {}, `Answered: ${d.answer}`), h('p', { class: 'meta' }, d.delivery === 'held' ? 'Held until the other questions are answered.' : 'Not delivered to the thread yet.'), d.delivery === 'failed' ? h('button', { onclick: retry }, 'Retry delivery') : null)
-			: h('div', {},
-				h('div', { class: 'row' },
-					h('button', { class: 'primary', onclick: () => send(d.recommendation) }, `Accept: ${d.recommendation}`),
-					...(d.options || []).filter((o) => o !== d.recommendation).map((o) => h('button', { onclick: () => send(o) }, o))
+			: fixed
+				? h('div', {},
+					d.head ? h('p', { class: 'meta' }, `About commit ${d.head.slice(0, 7)}. Recommended: ${d.recommendation}`) : h('p', { class: 'meta' }, `Recommended: ${d.recommendation}`),
+					h('div', { class: 'row' }, ...d.options.map((o, n) => h('button', { class: n === 0 ? 'primary' : '', onclick: () => send(o) }, o)))
+				)
+				: h('div', {},
+					h('div', { class: 'row' },
+						h('button', { class: 'primary', onclick: () => send(d.recommendation) }, `Accept: ${d.recommendation}`),
+						...(d.options || []).filter((o) => o !== d.recommendation).map((o) => h('button', { onclick: () => send(o) }, o))
+					),
+					h('label', {}, 'Your answer'),
+					field,
+					h('div', { class: 'row', style: 'margin-top:6px' }, h('button', { onclick: () => field.value.trim() && send(field.value.trim()) }, 'Send'))
 				),
-				h('label', {}, 'Your answer'),
-				field,
-				h('div', { class: 'row', style: 'margin-top:6px' }, h('button', { onclick: () => field.value.trim() && send(field.value.trim()) }, 'Send'))
-			),
 		error
 	)
 	return card
@@ -170,20 +185,60 @@ function issueCard(issue) {
 		issue.lastEvent ? h('div', { class: 'meta' }, `${ago(issue.lastEvent.at)}: ${issue.lastEvent.text}`) : null,
 		h('div', { class: 'row' },
 			issue.stuck ? h('span', { class: 'tag warn' }, 'stuck') : null,
+			issue.threadGone ? h('span', { class: 'tag warn' }, 'thread gone') : null,
+			issue.waiting ? h('span', { class: `tag${issue.waiting.overdue ? ' warn' : ''}` }, `waiting on ${issue.waiting.on}`) : null,
 			safeLink(issue.prUrl, 'PR'),
 			safeLink(issue.threadLink, 'Open in T3 Code')
 		)
 	)
 }
 
+function dropButton(issue, then) {
+	const error = h('span', { class: 'error' })
+	const button = h('button', { onclick: async () => {
+		if (!confirm(`Drop "${issue.title}"? It closes as dropped, and its thread is told to stop.`)) return
+		button.disabled = true
+		try { await api('POST', `/api/issues/${encodeURIComponent(issue.id)}/drop`, {}); then && then() } catch (e) { error.textContent = e.message; button.disabled = false }
+	} }, 'Drop')
+	return h('span', {}, button, ' ', error)
+}
+
+function troubleCard(i) {
+	const why = i.threadGone
+		? ['thread gone', 'T3 Code cannot find this thread any more. Drop the issue, or start it again.']
+		: ['stuck', 'Asked to go on with no report. Look at the thread.']
+	return h('div', { class: 'card wait' },
+		h('div', { class: 'row' }, h('span', { class: 'tag warn' }, why[0]), h('a', { href: `#/issue/${encodeURIComponent(i.id)}` }, i.title), h('span', { class: 'meta' }, i.repo)),
+		h('p', { class: 'meta' }, why[1]),
+		h('div', { class: 'row' }, safeLink(i.threadLink, 'Open in T3 Code'), dropButton(i))
+	)
+}
+
+function waitingCard(i) {
+	const w = i.waiting
+	return h('div', { class: `card${w.overdue ? ' wait' : ''}` },
+		h('div', { class: 'row' },
+			h('span', { class: `tag${w.overdue ? ' warn' : ''}` }, w.overdue ? `${w.on}, overdue` : w.on),
+			h('a', { href: `#/issue/${encodeURIComponent(i.id)}` }, i.title),
+			h('span', { class: 'meta' }, i.repo)
+		),
+		h('div', { class: 'meta' }, [w.who.length ? w.who.join(', ') : null, w.note, `since ${ago(w.since)}`].filter(Boolean).join(' · ')),
+		w.safetyNet !== 'on' ? h('div', { class: 'meta error' }, `Safety net ${w.safetyNet}`) : null,
+		h('div', { class: 'row' }, safeLink(i.prUrl, 'PR'), safeLink(i.threadLink, 'Open in T3 Code'))
+	)
+}
+
 function drawBoard() {
 	const waiting = board.issues.flatMap((issue) => issue.decisions.map((d) => [issue, d]))
-	const stuck = board.issues.filter((i) => i.stuck)
+	const trouble = board.issues.filter((i) => i.stuck || i.threadGone)
+	const others = board.issues.filter((i) => i.waiting && !i.decisions.length)
 	render(
 		h('h2', {}, 'Needs you'),
-		waiting.length || stuck.length
-			? h('div', {}, ...waiting.map(([issue, d]) => decisionCard(issue, d)), ...stuck.map((i) => h('div', { class: 'card wait' }, h('span', { class: 'tag warn' }, 'stuck'), ' ', h('a', { href: `#/issue/${encodeURIComponent(i.id)}` }, i.title), h('p', { class: 'meta' }, 'Nudged twice with no report. Look at the thread.'), safeLink(i.threadLink, 'Open in T3 Code'))))
+		waiting.length || trouble.length
+			? h('div', {}, ...waiting.map(([issue, d]) => decisionCard(issue, d)), ...trouble.map(troubleCard))
 			: h('p', { class: 'empty' }, 'Nothing waits for you.'),
+		others.length ? h('h2', {}, 'Waiting on others') : null,
+		others.length ? h('div', { class: 'grid2' }, ...others.map(waitingCard)) : null,
 		h('h2', {}, `Open issues (${board.open})`),
 		h('div', { class: 'columns' }, ...STAGES.map((stage) =>
 			h('div', { class: 'column' }, h('h3', {}, stage), ...board.issues.filter((i) => i.stage === stage).map(issueCard))
@@ -210,15 +265,24 @@ async function drawIssue(id) {
 	const i = data.issue
 	const runs = data.runs.map((r) => h('div', { class: 'card' },
 		h('div', { class: 'row' }, h('strong', {}, r.subject === 'plan' ? 'plan review' : r.stage), h('span', { class: 'tag' }, r.state), h('span', { class: 'meta' }, r.model ? `${r.provider} / ${r.model}${r.options ? ' ' + JSON.stringify(r.options) : ''}` : '')),
-		h('div', { class: 'meta' }, `${clock(r.startedAt)}${r.endedAt ? `, ${Math.round((r.endedAt - r.startedAt) / 60000)} min` : ''}`),
-		r.summary ? h('p', {}, r.summary) : null
+		h('div', { class: 'meta' }, `${clock(r.startedAt)}${r.endedAt ? `, ${Math.round((r.endedAt - r.startedAt) / 60000)} min` : ''}${r.head ? ` · head ${r.head.slice(0, 7)}` : ''}`),
+		r.summary ? h('p', {}, r.summary) : null,
+		r.result ? h('details', {}, h('summary', { class: 'meta' }, `Result: ${r.result.outcome}`), h('pre', {}, JSON.stringify(r.result, null, 2))) : null,
+		r.resultMissing ? h('div', { class: 'meta' }, r.resultMissing) : null
 	))
 	render(
 		h('div', { class: 'row' }, h('span', { class: 'tag' }, i.state === 'open' ? i.stage : i.outcome), h('h2', { style: 'margin:0;color:var(--ink);font-size:18px' }, i.title)),
-		h('div', { class: 'row meta' }, h('span', {}, [i.repo, i.kind].filter(Boolean).join(' · ')), safeLink(i.prUrl, 'PR'), safeLink(i.threadLink, 'Open in T3 Code'), i.source ? (safeLink(i.source, 'Source') || h('span', {}, i.source)) : null),
+		h('div', { class: 'row meta' }, h('span', {}, [i.repo, i.kind].filter(Boolean).join(' · ')), safeLink(i.prUrl, 'PR'), safeLink(i.threadLink, 'Open in T3 Code'), i.source ? (safeLink(i.source, 'Source') || h('span', {}, i.source)) : null, i.state === 'open' ? dropButton(i, () => draw()) : null),
 		i.configError ? h('p', { class: 'error' }, i.configError) : null,
+		i.threadGone ? h('p', { class: 'error' }, 'T3 Code cannot find this thread any more.') : null,
+		...(data.warnings || []).map((w) => h('p', { class: 'meta error' }, w)),
 		...data.decisions.filter((d) => d.answer === null || (d.answeredVia === 'page' && d.delivery !== 'sent')).map((d) => decisionCard(i, d)),
 		data.report ? h('div', {}, h('h2', {}, 'Closing report'), h('pre', {}, data.report)) : null,
+		data.pr ? prPanel(data) : null,
+		data.items?.length ? h('h2', {}, `Review on GitHub (${data.items.length})`) : null,
+		data.items?.length ? reviewItems(data.items) : null,
+		data.findings?.length ? h('h2', {}, 'Internal review findings') : null,
+		data.findings?.length ? findingsList(data.findings) : null,
 		h('h2', {}, 'Runs'), runs.length ? h('div', { class: 'grid2' }, ...runs) : h('p', { class: 'empty' }, 'No runs yet.'),
 		h('h2', {}, 'Decisions'),
 		data.decisions.length ? h('div', {}, ...data.decisions.map((d) => h('div', { class: 'card' }, h('div', { class: 'meta' }, `${d.kind}${d.provisional ? ', provisional' : ''}`), h('p', {}, d.question), h('p', { class: 'meta' }, d.answer === null ? `Recommended: ${d.recommendation}` : `Answer (${d.answeredVia}): ${d.answer}`)))) : h('p', { class: 'empty' }, 'None.'),
@@ -227,6 +291,68 @@ async function drawIssue(id) {
 		h('h2', {}, 'The issue as taken in'),
 		h('pre', {}, data.body || '(no text)')
 	)
+}
+
+function prPanel(data) {
+	const pr = data.pr
+	const gate = data.gate
+	const tag = (text, kind) => h('span', { class: `tag${kind ? ` ${kind}` : ''}` }, text)
+	const checks = pr.checks.state === 'passing' ? tag('checks pass', 'ok') : pr.checks.state === 'failing' ? tag(`failing: ${pr.checks.failing.join(', ')}`, 'bad') : tag(`checks ${pr.checks.state}`)
+	return h('div', {},
+		h('h2', {}, 'Pull request'),
+		h('div', { class: 'card' },
+			h('div', { class: 'row' },
+				tag(pr.state === 'open' ? (pr.draft ? 'draft' : 'ready') : pr.state, pr.state === 'merged' ? 'ok' : ''),
+				checks,
+				...pr.bots.map((b) => tag(`${b.login} ${b.reviewedHead ? 'reviewed' : 'pending'}`, b.reviewedHead ? 'ok' : '')),
+				...pr.approvedBy.map((a) => tag(`approved by @${a.login}${a.commit && a.commit !== pr.head ? ' (older head)' : ''}`, 'ok')),
+				...pr.changesRequestedBy.map((l) => tag(`changes requested by @${l}`, 'bad')),
+				pr.requested.length ? tag(`requested: ${pr.requested.join(', ')}`) : null,
+				tag(`merge: ${data.merge}`)
+			),
+			h('div', { class: 'meta' }, `#${pr.number} · head ${pr.head.slice(0, 7)} · synced ${ago(pr.syncedAt)}${pr.rules ? ` · rules: ${pr.rules.approvals} approval(s)${pr.rules.resolveThreads ? ', resolved conversations' : ''}` : ' · branch rules unreadable'}`),
+			data.round ? h('div', { class: 'meta' }, `Round ${data.round.n}${data.round.ended_at ? ' closed' : ' open'}, ${data.round.pushes} push${data.round.pushes === 1 ? '' : 'es'}`) : null,
+			data.waiting ? h('div', { class: 'meta' }, `Waiting on ${data.waiting.on}${data.waiting.note ? `: ${data.waiting.note}` : ''} since ${ago(data.waiting.since)}${data.waiting.overdue ? ' (overdue)' : ''}. Safety net ${data.waiting.safetyNet}.`) : null,
+			h('p', {}, gate.ready ? h('strong', { style: 'color:var(--ok)' }, 'Merge gate: ready') : h('strong', {}, 'Merge gate: blocked')),
+			gate.blockers.length ? h('ul', { class: 'plain' }, ...gate.blockers.map((b) => h('li', {}, b.text))) : null
+		)
+	)
+}
+
+function reviewItems(items) {
+	const order = (i) => (i.needsAction ? 0 : i.blocksMerge ? 1 : 2)
+	return h('div', { class: 'card' }, ...items.slice().sort((a, b) => order(a) - order(b) || a.createdAt - b.createdAt).map((item) => {
+		const where = item.kind === 'thread' ? `${item.path || ''}${item.line ? `:${item.line}` : ''}` : item.kind
+		const outcome = item.handled ? `${item.handled}${item.handledCommit ? ` in ${item.handledCommit.slice(0, 7)}` : ''}` : null
+		return h('div', { class: 'item' },
+			h('div', { class: 'row' },
+				item.needsAction ? h('span', { class: 'tag warn' }, 'needs action') : null,
+				item.blocksMerge ? h('span', { class: 'tag bad' }, 'blocks merge') : null,
+				outcome ? h('span', { class: 'tag' }, outcome) : null,
+				h('span', { class: 'tag' }, item.state.toLowerCase()),
+				h('span', { class: 'meta' }, where),
+				safeLink(item.url, 'Open'),
+				item.truncated ? h('span', { class: 'meta' }, 'over 100 comments: read the rest on GitHub') : null
+			),
+			...item.comments.map((c) => c.trusted || c.byFactory
+				? h('div', { class: 'quote' }, h('div', { class: 'meta' }, `@${c.author}${c.authorKind === 'bot' ? ' (bot)' : ''}${c.byFactory ? ' (the factory)' : ''} · ${ago(c.createdAt)}`), c.body)
+				: h('div', { class: 'quote hidden' }, `Hidden: @${c.author} is outside the project, so the factory ignores this comment.`)),
+			item.handledNote ? h('div', { class: 'meta' }, `Factory: ${item.handledNote}`) : null
+		)
+	}))
+}
+
+function findingsList(findings) {
+	const order = { important: 0, nit: 1, 'pre-existing': 2 }
+	return h('div', { class: 'card' }, ...findings.slice().sort((a, b) => order[a.severity] - order[b.severity]).map((f) => h('div', { class: 'item' },
+		h('div', { class: 'row' },
+			h('span', { class: `tag${f.severity === 'important' ? ' warn' : ''}` }, f.severity),
+			h('span', { class: `tag${f.outcome === 'fixed' ? ' ok' : f.outcome === 'upheld' ? ' bad' : ''}` }, f.outcome || 'open'),
+			h('span', { class: 'meta' }, `${f.subject}${f.file ? ` · ${f.file}${f.line ? `:${f.line}` : ''}` : ''} · ${f.id}`)
+		),
+		h('div', {}, f.title ? h('strong', {}, `${f.title}. `) : null, f.text),
+		f.outcomeNote ? h('div', { class: 'meta' }, f.outcomeNote) : null
+	)))
 }
 
 const TARGET_KEYS = ['orchestrator', 'stages.research', 'stages.plan', 'stages.implement', 'stages.review']
@@ -239,6 +365,7 @@ async function drawSettings() {
 	const scopes = [['global', 'All repositories', data.global, { settings: data.defaults, sources: null }, null], ...Object.entries(data.repos).map(([repo, r]) => [`repo:${repo}`, repo, r.page, r.resolved, r])]
 	render(
 		h('p', { class: 'meta' }, 'Order: defaults, global, the repository\'s factory.config.yaml on its default branch, then this machine\'s settings for the repository. A running issue keeps the settings it started with.'),
+		h('p', { class: 'meta' }, 'Anyone who can open this page can change these settings, start threads and answer decisions. There is no sign-in: keep the tailnet to people you trust.'),
 		...scopes.map(([scope, label, layer, resolved, repo]) => scopeEditor(scope, label, layer || {}, resolved, repo))
 	)
 }
@@ -287,11 +414,24 @@ function scopeEditor(scope, label, layer, resolved, repo) {
 	const approval = h('select', {}, h('option', { value: '' }, `(inherit${resolved ? `: ${resolved.settings.planApproval}` : ''})`), ...['auto', 'always', 'never'].map((v) => h('option', { value: v, selected: draft.planApproval === v }, v)))
 	const rounds = h('input', { type: 'number', min: 0, max: 5, value: draft.reviewRounds ?? '', placeholder: resolved ? String(resolved.settings.reviewRounds) : '' })
 	const rulings = h('textarea', { placeholder: resolved?.settings.rulings || '' }, draft.rulings || '')
+	const choice = (key, values) => h('select', {}, h('option', { value: '' }, `(inherit${resolved ? `: ${resolved.settings[key]}` : ''})`), ...values.map((v) => h('option', { value: v, selected: draft[key] === v }, v)))
+	const reviewApproval = choice('approval', ['auto', 'required', 'off'])
+	const merge = choice('merge', ['auto', 'ask', 'never'])
+	const overdue = h('input', { type: 'number', min: 1, max: 720, value: draft.reviewOverdueHours ?? '', placeholder: resolved ? String(resolved.settings.reviewOverdueHours) : '' })
+	const lists = Object.fromEntries(['reviewers', 'bots', 'trust', 'ignore'].map((key) => [key, h('input', { value: (draft[key] || []).join(', '), placeholder: resolved?.settings[key]?.join(', ') || 'none' })]))
 	fields.push(() => {
 		if (approval.value) draft.planApproval = approval.value; else delete draft.planApproval
 		if (rounds.value !== '') draft.reviewRounds = Number(rounds.value); else delete draft.reviewRounds
 		if (rulings.value.trim()) draft.rulings = rulings.value.trim(); else delete draft.rulings
+		if (reviewApproval.value) draft.approval = reviewApproval.value; else delete draft.approval
+		if (merge.value) draft.merge = merge.value; else delete draft.merge
+		if (overdue.value !== '') draft.reviewOverdueHours = Number(overdue.value); else delete draft.reviewOverdueHours
+		for (const [key, input] of Object.entries(lists)) {
+			const values = input.value.split(',').map((v) => v.trim()).filter(Boolean)
+			if (values.length) draft[key] = values; else delete draft[key]
+		}
 	})
+	const listLabel = { reviewers: 'Reviewers to request', bots: 'Bots whose review the merge waits for', trust: 'Also trust these logins', ignore: 'Ignore these logins' }
 	const save = async () => {
 		error.textContent = ''
 		try {
@@ -309,6 +449,13 @@ function scopeEditor(scope, label, layer, resolved, repo) {
 		h('div', { class: 'grid2' }, ...['research', 'plan', 'implement', 'review', 'land'].map(noteRow)),
 		h('div', { class: 'grid2' }, h('div', {}, h('label', {}, 'Plan approval'), approval), h('div', {}, h('label', {}, 'Review rounds'), rounds)),
 		h('label', {}, 'Rulings'), rulings,
+		h('h2', {}, 'The review on GitHub'),
+		h('div', { class: 'grid2' },
+			h('div', {}, h('label', {}, 'Approval'), reviewApproval),
+			h('div', {}, h('label', {}, 'Who merges'), merge),
+			h('div', {}, h('label', {}, 'Review overdue after (hours)'), overdue)
+		),
+		h('div', { class: 'grid2' }, ...Object.entries(lists).map(([key, input]) => h('div', {}, h('label', {}, `${listLabel[key]} (comma-separated)${resolved?.sources?.[key] ? `, from ${SOURCE_LABEL[resolved.sources[key]]}` : ''}`), input))),
 		h('div', { class: 'row', style: 'margin-top:10px' }, h('button', { class: 'primary', onclick: save }, `Save ${scope === 'global' ? 'global' : 'for this machine'}`)),
 		error
 	)

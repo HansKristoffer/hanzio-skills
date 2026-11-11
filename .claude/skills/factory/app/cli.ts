@@ -5,6 +5,8 @@ import { existsSync, mkdirSync, openSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseArgs, type ParseArgsOptionsConfig } from 'node:util'
 import { APP_DIR, DEFAULT_PORT, appVersion, factoryHome, factoryPort, sh } from './env.ts'
+import * as gh from './gh.ts'
+import { withSections } from './pr.ts'
 import { detectTailnet, startServer } from './server.ts'
 import { UNIT, install, uninstall, unitInstalled } from './service.ts'
 
@@ -18,12 +20,24 @@ Issue commands (inside a T3 Code thread; the thread is the issue):
   report [--run <id>] [--done [--result-file <path>] | --failed] <text | ->
       - reads the text from stdin. A stage's --done needs its result, checked against the brief's shape.
   finding <id> --fixed <commit> | --declined - | --filed <url>
-  update [--kind bug|feature] [--title <t>] [--pr <url>]
+  update [--kind bug|feature] [--title <t>] [--pr <url>] [--merge ask|never]
   ask --kind plan|question|blocked|merge --question <q> --recommend <text>
-      [--provisional] [--body-file <path>] [--option <label>]...
-  answer <decision> <text>
+      [--provisional] [--body-file <path>] [--option <label>]... [--head <sha>] [--round]
+      A merge decision needs --head and has the options Merge and Do not merge. --round asks about
+      going on past the review round budget.
+  answer <decision> <text | ->
   close --outcome shipped|not-a-bug|duplicate|already-fixed|dropped [--deploy verified|unverified|none]
-        [--report-file <path>] <summary>
+        [--report-file <path>] <summary | ->
+
+The review on GitHub (gh runs here, as this thread's login):
+  pr sync                        read the PR, store it, print what needs action and the gate
+  pr ready [--request]           mark it ready with the reviewer notes; --request asks settings.reviewers
+  pr reply <item> --fixed <commit> [-] | --declined - | --answered -
+  pr ignore <item> [<reason | ->]
+  pr round -                     post the round's summary, ask again who requested changes, close the round
+  gate                           sync, then print the merge gate
+  risk --head <sha> --none | --rule <text>
+  wait --on checks|bots|review|merge|deploy [--note <text>] | wait --clear
 
 Anywhere:
   settings                       the settings an issue started here would get
@@ -34,7 +48,7 @@ Anywhere:
   serve                          run the server in the foreground
   service install|uninstall      keep the server up across reboots`
 
-const ISSUE_COMMANDS = new Set(['start', 'status', 'run', 'update', 'ask', 'answer', 'close', 'finding'])
+const ISSUE_COMMANDS = new Set(['start', 'status', 'run', 'update', 'ask', 'answer', 'close', 'finding', 'pr', 'gate', 'risk', 'wait'])
 
 class UsageError extends Error {}
 
@@ -79,7 +93,7 @@ const transientUnit = () => `factory-${port}`
 
 function serverEnv() {
 	const env: Record<string, string> = { FACTORY_HOME: factoryHome(), FACTORY_PORT: String(port) }
-	for (const key of ['FACTORY_VERSION', 'FACTORY_T3', 'T3CODE_HOME', 'PATH', 'HOME']) {
+	for (const key of ['FACTORY_VERSION', 'FACTORY_T3', 'FACTORY_GH', 'T3CODE_HOME', 'PATH', 'HOME']) {
 		const value = process.env[key]
 		if (value) env[key] = value
 	}
@@ -304,7 +318,7 @@ async function main(argv: string[]) {
 			return print(await call('POST', '/api/issue/run', { stage: values.stage, on: values.on, context, head }))
 		}
 		case 'update': {
-			const { values } = args(rest, { kind: { type: 'string' }, title: { type: 'string' }, pr: { type: 'string' } })
+			const { values } = args(rest, { kind: { type: 'string' }, title: { type: 'string' }, pr: { type: 'string' }, merge: { type: 'string' } })
 			await ensureServer()
 			return print(await call('POST', '/api/issue/update', values))
 		}
@@ -315,7 +329,9 @@ async function main(argv: string[]) {
 				recommend: { type: 'string' },
 				provisional: { type: 'boolean' },
 				'body-file': { type: 'string' },
-				option: { type: 'string', multiple: true }
+				option: { type: 'string', multiple: true },
+				head: { type: 'string' },
+				round: { type: 'boolean' }
 			})
 			const body = readFile(str(values['body-file']), '--body-file')
 			await ensureServer()
@@ -326,7 +342,9 @@ async function main(argv: string[]) {
 					recommend: values.recommend,
 					provisional: values.provisional,
 					body,
-					options: values.option ?? []
+					options: values.option ?? [],
+					head: values.head,
+					round: values.round
 				})
 			)
 		}
@@ -374,6 +392,23 @@ async function main(argv: string[]) {
 				})
 			)
 		}
+		case 'pr':
+			await ensureServer()
+			return print(await prCommand(rest))
+		case 'gate': {
+			await ensureServer()
+			return print((await sync()).gate)
+		}
+		case 'risk': {
+			const { values } = args(rest, { head: { type: 'string' }, none: { type: 'boolean' }, rule: { type: 'string' } })
+			await ensureServer()
+			return print(await call('POST', '/api/issue/risk', values))
+		}
+		case 'wait': {
+			const { values } = args(rest, { on: { type: 'string' }, note: { type: 'string' }, clear: { type: 'boolean' } })
+			await ensureServer()
+			return print(await call('POST', '/api/issue/wait', values))
+		}
 		case 'finding': {
 			const { values, positionals } = args(rest, { fixed: { type: 'string' }, declined: { type: 'boolean' }, filed: { type: 'string' } })
 			const [id, ...words] = positionals
@@ -413,6 +448,79 @@ async function main(argv: string[]) {
 		default:
 			throw new UsageError(`unknown command ${command}; run: bun ${join(APP_DIR, 'cli.ts')} help`)
 	}
+}
+
+/** Reads the PR as this thread's login and hands it to the service, which answers with the sync result. */
+async function sync() {
+	const status = await call('POST', '/api/issue/status', {})
+	const url = (status.issue as { prUrl?: string }).prUrl
+	if (!url) throw new UsageError('this issue has no PR yet: run factory update --pr <url>')
+	return call('POST', '/api/issue/pr/snapshot', { raw: await gh.readPr(url) })
+}
+
+async function prCommand(argv: string[]) {
+	const [action, ...rest] = argv
+	if (action === 'sync') return sync()
+	if (action === 'ready') {
+		const { values } = args(rest, { request: { type: 'boolean' } })
+		if (values.request) {
+			await sync()
+			const plan = await call('POST', '/api/issue/pr/plan', { action: 'request' })
+			const reviewers = plan.reviewers as string[]
+			if (reviewers.length) await gh.addReviewers(String(plan.url), reviewers)
+			return call('POST', '/api/issue/pr/written', { action: 'requested', reviewers })
+		}
+		const plan = await call('POST', '/api/issue/pr/plan', { action: 'ready' })
+		const url = String(plan.url)
+		await gh.markReady(url)
+		await gh.setBody(url, withSections(await gh.prBody(url), String(plan.sections)))
+		await call('POST', '/api/issue/pr/written', { action: 'ready' })
+		return sync()
+	}
+	if (action === 'reply') {
+		const { values, positionals } = args(rest, { fixed: { type: 'string' }, declined: { type: 'boolean' }, answered: { type: 'boolean' } })
+		const [item, ...words] = positionals
+		const outcome = values.fixed ? 'fixed' : values.declined ? 'declined' : values.answered ? 'answered' : undefined
+		if (!item || !outcome) throw new UsageError('pr reply: give the item and one of --fixed <commit>, --declined -, --answered -')
+		const text = words.length ? await textOf(words) : undefined
+		if (outcome !== 'fixed' && !text) throw new UsageError(`pr reply --${outcome}: give the reply on stdin with -`)
+		const plan = await call('POST', '/api/issue/pr/plan', { action: 'reply', item, outcome, commit: values.fixed, text, login: await gh.login() })
+		const url = String(plan.url)
+		if (plan.commit && !(await gh.contains(gh.parsePrUrl(url), String(plan.head), String(plan.commit)))) {
+			throw new UsageError(`pr reply --fixed: ${plan.commit} is not in the PR's head ${String(plan.head).slice(0, 7)}; push it first`)
+		}
+		const ids: string[] = []
+		if (plan.thread) ids.push(await gh.replyInThread(String(plan.thread), String(plan.body)))
+		else await gh.comment(url, String(plan.body))
+		if (plan.resolve) await gh.resolveThread(String(plan.thread))
+		return call('POST', '/api/issue/pr/written', {
+			action: 'reply',
+			item,
+			outcome,
+			commit: plan.commit ?? undefined,
+			note: text?.slice(0, 2000),
+			resolved: plan.resolve,
+			ids
+		})
+	}
+	if (action === 'ignore') {
+		const { positionals } = args(rest, {})
+		const [item, ...words] = positionals
+		if (!item) throw new UsageError('pr ignore: give the item id')
+		return call('POST', '/api/issue/pr/written', { action: 'ignore', item, note: (await textOf(words)) || undefined })
+	}
+	if (action === 'round') {
+		const { positionals } = args(rest, {})
+		const text = await textOf(positionals)
+		if (!text) throw new UsageError("pr round: give the round's summary on stdin with -")
+		const plan = await call('POST', '/api/issue/pr/plan', { action: 'round', text, login: await gh.login() })
+		const url = String(plan.url)
+		await gh.comment(url, String(plan.body))
+		const again = plan.rerequest as string[]
+		for (const reviewer of again) await gh.requestAgain(gh.parsePrUrl(url), reviewer)
+		return call('POST', '/api/issue/pr/written', { action: 'round', reviewers: again })
+	}
+	throw new UsageError('pr: sync, ready, reply, ignore or round')
 }
 
 function print(value: unknown) {

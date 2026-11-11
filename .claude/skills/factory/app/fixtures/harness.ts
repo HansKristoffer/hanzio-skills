@@ -6,7 +6,9 @@ import { join } from 'node:path'
 import { startServer, type ServerOptions } from '../server.ts'
 
 export const FAKE_T3 = join(import.meta.dir, 'fake-t3.ts')
+export const FAKE_GH = join(import.meta.dir, 'fake-gh.ts')
 chmodSync(FAKE_T3, 0o755)
+chmodSync(FAKE_GH, 0o755)
 
 export function freePort() {
 	const probe = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: () => new Response() })
@@ -89,11 +91,19 @@ export function setup(options: Partial<ServerOptions> = {}) {
 	const port = freePort()
 	const log = join(dir, 't3.log')
 	const reply = join(dir, 't3-reply.json')
+	const ghLog = join(dir, 'gh.log')
+	const ghPr = join(dir, 'gh-pr.json')
+	const ghReply = join(dir, 'gh-reply.json')
 	writeFileSync(log, '')
+	writeFileSync(ghLog, '')
 	process.env.FACTORY_T3 = FAKE_T3
 	process.env.FAKE_T3_LOG = log
 	process.env.FAKE_T3_REPLY = reply
-	let server = startServer({ home, port, nudgeEveryMs: 0, onShutdown: () => {}, ...options })
+	process.env.FACTORY_GH = FAKE_GH
+	process.env.FAKE_GH_LOG = ghLog
+	process.env.FAKE_GH_PR = ghPr
+	process.env.FAKE_GH_REPLY = ghReply
+	let server = startServer({ home, port, nudgeEveryMs: 0, reconcileEveryMs: 0, onShutdown: () => {}, ...options })
 
 	const call = async (method: string, path: string, body?: unknown, headers: Record<string, string> = {}) => {
 		const res = await fetch(`http://127.0.0.1:${port}${path}`, {
@@ -124,9 +134,25 @@ export function setup(options: Partial<ServerOptions> = {}) {
 				.filter(Boolean)
 				.map((line) => JSON.parse(line))
 		},
+		/** What the fake `gh` reads as the PR, and its answers to anything else. */
+		gh: {
+			pr(raw: unknown) {
+				writeFileSync(ghPr, JSON.stringify(raw))
+			},
+			replies(value: Record<string, { code?: number; out?: unknown }>) {
+				writeFileSync(ghReply, JSON.stringify(value))
+			},
+			calls(): { args: string[]; stdin: string | null }[] {
+				return readFileSync(ghLog, 'utf8')
+					.split('\n')
+					.filter(Boolean)
+					.map((line) => JSON.parse(line))
+			},
+			env: { FACTORY_GH: FAKE_GH, FAKE_GH_LOG: ghLog, FAKE_GH_PR: ghPr, FAKE_GH_REPLY: ghReply }
+		},
 		restart() {
 			server.stop()
-			server = startServer({ home, port, nudgeEveryMs: 0, onShutdown: () => {}, ...options })
+			server = startServer({ home, port, nudgeEveryMs: 0, reconcileEveryMs: 0, onShutdown: () => {}, ...options })
 		},
 		close() {
 			server.stop()
