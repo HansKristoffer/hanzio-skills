@@ -2,6 +2,7 @@
 // branch, and the factory.config.yaml on that branch. The file is read from the default branch on
 // origin, never from a thread's worktree, so an issue's own branch cannot change its rules.
 import { dirname } from 'node:path'
+import { sh } from './env.ts'
 import { validate, type PartialSettings } from './settings.ts'
 
 export const CONFIG_FILE = 'factory.config.yaml'
@@ -9,10 +10,7 @@ export const CONFIG_FILE = 'factory.config.yaml'
 export type RepoInfo = { repo: string; root: string; hasOrigin: boolean }
 export type ConfigRead = { file: PartialSettings | null; error?: string; offline?: boolean }
 
-function git(cwd: string, args: string[]) {
-	const result = Bun.spawnSync(['git', ...args], { cwd, stdout: 'pipe', stderr: 'pipe' })
-	return { ok: result.exitCode === 0, out: result.stdout.toString().trim(), err: result.stderr.toString().trim() }
-}
+const git = (cwd: string, args: string[]) => sh(['git', ...args], { cwd })
 
 /** `owner/name` from a GitHub-style remote URL, lowercase. */
 export function repoName(url: string) {

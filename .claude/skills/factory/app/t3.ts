@@ -24,15 +24,20 @@ export function t3Binary() {
 }
 
 async function run(args: string[], stdin?: string) {
-	const proc = Bun.spawn([t3Binary(), ...args], {
-		stdin: stdin === undefined ? 'ignore' : new Blob([stdin]),
-		env: { ...process.env },
-		stdout: 'pipe',
-		stderr: 'pipe'
-	})
+	let proc: ReturnType<typeof Bun.spawn>
+	try {
+		proc = Bun.spawn([t3Binary(), ...args], {
+			stdin: stdin === undefined ? 'ignore' : new Blob([stdin]),
+			env: { ...process.env },
+			stdout: 'pipe',
+			stderr: 'pipe'
+		})
+	} catch (error) {
+		return { ok: false, out: '', err: `T3 Code's t3 command could not run: ${(error as Error).message}` }
+	}
 	const [out, err, code] = await Promise.all([
-		new Response(proc.stdout).text(),
-		new Response(proc.stderr).text(),
+		new Response(proc.stdout as ReadableStream).text(),
+		new Response(proc.stderr as ReadableStream).text(),
 		proc.exited
 	])
 	return { ok: code === 0, out: out.trim(), err: err.trim() }

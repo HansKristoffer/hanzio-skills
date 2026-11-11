@@ -2,6 +2,7 @@
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { sh } from './env.ts'
 
 export const UNIT = 'factory'
 const LABEL = 'dev.factory.service'
@@ -66,13 +67,8 @@ ${vars}
 `
 }
 
-function run(args: string[]) {
-	const result = Bun.spawnSync(args, { stdout: 'pipe', stderr: 'pipe' })
-	return { ok: result.exitCode === 0, out: result.stdout.toString().trim(), err: result.stderr.toString().trim() }
-}
-
 function must(args: string[]) {
-	const result = run(args)
+	const result = sh(args)
 	if (!result.ok) throw new Error(`${args.join(' ')}: ${result.err || result.out}`)
 	return result
 }
@@ -82,17 +78,17 @@ export function install(command: string[], env: Record<string, string>, log: str
 	if (process.platform === 'darwin') {
 		mkdirSync(join(homedir(), 'Library', 'LaunchAgents'), { recursive: true })
 		writeFileSync(plistPath(), renderPlist(command, env, log))
-		run(['launchctl', 'unload', plistPath()])
+		sh(['launchctl', 'unload', plistPath()])
 		must(['launchctl', 'load', '-w', plistPath()])
 		return { installed: plistPath(), warnings }
 	}
 	mkdirSync(join(unitPath(), '..'), { recursive: true })
 	writeFileSync(unitPath(), renderUnit(command, env, log))
 	must(['systemctl', '--user', 'daemon-reload'])
-	run(['systemctl', '--user', 'stop', transientUnit])
+	sh(['systemctl', '--user', 'stop', transientUnit])
 	must(['systemctl', '--user', 'enable', '--now', UNIT])
 	const user = process.env.USER ?? ''
-	const linger = run(['loginctl', 'show-user', user, '-p', 'Linger'])
+	const linger = sh(['loginctl', 'show-user', user, '-p', 'Linger'])
 	if (linger.out !== 'Linger=yes') {
 		warnings.push(`Linger is off, so the unit starts only when you log in. Turn it on with: loginctl enable-linger ${user}`)
 	}
@@ -101,12 +97,12 @@ export function install(command: string[], env: Record<string, string>, log: str
 
 export function uninstall() {
 	if (process.platform === 'darwin') {
-		run(['launchctl', 'unload', '-w', plistPath()])
+		sh(['launchctl', 'unload', '-w', plistPath()])
 		rmSync(plistPath(), { force: true })
 		return { removed: plistPath() }
 	}
-	run(['systemctl', '--user', 'disable', '--now', UNIT])
+	sh(['systemctl', '--user', 'disable', '--now', UNIT])
 	rmSync(unitPath(), { force: true })
-	run(['systemctl', '--user', 'daemon-reload'])
+	sh(['systemctl', '--user', 'daemon-reload'])
 	return { removed: unitPath() }
 }

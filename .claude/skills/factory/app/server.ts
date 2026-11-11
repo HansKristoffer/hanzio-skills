@@ -17,7 +17,7 @@ import {
 	type IssueRow,
 	type RunRow
 } from './db.ts'
-import { APP_DIR, appVersion } from './env.ts'
+import { APP_DIR, appVersion, sh } from './env.ts'
 import { defaultRef, fetchDefault, freeBranch, readConfig, repoInfo, slugify } from './git.ts'
 import {
 	STAGES,
@@ -81,12 +81,11 @@ const oneOf = <T extends string>(value: unknown, allowed: readonly T[], name: st
 }
 
 export function detectTailnet(): Tailnet | null {
-	const ip = Bun.spawnSync(['tailscale', 'ip', '-4'], { stdout: 'pipe', stderr: 'ignore' })
-	const address = ip.exitCode === 0 ? ip.stdout.toString().trim().split('\n')[0] : ''
+	const ip = sh(['tailscale', 'ip', '-4'])
+	const address = ip.ok ? ip.out.split('\n')[0] : ''
 	if (!address) return null
-	const status = Bun.spawnSync(['tailscale', 'status', '--json'], { stdout: 'pipe', stderr: 'ignore' })
 	try {
-		const name = String(JSON.parse(status.stdout.toString()).Self.DNSName ?? '').replace(/\.$/, '')
+		const name = String(JSON.parse(sh(['tailscale', 'status', '--json']).out).Self.DNSName ?? '').replace(/\.$/, '')
 		return { ip: address, ...(name && { name }) }
 	} catch {
 		return { ip: address }

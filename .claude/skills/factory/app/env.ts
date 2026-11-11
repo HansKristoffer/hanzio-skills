@@ -23,6 +23,17 @@ export function factoryPort() {
 	return port
 }
 
+/** Runs a command and never throws: Bun throws when the program is not installed, and Tailscale, systemd or
+ * git can be missing on a machine. */
+export function sh(args: string[], options: { cwd?: string } = {}) {
+	try {
+		const result = Bun.spawnSync(args, { cwd: options.cwd, env: { ...process.env }, stdout: 'pipe', stderr: 'pipe' })
+		return { ok: result.exitCode === 0, out: result.stdout.toString().trim(), err: result.stderr.toString().trim() }
+	} catch (error) {
+		return { ok: false, out: '', err: `${args[0]} is not installed: ${(error as Error).message}` }
+	}
+}
+
 /** The SHA-256 of the app's source, so a synced skill update is noticed. FACTORY_VERSION overrides it, for tests. */
 export function appVersion() {
 	if (process.env.FACTORY_VERSION) return process.env.FACTORY_VERSION

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { rmSync } from 'node:fs'
 import { networkInterfaces } from 'node:os'
 import { MIGRATIONS, openDatabase } from './db.ts'
+import { detectTailnet } from './server.ts'
 import { scratchRepo, setup, tempDir, type Harness } from './fixtures/harness.ts'
 
 let h: Harness
@@ -162,4 +163,14 @@ test('a database at an older version is migrated at start', () => {
 	expect(db.query(`select name from sqlite_master where name = 'extra'`).get()).toBeTruthy()
 	db.close()
 	rmSync(home, { recursive: true, force: true })
+})
+
+test('a machine without Tailscale runs the server on loopback only', () => {
+	const path = process.env.PATH
+	process.env.PATH = tempDir()
+	try {
+		expect(detectTailnet()).toBeNull()
+	} finally {
+		process.env.PATH = path
+	}
 })

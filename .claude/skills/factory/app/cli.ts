@@ -4,7 +4,7 @@
 import { existsSync, mkdirSync, openSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseArgs, type ParseArgsOptionsConfig } from 'node:util'
-import { APP_DIR, DEFAULT_PORT, appVersion, factoryHome, factoryPort } from './env.ts'
+import { APP_DIR, DEFAULT_PORT, appVersion, factoryHome, factoryPort, sh } from './env.ts'
 import { detectTailnet, startServer } from './server.ts'
 import { UNIT, install, uninstall, unitInstalled } from './service.ts'
 
@@ -70,7 +70,7 @@ async function waitFor(check: () => Promise<boolean>, ms: number) {
 const usesUnit = () => port === DEFAULT_PORT && !process.env.FACTORY_HOME && unitInstalled()
 const hasSystemd = () =>
 	process.platform === 'linux' &&
-	Bun.spawnSync(['systemctl', '--user', 'show-environment'], { stdout: 'ignore', stderr: 'ignore' }).exitCode === 0
+	sh(['systemctl', '--user', 'show-environment']).ok
 const transientUnit = () => `factory-${port}`
 
 function serverEnv() {
@@ -90,12 +90,12 @@ const logPath = () => join(factoryHome(), 'server.log')
 function startUnit() {
 	const log = logPath()
 	if (usesUnit()) {
-		Bun.spawnSync(['systemctl', '--user', 'start', UNIT])
+		sh(['systemctl', '--user', 'start', UNIT])
 		return UNIT
 	}
 	if (hasSystemd()) {
 		const setenv = Object.entries(serverEnv()).map(([key, value]) => `--setenv=${key}=${value}`)
-		const started = Bun.spawnSync(
+		const started = sh(
 			[
 				'systemd-run',
 				'--user',
@@ -106,10 +106,9 @@ function startUnit() {
 				`--property=StandardError=append:${log}`,
 				...setenv,
 				...serveCommand()
-			],
-			{ stdout: 'ignore', stderr: 'pipe' }
+			]
 		)
-		if (started.exitCode !== 0) throw new Error(`systemd-run failed: ${started.stderr.toString().trim()}`)
+		if (!started.ok) throw new Error(`systemd-run failed: ${started.err}`)
 		return transientUnit()
 	}
 	return null
@@ -147,9 +146,9 @@ async function ensureServer() {
 		if (unit && !(await waitFor(up, 5000))) {
 			// A user manager that cannot run the unit (some containers and CI runners): run it as a plain
 			// background process, which lasts until this thread's session ends, and say why.
-			const status = Bun.spawnSync(['systemctl', '--user', 'status', unit, '--no-pager', '-n', '5'], { stdout: 'pipe', stderr: 'pipe' })
+			const status = sh(['systemctl', '--user', 'status', unit, '--no-pager', '-n', '5'])
 			console.error(
-				`factory: systemd could not start ${unit}, so the server runs as a background process of this session.\n${status.stdout.toString().trim()}\n${logTail()}`
+				`factory: systemd could not start ${unit}, so the server runs as a background process of this session.\n${status.out}\n${logTail()}`
 			)
 			spawnDetached()
 		} else if (!unit) spawnDetached()
