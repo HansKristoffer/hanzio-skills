@@ -1,0 +1,303 @@
+{
+	"view": {
+		"author": {
+			"id": "ID_1",
+			"is_bot": false,
+			"login": "person-1",
+			"name": "A Person"
+		},
+		"baseRefName": "main",
+		"headRefOid": "51e1f891c347b75926baad6dd102e1621ced7d12",
+		"isDraft": false,
+		"latestReviews": [
+			{
+				"id": "ID_2",
+				"author": {
+					"login": "person-2"
+				},
+				"authorAssociation": "MEMBER",
+				"body": "body ID_3",
+				"submittedAt": "2026-11-03T23:46:52Z",
+				"includesCreatedEdit": false,
+				"reactionGroups": [],
+				"state": "COMMENTED",
+				"commit": {
+					"oid": ""
+				}
+			},
+			{
+				"id": "ID_2",
+				"author": {
+					"login": "person-3"
+				},
+				"authorAssociation": "MEMBER",
+				"body": "body ID_4",
+				"submittedAt": "2026-11-04T08:30:14Z",
+				"includesCreatedEdit": false,
+				"reactionGroups": [],
+				"state": "APPROVED",
+				"commit": {
+					"oid": ""
+				}
+			}
+		],
+		"mergeStateStatus": "UNKNOWN",
+		"mergeable": "UNKNOWN",
+		"mergedAt": "2026-11-04T14:59:04Z",
+		"mergedBy": {
+			"id": "ID_5",
+			"is_bot": false,
+			"login": "person-2",
+			"name": "A Person"
+		},
+		"number": 3239,
+		"reviewDecision": "APPROVED",
+		"reviewRequests": [],
+		"state": "MERGED",
+		"statusCheckRollup": [
+			{
+				"__typename": "CheckRun",
+				"completedAt": "2026-11-04T14:33:00Z",
+				"conclusion": "SKIPPED",
+				"detailsUrl": "https://github.com/acme/api/pull/1#ID_6",
+				"name": "build",
+				"startedAt": "2026-11-04T14:33:06Z",
+				"status": "COMPLETED",
+				"workflowName": "Preview"
+			},
+			{
+				"__typename": "CheckRun",
+				"completedAt": "2026-11-04T14:59:08Z",
+				"conclusion": "SKIPPED",
+				"detailsUrl": "https://github.com/acme/api/pull/1#ID_7",
+				"name": "build",
+				"startedAt": "2026-11-04T14:59:08Z",
+				"status": "COMPLETED",
+				"workflowName": "Preview"
+			},
+			{
+				"__typename": "CheckRun",
+				"completedAt": "2026-11-04T14:35:28Z",
+				"conclusion": "SUCCESS",
+				"detailsUrl": "https://github.com/acme/api/pull/1#ID_8",
+				"name": "Unit tests (shard 1)",
+				"startedAt": "2026-11-04T14:33:03Z",
+				"status": "COMPLETED",
+				"workflowName": "Run Tests"
+			},
+			{
+				"__typename": "CheckRun",
+				"completedAt": "2026-11-04T14:35:40Z",
+				"conclusion": "SUCCESS",
+				"detailsUrl": "https://github.com/acme/api/pull/1#ID_9",
+				"name": "Unit tests (shard 2)",
+				"startedAt": "2026-11-04T14:33:03Z",
+				"status": "COMPLETED",
+				"workflowName": "Run Tests"
+			},
+			{
+				"__typename": "CheckRun",
+				"completedAt": "2026-11-04T14:33:00Z",
+				"conclusion": "SKIPPED",
+				"detailsUrl": "https://github.com/acme/api/pull/1#ID_10",
+				"name": "teardown",
+				"startedAt": "2026-11-04T14:33:01Z",
+				"status": "COMPLETED",
+				"workflowName": "Preview"
+			},
+			{
+				"__typename": "CheckRun",
+				"completedAt": "2026-11-04T14:59:08Z",
+				"conclusion": "SKIPPED",
+				"detailsUrl": "https://github.com/acme/api/pull/1#ID_11",
+				"name": "teardown",
+				"startedAt": "2026-11-04T14:59:08Z",
+				"status": "COMPLETED",
+				"workflowName": "Preview"
+			},
+			{
+				"__typename": "CheckRun",
+				"completedAt": "2026-11-04T14:36:20Z",
+				"conclusion": "SUCCESS",
+				"detailsUrl": "https://github.com/acme/api/pull/1#ID_12",
+				"name": "Type-check and lint",
+				"startedAt": "2026-11-04T14:33:03Z",
+				"status": "COMPLETED",
+				"workflowName": "Run Tests"
+			},
+			{
+				"__typename": "CheckRun",
+				"completedAt": "2026-11-04T14:33:00Z",
+				"conclusion": "SKIPPED",
+				"detailsUrl": "https://github.com/acme/api/pull/1#ID_13",
+				"name": "deploy",
+				"startedAt": "2026-11-04T14:33:01Z",
+				"status": "COMPLETED",
+				"workflowName": "Preview"
+			},
+			{
+				"__typename": "CheckRun",
+				"completedAt": "2026-11-04T14:59:08Z",
+				"conclusion": "SKIPPED",
+				"detailsUrl": "https://github.com/acme/api/pull/1#ID_14",
+				"name": "deploy",
+				"startedAt": "2026-11-04T14:59:08Z",
+				"status": "COMPLETED",
+				"workflowName": "Preview"
+			},
+			{
+				"__typename": "CheckRun",
+				"completedAt": "2026-11-04T14:47:32Z",
+				"conclusion": "SUCCESS",
+				"detailsUrl": "https://github.com/acme/api/pull/1#ID_15",
+				"name": "E2E tests",
+				"startedAt": "2026-11-04T14:39:56Z",
+				"status": "COMPLETED",
+				"workflowName": "Run Tests"
+			},
+			{
+				"__typename": "CheckRun",
+				"completedAt": "2026-11-04T14:34:30Z",
+				"conclusion": "SUCCESS",
+				"detailsUrl": "https://github.com/acme/api/pull/1#ID_16",
+				"name": "Navi payload",
+				"startedAt": "2026-11-04T14:33:04Z",
+				"status": "COMPLETED",
+				"workflowName": "Run Tests"
+			},
+			{
+				"__typename": "CheckRun",
+				"completedAt": "2026-11-04T14:33:25Z",
+				"conclusion": "SUCCESS",
+				"detailsUrl": "https://github.com/acme/api/pull/1#ID_17",
+				"name": "Docs verified on main",
+				"startedAt": "2026-11-04T14:33:03Z",
+				"status": "COMPLETED",
+				"workflowName": "Run Tests"
+			},
+			{
+				"__typename": "CheckRun",
+				"completedAt": "2026-11-04T14:47:43Z",
+				"conclusion": "SUCCESS",
+				"detailsUrl": "https://github.com/acme/api/pull/1#ID_18",
+				"name": "tests",
+				"startedAt": "2026-11-04T14:47:34Z",
+				"status": "COMPLETED",
+				"workflowName": "Run Tests"
+			}
+		],
+		"url": "https://github.com/acme/api/pull/1#ID_19"
+	},
+	"required": [
+		{
+			"bucket": "pass",
+			"name": "tests"
+		}
+	],
+	"rules": [
+		{
+			"type": "deletion",
+			"ruleset_source_type": "Repository",
+			"ruleset_source": "acme/api",
+			"ruleset_id": 7798636
+		},
+		{
+			"type": "non_fast_forward",
+			"ruleset_source_type": "Repository",
+			"ruleset_source": "acme/api",
+			"ruleset_id": 7798636
+		},
+		{
+			"type": "required_status_checks",
+			"parameters": {
+				"strict_required_status_checks_policy": false,
+				"do_not_enforce_on_create": false,
+				"required_status_checks": [
+					{
+						"context": "tests",
+						"integration_id": 15368
+					}
+				]
+			},
+			"ruleset_source_type": "Repository",
+			"ruleset_source": "acme/api",
+			"ruleset_id": 7798636
+		},
+		{
+			"type": "pull_request",
+			"parameters": {
+				"required_approving_review_count": 1,
+				"dismiss_stale_reviews_on_push": false,
+				"required_reviewers": [],
+				"require_code_owner_review": false,
+				"dismissal_restriction": {
+					"enabled": false,
+					"allowed_actors": []
+				},
+				"require_last_push_approval": false,
+				"required_review_thread_resolution": true,
+				"require_extra_approval_for_unattributed_changes": true,
+				"allowed_merge_methods": [
+					"merge",
+					"squash",
+					"rebase"
+				]
+			},
+			"ruleset_source_type": "Repository",
+			"ruleset_source": "acme/api",
+			"ruleset_id": 7798636
+		}
+	],
+	"threads": [],
+	"reviews": [
+		{
+			"id": "ID_20",
+			"state": "COMMENTED",
+			"body": "body ID_3",
+			"url": "https://github.com/acme/api/pull/1#ID_21",
+			"submittedAt": "2026-11-03T23:46:52Z",
+			"lastEditedAt": null,
+			"commit": {
+				"oid": "b4c5eb547fc732985d1b0c8f55f42d2c56a78ebf"
+			},
+			"authorAssociation": "MEMBER",
+			"author": {
+				"login": "person-2",
+				"__typename": "User"
+			}
+		},
+		{
+			"id": "ID_22",
+			"state": "COMMENTED",
+			"body": "body ID_23",
+			"url": "https://github.com/acme/api/pull/1#ID_24",
+			"submittedAt": "2026-11-04T00:09:09Z",
+			"lastEditedAt": null,
+			"commit": {
+				"oid": "b4c5eb547fc732985d1b0c8f55f42d2c56a78ebf"
+			},
+			"authorAssociation": "MEMBER",
+			"author": {
+				"login": "person-3",
+				"__typename": "User"
+			}
+		},
+		{
+			"id": "ID_25",
+			"state": "APPROVED",
+			"body": "body ID_4",
+			"url": "https://github.com/acme/api/pull/1#ID_26",
+			"submittedAt": "2026-11-04T08:30:14Z",
+			"lastEditedAt": null,
+			"commit": {
+				"oid": "b4c5eb547fc732985d1b0c8f55f42d2c56a78ebf"
+			},
+			"authorAssociation": "MEMBER",
+			"author": {
+				"login": "person-3",
+				"__typename": "User"
+			}
+		}
+	],
+	"comments": []
+}

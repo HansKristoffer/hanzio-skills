@@ -19,5 +19,9 @@ jobs:
       - name: Install shellcheck
         run: command -v shellcheck || (sudo apt-get update && sudo apt-get install -y shellcheck)
 
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+
       - name: Check
         run: bash scripts/check.sh

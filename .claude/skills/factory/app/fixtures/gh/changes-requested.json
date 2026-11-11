@@ -1,0 +1,771 @@
+{
+	"view": {
+		"author": {
+			"id": "ID_1",
+			"is_bot": false,
+			"login": "person-1",
+			"name": "A Person"
+		},
+		"baseRefName": "main",
+		"headRefOid": "4e8042905544290dddb592eaa43e4664c202a886",
+		"isDraft": false,
+		"latestReviews": [
+			{
+				"id": "ID_2",
+				"author": {
+					"login": "person-2"
+				},
+				"authorAssociation": "NONE",
+				"body": "body ID_3",
+				"submittedAt": "2025-11-26T08:38:52Z",
+				"includesCreatedEdit": false,
+				"reactionGroups": [],
+				"state": "COMMENTED",
+				"commit": {
+					"oid": ""
+				}
+			},
+			{
+				"id": "ID_2",
+				"author": {
+					"login": "person-3"
+				},
+				"authorAssociation": "MEMBER",
+				"body": "body ID_4",
+				"submittedAt": "2025-11-26T08:45:23Z",
+				"includesCreatedEdit": false,
+				"reactionGroups": [],
+				"state": "CHANGES_REQUESTED",
+				"commit": {
+					"oid": ""
+				}
+			}
+		],
+		"mergeStateStatus": "UNKNOWN",
+		"mergeable": "UNKNOWN",
+		"mergedAt": "2025-11-26T09:31:33Z",
+		"mergedBy": {
+			"id": "ID_1",
+			"is_bot": false,
+			"login": "person-1",
+			"name": "A Person"
+		},
+		"number": 87,
+		"reviewDecision": "CHANGES_REQUESTED",
+		"reviewRequests": [],
+		"state": "MERGED",
+		"statusCheckRollup": [
+			{
+				"__typename": "CheckRun",
+				"completedAt": "2025-11-26T09:33:22Z",
+				"conclusion": "SUCCESS",
+				"detailsUrl": "https://github.com/acme/api/pull/1#ID_5",
+				"name": "setup",
+				"startedAt": "2025-11-26T09:31:33Z",
+				"status": "COMPLETED",
+				"workflowName": "Lint"
+			},
+			{
+				"__typename": "CheckRun",
+				"completedAt": "2025-11-26T09:35:53Z",
+				"conclusion": "SUCCESS",
+				"detailsUrl": "https://github.com/acme/api/pull/1#ID_6",
+				"name": "lint (apps/api-frontend)",
+				"startedAt": "2025-11-26T09:33:24Z",
+				"status": "COMPLETED",
+				"workflowName": "Lint"
+			},
+			{
+				"__typename": "CheckRun",
+				"completedAt": "2025-11-26T09:35:12Z",
+				"conclusion": "SUCCESS",
+				"detailsUrl": "https://github.com/acme/api/pull/1#ID_7",
+				"name": "lint (apps/scraper)",
+				"startedAt": "2025-11-26T09:33:24Z",
+				"status": "COMPLETED",
+				"workflowName": "Lint"
+			},
+			{
+				"__typename": "CheckRun",
+				"completedAt": "2025-11-26T09:35:13Z",
+				"conclusion": "SUCCESS",
+				"detailsUrl": "https://github.com/acme/api/pull/1#ID_8",
+				"name": "lint (packages/convex)",
+				"startedAt": "2025-11-26T09:33:24Z",
+				"status": "COMPLETED",
+				"workflowName": "Lint"
+			},
+			{
+				"__typename": "CheckRun",
+				"completedAt": "2025-11-26T09:36:42Z",
+				"conclusion": "SUCCESS",
+				"detailsUrl": "https://github.com/acme/api/pull/1#ID_9",
+				"name": "Cloudflare Pages",
+				"startedAt": "2025-11-26T09:36:42Z",
+				"status": "COMPLETED",
+				"workflowName": ""
+			}
+		],
+		"url": "https://github.com/acme/api/pull/1#ID_10"
+	},
+	"required": null,
+	"rules": null,
+	"threads": [
+		{
+			"id": "ID_11",
+			"isResolved": true,
+			"isOutdated": true,
+			"path": "src/file-ID_12.ts",
+			"line": null,
+			"comments": {
+				"totalCount": 1,
+				"nodes": [
+					{
+						"id": "ID_13",
+						"body": "body ID_14",
+						"url": "https://github.com/acme/api/pull/1#ID_15",
+						"createdAt": "2025-11-26T08:34:09Z",
+						"lastEditedAt": "2025-11-26T08:36:01Z",
+						"authorAssociation": "MEMBER",
+						"author": {
+							"login": "person-3",
+							"__typename": "User"
+						}
+					}
+				]
+			}
+		},
+		{
+			"id": "ID_16",
+			"isResolved": true,
+			"isOutdated": true,
+			"path": "src/file-ID_12.ts",
+			"line": null,
+			"comments": {
+				"totalCount": 1,
+				"nodes": [
+					{
+						"id": "ID_17",
+						"body": "body ID_18",
+						"url": "https://github.com/acme/api/pull/1#ID_19",
+						"createdAt": "2025-11-26T08:36:15Z",
+						"lastEditedAt": null,
+						"authorAssociation": "MEMBER",
+						"author": {
+							"login": "person-3",
+							"__typename": "User"
+						}
+					}
+				]
+			}
+		},
+		{
+			"id": "ID_20",
+			"isResolved": true,
+			"isOutdated": true,
+			"path": "src/file-ID_12.ts",
+			"line": null,
+			"comments": {
+				"totalCount": 1,
+				"nodes": [
+					{
+						"id": "ID_21",
+						"body": "body ID_22",
+						"url": "https://github.com/acme/api/pull/1#ID_23",
+						"createdAt": "2025-11-26T08:36:48Z",
+						"lastEditedAt": null,
+						"authorAssociation": "MEMBER",
+						"author": {
+							"login": "person-3",
+							"__typename": "User"
+						}
+					}
+				]
+			}
+		},
+		{
+			"id": "ID_24",
+			"isResolved": false,
+			"isOutdated": false,
+			"path": "src/file-ID_25.ts",
+			"line": 83,
+			"comments": {
+				"totalCount": 1,
+				"nodes": [
+					{
+						"id": "ID_26",
+						"body": "body ID_27",
+						"url": "https://github.com/acme/api/pull/1#ID_28",
+						"createdAt": "2025-11-26T08:38:48Z",
+						"lastEditedAt": null,
+						"authorAssociation": "NONE",
+						"author": {
+							"login": "copilot-pull-request-reviewer",
+							"__typename": "Bot"
+						}
+					}
+				]
+			}
+		},
+		{
+			"id": "ID_29",
+			"isResolved": false,
+			"isOutdated": false,
+			"path": "src/file-ID_25.ts",
+			"line": 107,
+			"comments": {
+				"totalCount": 1,
+				"nodes": [
+					{
+						"id": "ID_30",
+						"body": "body ID_31",
+						"url": "https://github.com/acme/api/pull/1#ID_32",
+						"createdAt": "2025-11-26T08:38:48Z",
+						"lastEditedAt": null,
+						"authorAssociation": "NONE",
+						"author": {
+							"login": "copilot-pull-request-reviewer",
+							"__typename": "Bot"
+						}
+					}
+				]
+			}
+		},
+		{
+			"id": "ID_33",
+			"isResolved": false,
+			"isOutdated": false,
+			"path": "src/file-ID_25.ts",
+			"line": 140,
+			"comments": {
+				"totalCount": 1,
+				"nodes": [
+					{
+						"id": "ID_34",
+						"body": "body ID_35",
+						"url": "https://github.com/acme/api/pull/1#ID_36",
+						"createdAt": "2025-11-26T08:38:48Z",
+						"lastEditedAt": null,
+						"authorAssociation": "NONE",
+						"author": {
+							"login": "copilot-pull-request-reviewer",
+							"__typename": "Bot"
+						}
+					}
+				]
+			}
+		},
+		{
+			"id": "ID_37",
+			"isResolved": false,
+			"isOutdated": false,
+			"path": "src/file-ID_25.ts",
+			"line": 48,
+			"comments": {
+				"totalCount": 1,
+				"nodes": [
+					{
+						"id": "ID_38",
+						"body": "body ID_39",
+						"url": "https://github.com/acme/api/pull/1#ID_40",
+						"createdAt": "2025-11-26T08:38:49Z",
+						"lastEditedAt": null,
+						"authorAssociation": "NONE",
+						"author": {
+							"login": "copilot-pull-request-reviewer",
+							"__typename": "Bot"
+						}
+					}
+				]
+			}
+		},
+		{
+			"id": "ID_41",
+			"isResolved": false,
+			"isOutdated": false,
+			"path": "src/file-ID_25.ts",
+			"line": 91,
+			"comments": {
+				"totalCount": 1,
+				"nodes": [
+					{
+						"id": "ID_42",
+						"body": "body ID_43",
+						"url": "https://github.com/acme/api/pull/1#ID_44",
+						"createdAt": "2025-11-26T08:38:49Z",
+						"lastEditedAt": null,
+						"authorAssociation": "NONE",
+						"author": {
+							"login": "copilot-pull-request-reviewer",
+							"__typename": "Bot"
+						}
+					}
+				]
+			}
+		},
+		{
+			"id": "ID_45",
+			"isResolved": false,
+			"isOutdated": false,
+			"path": "src/file-ID_25.ts",
+			"line": 54,
+			"comments": {
+				"totalCount": 1,
+				"nodes": [
+					{
+						"id": "ID_46",
+						"body": "body ID_47",
+						"url": "https://github.com/acme/api/pull/1#ID_48",
+						"createdAt": "2025-11-26T08:38:49Z",
+						"lastEditedAt": null,
+						"authorAssociation": "NONE",
+						"author": {
+							"login": "copilot-pull-request-reviewer",
+							"__typename": "Bot"
+						}
+					}
+				]
+			}
+		},
+		{
+			"id": "ID_49",
+			"isResolved": false,
+			"isOutdated": false,
+			"path": "src/file-ID_50.ts",
+			"line": 9,
+			"comments": {
+				"totalCount": 1,
+				"nodes": [
+					{
+						"id": "ID_51",
+						"body": "body ID_52",
+						"url": "https://github.com/acme/api/pull/1#ID_53",
+						"createdAt": "2025-11-26T08:38:50Z",
+						"lastEditedAt": null,
+						"authorAssociation": "NONE",
+						"author": {
+							"login": "copilot-pull-request-reviewer",
+							"__typename": "Bot"
+						}
+					}
+				]
+			}
+		},
+		{
+			"id": "ID_54",
+			"isResolved": false,
+			"isOutdated": false,
+			"path": "src/file-ID_25.ts",
+			"line": 15,
+			"comments": {
+				"totalCount": 1,
+				"nodes": [
+					{
+						"id": "ID_55",
+						"body": "body ID_56",
+						"url": "https://github.com/acme/api/pull/1#ID_57",
+						"createdAt": "2025-11-26T08:38:50Z",
+						"lastEditedAt": null,
+						"authorAssociation": "NONE",
+						"author": {
+							"login": "copilot-pull-request-reviewer",
+							"__typename": "Bot"
+						}
+					}
+				]
+			}
+		},
+		{
+			"id": "ID_58",
+			"isResolved": false,
+			"isOutdated": true,
+			"path": "src/file-ID_12.ts",
+			"line": 126,
+			"comments": {
+				"totalCount": 1,
+				"nodes": [
+					{
+						"id": "ID_59",
+						"body": "body ID_60",
+						"url": "https://github.com/acme/api/pull/1#ID_61",
+						"createdAt": "2025-11-26T08:38:50Z",
+						"lastEditedAt": null,
+						"authorAssociation": "NONE",
+						"author": {
+							"login": "copilot-pull-request-reviewer",
+							"__typename": "Bot"
+						}
+					}
+				]
+			}
+		},
+		{
+			"id": "ID_62",
+			"isResolved": false,
+			"isOutdated": false,
+			"path": "src/file-ID_50.ts",
+			"line": 28,
+			"comments": {
+				"totalCount": 1,
+				"nodes": [
+					{
+						"id": "ID_63",
+						"body": "body ID_64",
+						"url": "https://github.com/acme/api/pull/1#ID_65",
+						"createdAt": "2025-11-26T08:38:50Z",
+						"lastEditedAt": null,
+						"authorAssociation": "NONE",
+						"author": {
+							"login": "copilot-pull-request-reviewer",
+							"__typename": "Bot"
+						}
+					}
+				]
+			}
+		},
+		{
+			"id": "ID_66",
+			"isResolved": false,
+			"isOutdated": true,
+			"path": "src/file-ID_12.ts",
+			"line": null,
+			"comments": {
+				"totalCount": 1,
+				"nodes": [
+					{
+						"id": "ID_67",
+						"body": "body ID_68",
+						"url": "https://github.com/acme/api/pull/1#ID_69",
+						"createdAt": "2025-11-26T08:38:51Z",
+						"lastEditedAt": null,
+						"authorAssociation": "NONE",
+						"author": {
+							"login": "copilot-pull-request-reviewer",
+							"__typename": "Bot"
+						}
+					}
+				]
+			}
+		},
+		{
+			"id": "ID_70",
+			"isResolved": false,
+			"isOutdated": false,
+			"path": "src/file-ID_71.ts",
+			"line": 36,
+			"comments": {
+				"totalCount": 1,
+				"nodes": [
+					{
+						"id": "ID_72",
+						"body": "body ID_73",
+						"url": "https://github.com/acme/api/pull/1#ID_74",
+						"createdAt": "2025-11-26T08:38:51Z",
+						"lastEditedAt": null,
+						"authorAssociation": "NONE",
+						"author": {
+							"login": "copilot-pull-request-reviewer",
+							"__typename": "Bot"
+						}
+					}
+				]
+			}
+		},
+		{
+			"id": "ID_75",
+			"isResolved": false,
+			"isOutdated": false,
+			"path": "src/file-ID_25.ts",
+			"line": 124,
+			"comments": {
+				"totalCount": 1,
+				"nodes": [
+					{
+						"id": "ID_76",
+						"body": "body ID_77",
+						"url": "https://github.com/acme/api/pull/1#ID_78",
+						"createdAt": "2025-11-26T08:38:51Z",
+						"lastEditedAt": null,
+						"authorAssociation": "NONE",
+						"author": {
+							"login": "copilot-pull-request-reviewer",
+							"__typename": "Bot"
+						}
+					}
+				]
+			}
+		},
+		{
+			"id": "ID_79",
+			"isResolved": false,
+			"isOutdated": false,
+			"path": "src/file-ID_25.ts",
+			"line": 172,
+			"comments": {
+				"totalCount": 1,
+				"nodes": [
+					{
+						"id": "ID_80",
+						"body": "body ID_81",
+						"url": "https://github.com/acme/api/pull/1#ID_82",
+						"createdAt": "2025-11-26T08:38:52Z",
+						"lastEditedAt": null,
+						"authorAssociation": "NONE",
+						"author": {
+							"login": "copilot-pull-request-reviewer",
+							"__typename": "Bot"
+						}
+					}
+				]
+			}
+		},
+		{
+			"id": "ID_83",
+			"isResolved": false,
+			"isOutdated": false,
+			"path": "src/file-ID_25.ts",
+			"line": 119,
+			"comments": {
+				"totalCount": 1,
+				"nodes": [
+					{
+						"id": "ID_84",
+						"body": "body ID_85",
+						"url": "https://github.com/acme/api/pull/1#ID_86",
+						"createdAt": "2025-11-26T08:38:52Z",
+						"lastEditedAt": null,
+						"authorAssociation": "NONE",
+						"author": {
+							"login": "copilot-pull-request-reviewer",
+							"__typename": "Bot"
+						}
+					}
+				]
+			}
+		},
+		{
+			"id": "ID_87",
+			"isResolved": false,
+			"isOutdated": false,
+			"path": "src/file-ID_50.ts",
+			"line": 6,
+			"comments": {
+				"totalCount": 1,
+				"nodes": [
+					{
+						"id": "ID_88",
+						"body": "body ID_89",
+						"url": "https://github.com/acme/api/pull/1#ID_90",
+						"createdAt": "2025-11-26T08:38:52Z",
+						"lastEditedAt": null,
+						"authorAssociation": "NONE",
+						"author": {
+							"login": "copilot-pull-request-reviewer",
+							"__typename": "Bot"
+						}
+					}
+				]
+			}
+		},
+		{
+			"id": "ID_91",
+			"isResolved": false,
+			"isOutdated": false,
+			"path": "src/file-ID_25.ts",
+			"line": 76,
+			"comments": {
+				"totalCount": 1,
+				"nodes": [
+					{
+						"id": "ID_92",
+						"body": "body ID_93",
+						"url": "https://github.com/acme/api/pull/1#ID_94",
+						"createdAt": "2025-11-26T08:38:52Z",
+						"lastEditedAt": null,
+						"authorAssociation": "NONE",
+						"author": {
+							"login": "copilot-pull-request-reviewer",
+							"__typename": "Bot"
+						}
+					}
+				]
+			}
+		},
+		{
+			"id": "ID_95",
+			"isResolved": false,
+			"isOutdated": false,
+			"path": "src/file-ID_96.ts",
+			"line": 11,
+			"comments": {
+				"totalCount": 2,
+				"nodes": [
+					{
+						"id": "ID_97",
+						"body": "body ID_98",
+						"url": "https://github.com/acme/api/pull/1#ID_99",
+						"createdAt": "2025-11-26T08:41:35Z",
+						"lastEditedAt": null,
+						"authorAssociation": "MEMBER",
+						"author": {
+							"login": "person-3",
+							"__typename": "User"
+						}
+					},
+					{
+						"id": "ID_100",
+						"body": "body ID_101",
+						"url": "https://github.com/acme/api/pull/1#ID_102",
+						"createdAt": "2025-11-26T08:41:41Z",
+						"lastEditedAt": "2025-11-26T08:43:12Z",
+						"authorAssociation": "MEMBER",
+						"author": {
+							"login": "person-3",
+							"__typename": "User"
+						}
+					}
+				]
+			}
+		}
+	],
+	"reviews": [
+		{
+			"id": "ID_103",
+			"state": "COMMENTED",
+			"body": "",
+			"url": "https://github.com/acme/api/pull/1#ID_104",
+			"submittedAt": "2025-11-26T08:34:09Z",
+			"lastEditedAt": null,
+			"commit": {
+				"oid": "75f2b604d26cd1c47abc2e8851b35d8f690807b0"
+			},
+			"authorAssociation": "MEMBER",
+			"author": {
+				"login": "person-3",
+				"__typename": "User"
+			}
+		},
+		{
+			"id": "ID_105",
+			"state": "COMMENTED",
+			"body": "",
+			"url": "https://github.com/acme/api/pull/1#ID_106",
+			"submittedAt": "2025-11-26T08:36:15Z",
+			"lastEditedAt": null,
+			"commit": {
+				"oid": "75f2b604d26cd1c47abc2e8851b35d8f690807b0"
+			},
+			"authorAssociation": "MEMBER",
+			"author": {
+				"login": "person-3",
+				"__typename": "User"
+			}
+		},
+		{
+			"id": "ID_107",
+			"state": "COMMENTED",
+			"body": "",
+			"url": "https://github.com/acme/api/pull/1#ID_108",
+			"submittedAt": "2025-11-26T08:36:48Z",
+			"lastEditedAt": null,
+			"commit": {
+				"oid": "75f2b604d26cd1c47abc2e8851b35d8f690807b0"
+			},
+			"authorAssociation": "MEMBER",
+			"author": {
+				"login": "person-3",
+				"__typename": "User"
+			}
+		},
+		{
+			"id": "ID_109",
+			"state": "COMMENTED",
+			"body": "body ID_3",
+			"url": "https://github.com/acme/api/pull/1#ID_110",
+			"submittedAt": "2025-11-26T08:38:52Z",
+			"lastEditedAt": null,
+			"commit": {
+				"oid": "75f2b604d26cd1c47abc2e8851b35d8f690807b0"
+			},
+			"authorAssociation": "NONE",
+			"author": {
+				"login": "copilot-pull-request-reviewer",
+				"__typename": "Bot"
+			}
+		},
+		{
+			"id": "ID_111",
+			"state": "COMMENTED",
+			"body": "",
+			"url": "https://github.com/acme/api/pull/1#ID_112",
+			"submittedAt": "2025-11-26T08:41:35Z",
+			"lastEditedAt": null,
+			"commit": {
+				"oid": "75f2b604d26cd1c47abc2e8851b35d8f690807b0"
+			},
+			"authorAssociation": "MEMBER",
+			"author": {
+				"login": "person-3",
+				"__typename": "User"
+			}
+		},
+		{
+			"id": "ID_113",
+			"state": "COMMENTED",
+			"body": "",
+			"url": "https://github.com/acme/api/pull/1#ID_114",
+			"submittedAt": "2025-11-26T08:41:41Z",
+			"lastEditedAt": null,
+			"commit": {
+				"oid": "75f2b604d26cd1c47abc2e8851b35d8f690807b0"
+			},
+			"authorAssociation": "MEMBER",
+			"author": {
+				"login": "person-3",
+				"__typename": "User"
+			}
+		},
+		{
+			"id": "ID_115",
+			"state": "CHANGES_REQUESTED",
+			"body": "body ID_4",
+			"url": "https://github.com/acme/api/pull/1#ID_116",
+			"submittedAt": "2025-11-26T08:45:23Z",
+			"lastEditedAt": null,
+			"commit": {
+				"oid": "75f2b604d26cd1c47abc2e8851b35d8f690807b0"
+			},
+			"authorAssociation": "MEMBER",
+			"author": {
+				"login": "person-3",
+				"__typename": "User"
+			}
+		}
+	],
+	"comments": [
+		{
+			"id": "ID_117",
+			"body": "body ID_118",
+			"url": "https://github.com/acme/api/pull/1#ID_119",
+			"createdAt": "2025-11-25T20:04:08Z",
+			"lastEditedAt": null,
+			"authorAssociation": "NONE",
+			"author": {
+				"login": "linear",
+				"__typename": "Bot"
+			}
+		},
+		{
+			"id": "ID_120",
+			"body": "body ID_121",
+			"url": "https://github.com/acme/api/pull/1#ID_122",
+			"createdAt": "2025-11-25T20:15:22Z",
+			"lastEditedAt": null,
+			"authorAssociation": "NONE",
+			"author": {
+				"login": "cloudflare-workers-and-pages",
+				"__typename": "Bot"
+			}
+		}
+	]
+}

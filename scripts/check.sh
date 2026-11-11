@@ -4,7 +4,7 @@
 # Usage:
 #   bash scripts/check.sh
 #
-# Needs python3 and shellcheck on PATH. Runs every check, then exits 1 if any failed.
+# Needs python3, shellcheck and bun on PATH. Runs every check, then exits 1 if any failed.
 set -uo pipefail
 
 cd "$(dirname "$0")/.." || exit 2
@@ -43,6 +43,25 @@ for test in "${shell_files[@]}"; do
       ;;
   esac
 done
+
+test_dirs=()
+while IFS= read -r -d '' file; do
+  dir=$(dirname "$file")
+  if [ "${#test_dirs[@]}" -eq 0 ] || [ "${test_dirs[${#test_dirs[@]}-1]}" != "$dir" ]; then
+    test_dirs+=("$dir")
+  fi
+done < <(find .claude/skills -name node_modules -prune -o -name '*.test.ts' -type f -print0 | sort -z)
+
+if [ "${#test_dirs[@]}" -gt 0 ]; then
+  if command -v bun > /dev/null 2>&1; then
+    for dir in "${test_dirs[@]}"; do
+      step "bun test $dir"
+      (cd "$dir" && bun test) || fail "bun test $dir"
+    done
+  else
+    fail "bun is not installed, and ${#test_dirs[@]} folders have Bun tests"
+  fi
+fi
 
 if [ "$failed" -ne 0 ]; then
   echo "check: failed" >&2

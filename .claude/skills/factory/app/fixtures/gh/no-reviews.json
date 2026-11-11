@@ -1,0 +1,40 @@
+{
+	"view": {
+		"author": {
+			"id": "ID_1",
+			"is_bot": false,
+			"login": "person-1",
+			"name": "A Person"
+		},
+		"baseRefName": "main",
+		"headRefOid": "394673528d7f20416d0bdc9aaba38d07d82da5f2",
+		"isDraft": false,
+		"latestReviews": [],
+		"mergeStateStatus": "CLEAN",
+		"mergeable": "MERGEABLE",
+		"mergedAt": null,
+		"mergedBy": null,
+		"number": 25,
+		"reviewDecision": "",
+		"reviewRequests": [],
+		"state": "OPEN",
+		"statusCheckRollup": [
+			{
+				"__typename": "CheckRun",
+				"completedAt": "2026-11-11T06:49:16Z",
+				"conclusion": "SUCCESS",
+				"detailsUrl": "https://github.com/acme/api/pull/1#ID_2",
+				"name": "check",
+				"startedAt": "2026-11-11T06:48:10Z",
+				"status": "COMPLETED",
+				"workflowName": "Check"
+			}
+		],
+		"url": "https://github.com/acme/api/pull/1#ID_3"
+	},
+	"required": null,
+	"rules": [],
+	"threads": [],
+	"reviews": [],
+	"comments": []
+}
