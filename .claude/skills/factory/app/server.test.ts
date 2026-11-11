@@ -30,6 +30,20 @@ describe('issues', () => {
 		expect(board.body.issues[0].stage).toBe('research')
 	})
 
+	test('the board names the stages that ran and the run that is going', async () => {
+		await start('t1')
+		const fresh = (await h.call('GET', '/api/board')).body.issues[0]
+		expect(fresh.ran).toEqual([])
+		expect(fresh.run).toBeNull()
+		const research = (await h.as('t1')('POST', '/api/issue/run', { stage: 'research' })).body.run
+		await h.as('child')('POST', `/api/runs/${research}/report`, { text: 'child crashed', failed: true })
+		await h.as('t1')('POST', '/api/issue/run', { stage: 'implement' })
+		const item = (await h.call('GET', '/api/board')).body.issues[0]
+		expect(item.ran).toEqual(['research', 'implement'])
+		expect(item.run.stage).toBe('implement')
+		expect(typeof item.run.startedAt).toBe('number')
+	})
+
 	test('a command without a thread is refused', async () => {
 		const res = await h.call('POST', '/api/issue/status', {})
 		expect(res.status).toBe(400)

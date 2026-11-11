@@ -1,12 +1,18 @@
 # factory.config.yaml
 
-An optional file in a repository's root that sets the factory's models, notes and rules for that project. A project needs no file: the defaults and the factory page's settings cover it.
+An optional file in a repository's root that sets the factory's models, notes and rules for that project. A project needs no file: it can keep the same settings in the factory on this machine, where nothing is pushed.
 
 ## Where it is read
 
 From the default branch on origin (`git show origin/<default>:factory.config.yaml`, after a fetch), never from a thread's worktree. A change to the file therefore takes effect once it is merged, and an issue's own branch cannot change its rules. An issue keeps the settings it started with; `factory start` run again in its thread picks up a change.
 
-The settings come in layers, and a later one wins: built-in defaults, the page's settings for all repositories, this file, then the page's settings for this repository on this machine. `factory settings` in a checkout prints what an issue started there would get, with the layer each value came from.
+## One store per project
+
+A project keeps its own settings in one **store**: this file (`file`), or the factory on this machine (`machine`), edited on the factory page's Settings. The page chooses the store per project, and the other one is left out whole. With no choice made, a project whose default branch has the file reads it, and any other project keeps its settings on the machine.
+
+The settings come in layers, and a later one wins: built-in defaults, the page's settings for all projects, then the project's store. `factory settings` in a checkout prints what an issue started there would get, with its `store` and the layer each value came from (`file` for this file, `repo` for the machine).
+
+Run `factory settings` before you write this file for a project. With `store: machine` the file is not read: the user changes the settings on the page, or moves the project to its repository there, where the page shows the machine's settings as a file to commit.
 
 ## Format
 
@@ -69,4 +75,4 @@ Anyone who can reach the factory page (this machine, and the tailnet when the pa
 
 ## When it is broken
 
-A file that does not parse, is not a mapping, or has an unknown key is left out whole, never half-applied. The issue runs on the other layers, and its thread asks a `blocked` decision quoting the error, such as `factory.config.yaml: stages.reviw: unknown key`. Fix the file on the default branch and answer the decision. An empty file, or one with only comments, counts as no file.
+A file that does not parse, is not a mapping, or has an unknown key is left out whole, never half-applied. The issue runs on the other layers, and its thread asks a `blocked` decision quoting the error, such as `factory.config.yaml: stages.reviw: unknown key`. Fix the file on the default branch and answer the decision. An empty file, or one with only comments, counts as no file. A project whose store is the machine never reads the file, so a broken one there raises nothing.
