@@ -1,7 +1,7 @@
 // Runs the real CLI: it must start a server that outlives it, outside the caller's systemd scope,
 // and replace a server that runs other code. Uses a free port and a temp home, never 4400.
 import { afterAll, beforeAll, expect, test } from 'bun:test'
-import { cpSync, rmSync } from 'node:fs'
+import { cpSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { SKILL_DIR } from './env.ts'
 import { FAKE_T3, freePort, scratchRepo, tempDir } from './fixtures/harness.ts'
@@ -89,6 +89,19 @@ test('report - takes its text from stdin, so the shell runs nothing in it', asyn
 	expect(res.code).toBe(0)
 	const issue = (await (await fetch(`http://127.0.0.1:${port}/api/issues/cli-thread`)).json()) as { events: { text: string }[] }
 	expect(issue.events.at(-1)?.text).toBe(text)
+})
+
+test('run puts the brief in a file and prints the one-line task that names it', () => {
+	const res = cli(['run', '--stage', 'research'], { FACTORY_VERSION: 'v2' })
+	expect(res.code).toBe(0)
+	const started = JSON.parse(res.out) as { run: string; briefFile: string; task: string; brief?: string }
+	expect(started.brief).toBeUndefined()
+	expect(started.briefFile).toBe(`/tmp/factory-brief-${started.run}.md`)
+	expect(started.task).toContain(started.briefFile)
+	const brief = readFileSync(started.briefFile, 'utf8')
+	rmSync(started.briefFile)
+	expect(brief.startsWith('# Research')).toBe(true)
+	expect(brief).toContain(`report --run ${started.run} --done`)
 })
 
 test('a CLI from another folder uses the running server and warns, never replacing it', async () => {

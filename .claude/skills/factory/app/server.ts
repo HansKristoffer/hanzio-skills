@@ -528,7 +528,7 @@ export function startServer(options: ServerOptions) {
 			const section = list(
 				'Review findings to act on',
 				open,
-				'Fix the `important` ones. Give the outcome of each by its id in your result\'s `findings`: `fixed` with the commit, or `declined` with the reason.'
+				'Act on every one, `nit` included. Give the outcome of each by its id in your result\'s `findings`: `fixed` with the commit, or `declined` with the reason.'
 			)
 			if (section) parts.push(section)
 		}

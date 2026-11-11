@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 // The only thing agents run. Every command talks to the machine's factory service over loopback
 // HTTP, starting it first when it is not answering, and prints JSON. Usage: `bun cli.ts help`.
-import { existsSync, mkdirSync, openSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseArgs, type ParseArgsOptionsConfig } from 'node:util'
 import { APP_DIR, DEFAULT_PORT, appVersion, factoryHome, factoryPort, sh } from './env.ts'
@@ -16,6 +16,7 @@ Issue commands (inside a T3 Code thread; the thread is the issue):
   start --title <t> [--body-file <path>] [--source <id>]
   status
   run --stage research|plan|implement|review|land [--on plan|pr] [--context-file <path>] [--head <sha>]
+      Prints the run, its target, and the task to hand the child, which names the file the brief is in.
       The service adds what the stage needs from stored results; a review takes no --context-file.
   report [--run <id>] [--done [--result-file <path>] | --failed] <text | ->
       - reads the text from stdin. A stage's --done needs its result, checked against the brief's shape.
@@ -315,7 +316,7 @@ async function main(argv: string[]) {
 			const head =
 				values.head ?? (values.stage === 'review' && values.on !== 'plan' ? sh(['git', 'rev-parse', 'HEAD']).out || undefined : undefined)
 			await ensureServer()
-			return print(await call('POST', '/api/issue/run', { stage: values.stage, on: values.on, context, head }))
+			return print(withBriefFile(await call('POST', '/api/issue/run', { stage: values.stage, on: values.on, context, head })))
 		}
 		case 'update': {
 			const { values } = args(rest, { kind: { type: 'string' }, title: { type: 'string' }, pr: { type: 'string' }, merge: { type: 'string' } })
@@ -521,6 +522,20 @@ async function prCommand(argv: string[]) {
 		return call('POST', '/api/issue/pr/written', { action: 'round', reviewers: again })
 	}
 	throw new UsageError('pr: sync, ready, reply, ignore or round')
+}
+
+/** A brief runs to a thousand words, and an orchestrator that retypes it into `delegate_task` can change it.
+ * So the brief goes to a file, and the child's task is one line that names the file. */
+function withBriefFile(started: Record<string, unknown>) {
+	const { brief, ...rest } = started
+	if (typeof brief !== 'string') return started
+	const briefFile = `/tmp/factory-brief-${rest.run}.md`
+	writeFileSync(briefFile, `${brief}\n`)
+	return {
+		...rest,
+		briefFile,
+		task: `You run one stage of a factory issue. Your task is the brief in \`${briefFile}\`: read the whole file before anything else, then do what it says. It ends with how to report your result.`
+	}
 }
 
 function print(value: unknown) {
