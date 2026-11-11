@@ -4,7 +4,7 @@
 import type { Server } from 'bun'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { buildBrief, fenced } from './brief.ts'
+import { buildBrief, fenced, stageFile } from './brief.ts'
 import {
 	MAX_EVENT,
 	openDatabase,
@@ -14,6 +14,7 @@ import {
 	settleDeliveries,
 	type DecisionRow,
 	type EventRow,
+	type FindingRow,
 	type IssueRow,
 	type RunRow
 } from './db.ts'
@@ -29,6 +30,7 @@ import {
 	type PartialSettings,
 	type Stage
 } from './settings.ts'
+import { check, outcomeShape } from './results.ts'
 import { isWorking, threadSend, threadShow, threadStart } from './t3.ts'
 
 export type Tailnet = { ip: string; name?: string }
@@ -162,9 +164,51 @@ export function startServer(options: ServerOptions) {
 		model: r.model,
 		options: r.options ? JSON.parse(r.options) : null,
 		summary: r.summary,
+		head: r.head,
+		result: r.result ? JSON.parse(r.result) : null,
+		...(r.stage !== 'land' && r.state !== 'running' && !r.result && { resultMissing: 'ended without a result' }),
 		startedAt: r.started_at,
 		endedAt: r.ended_at
 	})
+
+	const findingsOf = (id: string) =>
+		db.query('select * from findings where issue_id = $id order by rowid').all({ id }) as FindingRow[]
+	/** A finding still to act on: no outcome yet, or declined and then upheld by a later review. */
+	const isOpenFinding = (f: FindingRow) => f.outcome === null || f.outcome === 'upheld'
+
+	/** The `result` of the newest run of a stage that ended done with outcome `done`. */
+	function latestResult(issueId: string, stage: Stage, subject: 'plan' | 'pr' | null = null) {
+		const runs = runsOf(issueId).filter((r) => r.stage === stage && r.subject === subject && r.state === 'done' && r.result)
+		for (const run of runs.reverse()) {
+			const parsed = JSON.parse(run.result!) as { outcome: string; result?: Record<string, any> }
+			if (parsed.outcome === 'done' && parsed.result) return { run, result: parsed.result }
+		}
+		return null
+	}
+
+	const publicFinding = (f: FindingRow) => ({
+		id: f.id,
+		subject: f.subject,
+		severity: f.severity,
+		file: f.file,
+		line: f.line,
+		title: f.title,
+		text: f.text,
+		outcome: f.outcome,
+		outcomeNote: f.outcome_note,
+		run: f.run_id
+	})
+
+	function findingLine(f: FindingRow) {
+		const where = f.file ? `, ${f.file}${f.line ? `:${f.line}` : ''}` : ''
+		const outcome =
+			f.outcome === null
+				? 'open'
+				: f.outcome === 'fixed'
+					? `fixed${f.outcome_note ? ` in ${f.outcome_note}` : ''}`
+					: `${f.outcome}${f.outcome_note ? `: ${f.outcome_note}` : ''}`
+		return `- ${f.id} (${f.severity}${where}): ${f.title ? `${f.title}. ` : ''}${f.text.replaceAll('\n', ' ')} [${outcome}]`
+	}
 
 	const publicDecision = (d: DecisionRow) => ({
 		id: d.id,
@@ -233,6 +277,13 @@ export function startServer(options: ServerOptions) {
 		})
 		db.query('update issues set updated_at = $now, nudges = 0 where id = $issueId').run({ now, issueId })
 		emit(issueId)
+	}
+
+	/** Any report or run by the thread says it is working again, so it no longer waits on others. */
+	function clearWaiting(issueId: string) {
+		db.query('update issues set waiting_on = null, waiting_note = null, waiting_since = null where id = $id and waiting_on is not null').run({
+			id: issueId
+		})
 	}
 
 	const thread = (req: Request) =>
@@ -372,14 +423,95 @@ export function startServer(options: ServerOptions) {
 			runs: runsOf(issue.id).map(publicRun),
 			decisions: decisions.map(publicDecision),
 			mergeHeld: decisions.some((d) => d.answer === null),
-			settings: parseResolved(issue).settings
+			settings: parseResolved(issue).settings,
+			findings: findingsOf(issue.id).map(publicFinding),
+			warnings: warningsOf(issue)
 		}
+	}
+
+	function warningsOf(issue: IssueRow) {
+		const { stages } = parseResolved(issue).settings
+		const warnings: string[] = []
+		if (stages.review.provider && stages.review.provider === stages.implement.provider) {
+			warnings.push(
+				`Review and implement both run on ${stages.review.provider}. A model tends to miss its own kind of mistake; give review another provider.`
+			)
+		}
+		return warnings
+	}
+
+	/** What a run needs from earlier stages, written by the service from stored results. A review gets no
+	 * text from the orchestrator, so the implementer's claims cannot reach it. */
+	function stageContext(issue: IssueRow, stage: DelegatedStage, subject: 'plan' | 'pr' | null, head: string | null) {
+		const parts: string[] = []
+		const json = (title: string, value: unknown) => `### ${title}\n\n\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\``
+		const research = latestResult(issue.id, 'research')
+		const plan = latestResult(issue.id, 'plan')
+		const findings = findingsOf(issue.id)
+		const list = (title: string, rows: FindingRow[], after: string) =>
+			rows.length ? `### ${title}\n\n${rows.map(findingLine).join('\n')}\n\n${after}` : null
+		if (stage === 'plan') {
+			if (research) parts.push(json("Research's result", research.result))
+			if (plan) parts.push(json('The previous plan', plan.result))
+			const open = findings.filter((f) => f.subject === 'plan' && isOpenFinding(f))
+			const section = list('Review findings on the previous plan', open, 'Address each one in the new plan.')
+			if (section) parts.push(section)
+		}
+		if (stage === 'review' && subject === 'plan') {
+			if (plan) parts.push(json('The plan', plan.result))
+			const earlier = findings.filter((f) => f.subject === 'plan')
+			const section = list(
+				'Findings of earlier reviews of this plan',
+				earlier,
+				'Repeat none of them. List in `upheld` the id of any whose fix in the new plan you find not good enough.'
+			)
+			if (section) parts.push(section)
+		}
+		if (stage === 'implement') {
+			if (research) parts.push(json("Research's result", research.result))
+			if (plan) parts.push(json('The approved plan', plan.result))
+			if (issue.pr_url) parts.push(`### The PR\n\n${issue.pr_url}`)
+			const open = findings.filter((f) => f.subject === 'pr' && isOpenFinding(f))
+			const section = list(
+				'Review findings to act on',
+				open,
+				'Fix the `important` ones. Give the outcome of each by its id in your result\'s `findings`: `fixed` with the commit, or `declined` with the reason.'
+			)
+			if (section) parts.push(section)
+		}
+		if (stage === 'review' && subject === 'pr') {
+			const implement = latestResult(issue.id, 'implement')
+			const pr = issue.pr_url ?? implement?.result.prUrl
+			const reviewed = latestResult(issue.id, 'review', 'pr')?.result.commit as string | undefined
+			parts.push(
+				[
+					'### The PR',
+					`- URL: ${pr ?? 'unknown: ask the orchestrator to run factory update --pr first'}`,
+					`- Head to review: ${head ?? 'unknown'}`,
+					...(reviewed ? [`- Reviewed before at ${reviewed}: review only \`git diff ${reviewed}..${head ?? '<head>'}\``] : [])
+				].join('\n')
+			)
+			const earlier = findings.filter((f) => f.subject === 'pr')
+			const section = list(
+				'Findings of earlier rounds, with what became of them',
+				earlier,
+				'Repeat none of them. For each `declined` one, judge the reason against the code: list its id in `upheld` when the finding still holds.'
+			)
+			if (section) parts.push(section)
+		}
+		return parts.join('\n\n')
 	}
 
 	function issueRun(req: Request, issue: IssueRow, body: Record<string, unknown>) {
 		const stage = oneOf(body.stage, STAGES, 'stage')
 		const on = body.on === undefined ? undefined : oneOf(body.on, ['plan', 'pr'] as const, 'on')
 		if (on && stage !== 'review') fail(400, `on: only a review run has a subject, not ${stage}`)
+		const extra = text(body.context, 'context')
+		if (stage === 'review' && extra) {
+			fail(400, "context: a review run takes no --context-file. The service writes a review's context, so the implementer's claims cannot reach it.")
+		}
+		const head = text(body.head, 'head', { max: 64 }) ?? null
+		clearWaiting(issue.id)
 		const id = randomId('r')
 		const now = Date.now()
 		const settings = parseResolved(issue).settings
@@ -409,9 +541,13 @@ export function startServer(options: ServerOptions) {
 		const delegated = stage as DelegatedStage
 		const subject = delegated === 'review' ? (on ?? 'pr') : null
 		const target = stageTarget(settings, delegated)
+		const reviewHead = subject === 'pr' ? (head ?? (latestResult(issue.id, 'implement')?.result.commit as string | undefined) ?? null) : null
+		const context = [stageContext(issue, delegated, subject, reviewHead), extra?.trim() ? `### From the orchestrator\n\n${extra.trim()}` : '']
+			.filter(Boolean)
+			.join('\n\n')
 		db.query(
-			`insert into runs (id, issue_id, stage, subject, provider, model, options, started_at)
-			values ($id, $issue, $stage, $subject, $provider, $model, $options, $now)`
+			`insert into runs (id, issue_id, stage, subject, provider, model, options, head, started_at)
+			values ($id, $issue, $stage, $subject, $provider, $model, $options, $head, $now)`
 		).run({
 			id,
 			issue: issue.id,
@@ -420,6 +556,7 @@ export function startServer(options: ServerOptions) {
 			provider: target.provider ?? null,
 			model: target.model ?? null,
 			options: target.options ? JSON.stringify(target.options) : null,
+			head: reviewHead,
 			now
 		})
 		const brief = buildBrief({
@@ -427,7 +564,7 @@ export function startServer(options: ServerOptions) {
 			on: subject ?? undefined,
 			runId: id,
 			settings,
-			context: text(body.context, 'context'),
+			context,
 			issue: { title: issue.title, source: issue.source, body: issue.body }
 		})
 		const label = subject === 'plan' ? 'Plan review' : stage[0]!.toUpperCase() + stage.slice(1)
@@ -446,13 +583,93 @@ export function startServer(options: ServerOptions) {
 		}
 		if (!own && !run.thread_id) db.query('update runs set thread_id = $caller where id = $id').run({ caller, id: runId })
 		const message = text(body.text, 'text', { required: true, max: MAX_EVENT })!
+		if (body.result !== undefined && !body.done) fail(400, '--result-file goes with --done')
+		if (own) clearWaiting(issue.id)
 		if (body.done || body.failed) {
 			if (run.state !== 'running') fail(409, `run ${runId} already ended as ${run.state}`)
+			let findings: string[] = []
+			if (body.done && run.stage !== 'land') {
+				const kind = stageFile(run.stage as DelegatedStage, run.subject ?? undefined)
+				if (body.result === undefined) {
+					fail(400, `--done for a ${kind} run needs --result-file with the stage's result; run ${runId} stays open`)
+				}
+				const problem = check(body.result, outcomeShape(kind)) ?? unknownFindings(issue.id, body.result)
+				if (problem) fail(400, `the result was refused and run ${runId} stays open: ${problem}`)
+				db.query('update runs set result = $result where id = $id').run({ result: JSON.stringify(body.result), id: runId })
+				findings = recordFindings(issue.id, run, body.result as { outcome: string; result?: Record<string, any> })
+			}
 			endRun(run, body.done ? 'done' : 'failed', message)
 			addEvent(issue.id, 'run', `${run.stage} ${body.done ? 'done' : 'failed'}: ${message}`, runId)
-		} else {
-			addEvent(issue.id, 'report', message, runId)
+			return findings.length ? { ok: true, findings } : { ok: true }
 		}
+		addEvent(issue.id, 'report', message, runId)
+		return { ok: true }
+	}
+
+	/** An implement or review result may only name findings this issue has. */
+	function unknownFindings(issueId: string, value: unknown) {
+		const result = (value as { result?: { findings?: { id?: string }[]; upheld?: string[] } }).result
+		const known = new Set(findingsOf(issueId).map((f) => f.id))
+		const named = [...(result?.upheld ?? []), ...(result?.findings ?? []).map((f) => f.id).filter((id): id is string => !!id)]
+		const missing = named.find((id) => !known.has(id))
+		return missing ? `result: ${missing} is not a finding of this issue; the ids are in the brief` : null
+	}
+
+	/** Gives a review's findings ids, and records what an implement run did with them. Returns the new ids. */
+	function recordFindings(issueId: string, run: RunRow, value: { outcome: string; result?: Record<string, any> }) {
+		if (value.outcome !== 'done' || !value.result) return []
+		const result = value.result
+		if (run.stage === 'review') {
+			const subject = run.subject ?? 'pr'
+			const ids: string[] = []
+			for (const f of (result.findings ?? []) as { file?: string; line?: number; severity: string; title?: string; text: string }[]) {
+				const id = randomId('f')
+				db.query(
+					`insert into findings (id, issue_id, run_id, subject, severity, file, line, title, text)
+					values ($id, $issue, $run, $subject, $severity, $file, $line, $title, $text)`
+				).run({
+					id,
+					issue: issueId,
+					run: run.id,
+					subject,
+					severity: f.severity,
+					file: f.file ?? null,
+					line: f.line ?? null,
+					title: f.title ?? null,
+					text: f.text
+				})
+				ids.push(id)
+			}
+			for (const id of (result.upheld ?? []) as string[]) {
+				db.query(`update findings set outcome = 'upheld', outcome_run = $run where id = $id and outcome = 'declined'`).run({ run: run.id, id })
+			}
+			return ids
+		}
+		if (run.stage === 'implement') {
+			for (const f of (result.findings ?? []) as { id: string; outcome: string; commit?: string; reason?: string }[]) {
+				db.query('update findings set outcome = $outcome, outcome_note = $note, outcome_run = $run where id = $id').run({
+					outcome: f.outcome,
+					note: (f.outcome === 'fixed' ? f.commit : f.reason) ?? null,
+					run: run.id,
+					id: f.id
+				})
+			}
+		}
+		return []
+	}
+
+	/** The orchestrator's own outcome for a finding: a nit it fixed, a finding it declined, a pre-existing one it filed. */
+	function issueFinding(issue: IssueRow, body: Record<string, unknown>) {
+		const id = text(body.id, 'id', { required: true })!
+		const finding = findingsOf(issue.id).find((f) => f.id === id) ?? fail(404, `no finding ${id} on this issue`)
+		const outcome = oneOf(body.outcome, ['fixed', 'declined', 'filed'] as const, 'outcome')
+		const note = text(body.note, 'note', { required: true, max: MAX_EVENT })!
+		db.query('update findings set outcome = $outcome, outcome_note = $note, outcome_run = null where id = $id').run({
+			outcome,
+			note,
+			id: finding.id
+		})
+		addEvent(issue.id, 'finding', `Finding ${id} ${outcome}: ${note}`)
 		return { ok: true }
 	}
 
@@ -858,8 +1075,11 @@ export function startServer(options: ServerOptions) {
 					return issueRun(req, issue, input)
 				case 'report':
 					if (input.done || input.failed) fail(400, '--done and --failed need --run')
+					clearWaiting(issue.id)
 					addEvent(issue.id, 'report', text(input.text, 'text', { required: true, max: MAX_EVENT })!)
 					return { ok: true }
+				case 'finding':
+					return issueFinding(issue, input)
 				case 'ask':
 					return issueAsk(issue, input)
 				case 'answer':

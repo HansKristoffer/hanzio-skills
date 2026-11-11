@@ -3,6 +3,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { APP_DIR, SKILL_DIR } from './env.ts'
+import { describe, outcomeShape, type ResultKind } from './results.ts'
 import type { DelegatedStage, Settings } from './settings.ts'
 
 export const RULES = [
@@ -12,24 +13,6 @@ export const RULES = [
 	'Lower no quality floor: no suppression, skipped or focused test, softened CI step or deleted assertion.',
 	'Stop what you started (dev servers, browsers, background jobs) before you finish, and never end your turn while your own background work still runs.',
 	'Never ask the user anything, and never write to GitHub, Linear or any tracker: put questions in your result.'
-]
-
-const RESULTS: Record<string, string> = {
-	research:
-		"{ outcome: 'done', result: { kind: 'bug' | 'feature', size: 'S' | 'M' | 'L', route: 'implement' | 'plan', reproduction: { command } | { notPossible }, checks: [{ command, baseline }], notes } }",
-	plan: "{ outcome: 'done', result: { plan, criteria: string[] (at most five), proof, undecided: [{ question, recommendation, oneWay }], later: [{ title, body }] } }",
-	'review-plan': "{ outcome: 'done', result: { findings: [{ severity: 'important' | 'nit', text }] } }",
-	implement:
-		"{ outcome: 'done', result: { prUrl, commit, claims: [{ claim, evidence }], notChecked: string[], decisions: [{ decision, confidence: 'low' | 'medium' | 'high' }] } }",
-	review:
-		"{ outcome: 'done', result: { commit, findings: [{ file, line?, severity: 'important' | 'nit' | 'pre-existing', text, title? }], testsFailWithoutFix: true | false | 'no-new-tests', risk: { door: 'one-way' | 'two-way', reach: 'local' | 'module' | 'app' | 'data', unrelated: string[], focus: string[] } } }"
-}
-
-const OTHER_OUTCOMES = [
-	"{ outcome: 'not-a-bug' | 'already-fixed', reason }",
-	"{ outcome: 'duplicate', duplicateOf }",
-	"{ outcome: 'blocked', missing, tried: string[] }",
-	"{ outcome: 'needs-decision', question, recommendation, options?: string[], oneWay: boolean }"
 ]
 
 /** A fence longer than any run of backticks in the text, so the text cannot close it. */
@@ -48,7 +31,7 @@ export type BriefInput = {
 	issue: { title: string; source: string | null; body: string | null }
 }
 
-export function stageFile(stage: DelegatedStage, on?: 'plan' | 'pr') {
+export function stageFile(stage: DelegatedStage, on?: 'plan' | 'pr'): ResultKind {
 	return stage === 'review' && on === 'plan' ? 'review-plan' : stage
 }
 
@@ -76,12 +59,15 @@ export function buildBrief(input: BriefInput) {
 	parts.push(`## Rules\n\n${RULES.map((rule) => `- ${rule}`).join('\n')}`)
 
 	const report = `bun ${cli} report --run ${input.runId}`
+	const outcomes = outcomeShape(file)
+	const shapes = outcomes.t === 'either' ? outcomes.of.map(describe) : [describe(outcomes)]
+	const resultFile = `/tmp/factory-result-${input.runId}.json`
 	parts.push(
 		[
 			'## Reporting',
 			`Report each step worth a line (started, reproduced, tests red, tests green, PR opened). Pass the text on stdin with a quoted heredoc, so the shell runs nothing inside it:\n\n\`\`\`bash\n${report} - <<'EOF'\n<one line>\nEOF\n\`\`\``,
-			`End with \`${report} --done - <<'EOF'\` and your summary, or \`--failed\` with why when you could not do the stage.`,
-			`Then give this as your final message, as JSON:\n\n${RESULTS[file]}\n\nor one of:\n\n${OTHER_OUTCOMES.map((line) => `- ${line}`).join('\n')}`
+			`When you finish, write your result as JSON to \`${resultFile}\`, outside the repository, in one of these shapes:\n\n${shapes.map((shape) => `- \`${shape}\``).join('\n')}`,
+			`Then end the run with it, and a one-line summary on stdin:\n\n\`\`\`bash\n${report} --done --result-file ${resultFile} - <<'EOF'\n<summary>\nEOF\n\`\`\`\n\nThe service checks the result. When it refuses it, the error names the key: fix the file and run the same command again; the run stays open until a result is accepted. Only when you could not do the stage at all, end with \`--failed\` and why instead. Your final message is the same JSON.`
 		].join('\n\n')
 	)
 	return parts.join('\n\n')

@@ -56,11 +56,10 @@ Ask the user only through `factory ask`, never in a plain message or the questio
 
 For research, plan, implement and review:
 
-1. Write what this run needs from earlier stages to a temp file outside the repository: research's result, the approved plan, the PR's URL and head, earlier findings. Never the implementer's claims for a review.
-2. `factory run --stage <stage> --context-file /tmp/<file>` (add `--on plan` for a review of a plan). It answers `{ run, target, brief }`.
-3. `delegate_task` with `task` set to the `brief` exactly as given, `target` set to `{ providerInstanceId: target.provider, model: target.model, options: target.options }`, `role` to match, and `isolation: 'worktree'` for a review, `'shared'` for the rest. When the child's provider, model or options differ from the target, `factory report` that line.
-4. Its final message is a JSON result. Read it against the stage's shape in the brief.
-5. A child that ended without `--done`: end its run with `factory report --run <run> --failed -` (the reason on stdin) and run the stage once more. A second silent end is a `blocked` decision.
+1. `factory run --stage <stage>` (add `--on plan` for a review of a plan). It answers `{ run, target, brief }`. The service writes into the brief what the stage needs from stored results: research's result, the latest plan, the review findings with their ids and outcomes, the PR and the head to review. Add `--context-file /tmp/<file>` (outside the repository) only for what it cannot know: `earlier` attempts for research, the user's feedback for a plan, reviewers' comments for an implement run. A review takes no context file, so the implementer's claims never reach it; run a review of the PR from this worktree on the PR's head, or pass `--head <sha>`.
+2. `delegate_task` with `task` set to the `brief` exactly as given, `target` set to `{ providerInstanceId: target.provider, model: target.model, options: target.options }`, `role` to match, and `isolation: 'worktree'` for a review, `'shared'` for the rest. When the child's provider, model or options differ from the target, `factory report` that line.
+3. The child ends its run with its result, which the service checks against the stage's shape and keeps. Read it from `factory status` (each run's `result`), not from the child's last message.
+4. A child that ended without `--done`: end its run with `factory report --run <run> --failed -` (the reason on stdin) and run the stage once more. A second silent end is a `blocked` decision.
 
 A child's `needs-decision` becomes a `factory ask` (blocking when `oneWay`), and `blocked` becomes a `blocked` decision with what it tried. Report each stage's outcome in one line with `factory report`.
 
@@ -85,10 +84,10 @@ Read [references/plan-flow.md](references/plan-flow.md) and follow it: a plan ru
 
 ## 7. Implement and review
 
-1. Run implement with research's result and the approved plan in its context. It opens a draft PR. `factory update --pr <url>`, and link the PR in T3 Code.
-2. With `reviewRounds` above 0, run a review with the PR's URL and head commit in its context. It is blind to the implementer's claims.
-3. `important` findings go to a new implement run, with the findings in its context. The next review covers only the new commits, with the earlier findings listed so it does not repeat them. Stop after `reviewRounds` rounds.
-4. Fix `nit` findings yourself, in this worktree, on the PR branch. Keep `pre-existing` findings for step 9.
+1. Run implement. It opens a draft PR. `factory update --pr <url>`, and link the PR in T3 Code.
+2. With `reviewRounds` above 0, pull the PR branch here and run a review of its head.
+3. `important` findings go to a new implement run; the service lists the open ones with their ids, and the implementer reports each as `fixed` or `declined`. The next review covers only the new commits, sees every earlier finding with its outcome, and can uphold a decline. Stop after `reviewRounds` rounds.
+4. Fix `nit` findings yourself, in this worktree, on the PR branch, and record each with `factory finding <id> --fixed <commit>`. Keep `pre-existing` findings for step 9.
 
 **Done when** the last review of the PR's current head has no `important` finding, or the rounds are used up (which makes the merge a decision, see step 8).
 
@@ -101,7 +100,7 @@ Read [references/land.md](references/land.md) and follow it: `land-pr`'s full se
 ## 9. Close and write back
 
 1. Write the closing overview to a temp file (the format is in `references/land.md`), then `factory close --outcome shipped --deploy verified|unverified|none --report-file /tmp/<file> -` with one line on stdin.
-2. Each `pre-existing` finding and each `later` slice of the plan becomes a GitHub issue: `gh issue create` with a title that names the problem on its own and a line saying the factory filed it. Never add the factory's intake label; labelling it is the user's approval.
+2. Each `pre-existing` finding and each `later` slice of the plan becomes a GitHub issue: `gh issue create` with a title that names the problem on its own and a line saying the factory filed it, then `factory finding <id> --filed <url>` for a finding. Never add the factory's intake label; labelling it is the user's approval.
 3. With a tracker named, write the outcome back: resolved when merged, the PR link otherwise, the reason when stopped.
 4. An issue that stops without a PR closes with its outcome (`not-a-bug`, `already-fixed`, `duplicate`, `dropped`) and one comment on the source issue saying why.
 5. Stop every server, browser tab and background job this thread started, and unwatch the PR.

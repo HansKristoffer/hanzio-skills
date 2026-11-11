@@ -41,7 +41,7 @@ test('reporting names the run and the CLI by its absolute path', () => {
 test('a review of a plan uses its own stage text and result', () => {
 	const brief = buildBrief({ stage: 'review', on: 'plan', runId: 'r_1', settings: defaults, issue })
 	expect(brief.startsWith('# Review a plan')).toBe(true)
-	expect(brief).toContain("findings: [{ severity: 'important' | 'nit', text }]")
+	expect(brief).toContain("findings: [{ severity: 'important' | 'nit', title?: string, text: string }]")
 })
 
 let h: Harness
@@ -53,11 +53,10 @@ beforeEach(async () => {
 afterEach(() => h.close())
 
 test('a plan review runs on the review model and is stored as a review of the plan', async () => {
-	const res = await h.as('t1')('POST', '/api/issue/run', { stage: 'review', on: 'plan', context: 'The plan: ...' })
+	const res = await h.as('t1')('POST', '/api/issue/run', { stage: 'review', on: 'plan' })
 	expect(res.status).toBe(200)
 	expect(res.body.target.model).toBe('gpt-6-astra')
 	expect(res.body.brief).toContain('# Review a plan')
-	expect(res.body.brief).toContain('The plan: ...')
 	const status = await h.as('t1')('POST', '/api/issue/status', {})
 	expect(status.body.runs[0].subject).toBe('plan')
 	expect((await h.as('t1')('POST', '/api/issue/run', { stage: 'plan', on: 'plan' })).status).toBe(400)

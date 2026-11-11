@@ -13,8 +13,11 @@ const HELP = `factory: report to the machine's factory service. Every command pr
 Issue commands (inside a T3 Code thread; the thread is the issue):
   start --title <t> [--body-file <path>] [--source <id>]
   status
-  run --stage research|plan|implement|review|land [--on plan|pr] [--context-file <path>]
-  report [--run <id>] [--done | --failed] <text | ->      - reads the text from stdin
+  run --stage research|plan|implement|review|land [--on plan|pr] [--context-file <path>] [--head <sha>]
+      The service adds what the stage needs from stored results; a review takes no --context-file.
+  report [--run <id>] [--done [--result-file <path>] | --failed] <text | ->
+      - reads the text from stdin. A stage's --done needs its result, checked against the brief's shape.
+  finding <id> --fixed <commit> | --declined - | --filed <url>
   update [--kind bug|feature] [--title <t>] [--pr <url>]
   ask --kind plan|question|blocked|merge --question <q> --recommend <text>
       [--provisional] [--body-file <path>] [--option <label>]...
@@ -31,7 +34,7 @@ Anywhere:
   serve                          run the server in the foreground
   service install|uninstall      keep the server up across reboots`
 
-const ISSUE_COMMANDS = new Set(['start', 'status', 'run', 'update', 'ask', 'answer', 'close'])
+const ISSUE_COMMANDS = new Set(['start', 'status', 'run', 'update', 'ask', 'answer', 'close', 'finding'])
 
 class UsageError extends Error {}
 
@@ -243,13 +246,28 @@ async function main(argv: string[]) {
 		throw new UsageError('run this inside a T3 Code thread: T3CODE_THREAD_ID is not set')
 	}
 	if (command === 'report') {
-		const { values, positionals } = args(rest, { run: { type: 'string' }, done: { type: 'boolean' }, failed: { type: 'boolean' } })
+		const { values, positionals } = args(rest, {
+			run: { type: 'string' },
+			done: { type: 'boolean' },
+			failed: { type: 'boolean' },
+			'result-file': { type: 'string' }
+		})
 		const message = await textOf(positionals)
 		if (!message) throw new UsageError('report: give the text to report, or - to read it from stdin')
 		if ((values.done || values.failed) && !values.run) throw new UsageError('--done and --failed need --run')
+		if (values['result-file'] && !values.done) throw new UsageError('--result-file goes with --done')
 		if (!threadId) throw new UsageError('run this inside a T3 Code thread: T3CODE_THREAD_ID is not set')
+		const raw = readFile(str(values['result-file']), '--result-file')
+		let result: unknown
+		if (raw !== undefined) {
+			try {
+				result = JSON.parse(raw)
+			} catch (error) {
+				throw new UsageError(`--result-file: ${values['result-file']} is not JSON: ${(error as Error).message}`)
+			}
+		}
 		await ensureServer()
-		const body = { text: message, done: values.done, failed: values.failed }
+		const body = { text: message, done: values.done, failed: values.failed, result }
 		return print(
 			values.run
 				? await call('POST', `/api/runs/${encodeURIComponent(str(values.run)!)}/report`, body)
@@ -271,11 +289,19 @@ async function main(argv: string[]) {
 			await ensureServer()
 			return print(await call('POST', '/api/settings/resolve', { cwd: process.cwd() }))
 		case 'run': {
-			const { values } = args(rest, { stage: { type: 'string' }, on: { type: 'string' }, 'context-file': { type: 'string' } })
+			const { values } = args(rest, {
+				stage: { type: 'string' },
+				on: { type: 'string' },
+				'context-file': { type: 'string' },
+				head: { type: 'string' }
+			})
 			if (!values.stage) throw new UsageError('run: --stage is required')
 			const context = readFile(str(values['context-file']), '--context-file')
+			// A review of the PR reviews the commit this worktree is on, unless told another.
+			const head =
+				values.head ?? (values.stage === 'review' && values.on !== 'plan' ? sh(['git', 'rev-parse', 'HEAD']).out || undefined : undefined)
 			await ensureServer()
-			return print(await call('POST', '/api/issue/run', { stage: values.stage, on: values.on, context }))
+			return print(await call('POST', '/api/issue/run', { stage: values.stage, on: values.on, context, head }))
 		}
 		case 'update': {
 			const { values } = args(rest, { kind: { type: 'string' }, title: { type: 'string' }, pr: { type: 'string' } })
@@ -347,6 +373,15 @@ async function main(argv: string[]) {
 					again: values.again
 				})
 			)
+		}
+		case 'finding': {
+			const { values, positionals } = args(rest, { fixed: { type: 'string' }, declined: { type: 'boolean' }, filed: { type: 'string' } })
+			const [id, ...words] = positionals
+			const outcome = values.fixed ? 'fixed' : values.declined ? 'declined' : values.filed ? 'filed' : undefined
+			if (!id || !outcome) throw new UsageError('finding: give the id and one of --fixed <commit>, --declined - (reason on stdin), --filed <url>')
+			const note = values.fixed ?? values.filed ?? (await textOf(words))
+			await ensureServer()
+			return print(await call('POST', '/api/issue/finding', { id, outcome, note }))
 		}
 		case 'drop': {
 			const { positionals } = args(rest, {})
