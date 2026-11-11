@@ -84,13 +84,14 @@ function serverEnv() {
 
 const serveCommand = () => [process.execPath, join(APP_DIR, 'cli.ts'), 'serve']
 
-function spawnServer() {
-	const log = join(factoryHome(), 'server.log')
-	// systemd opens the log before the server runs, so its folder must exist on the first start.
-	mkdirSync(factoryHome(), { recursive: true })
+const logPath = () => join(factoryHome(), 'server.log')
+
+/** A process spawned from a thread dies with the thread's systemd scope, so on Linux the server is a unit of its own. */
+function startUnit() {
+	const log = logPath()
 	if (usesUnit()) {
 		Bun.spawnSync(['systemctl', '--user', 'start', UNIT])
-		return
+		return UNIT
 	}
 	if (hasSystemd()) {
 		const setenv = Object.entries(serverEnv()).map(([key, value]) => `--setenv=${key}=${value}`)
@@ -109,9 +110,13 @@ function spawnServer() {
 			{ stdout: 'ignore', stderr: 'pipe' }
 		)
 		if (started.exitCode !== 0) throw new Error(`systemd-run failed: ${started.stderr.toString().trim()}`)
-		return
+		return transientUnit()
 	}
-	const out = openSync(log, 'a')
+	return null
+}
+
+function spawnDetached() {
+	const out = openSync(logPath(), 'a')
 	const child = Bun.spawn(serveCommand(), {
 		env: { ...process.env, ...serverEnv() },
 		stdio: ['ignore', out, out],
@@ -134,16 +139,36 @@ async function ensureServer() {
 			throw new Error(`the factory unit restarted on another version; run: systemctl --user restart ${UNIT}`)
 		}
 	}
-	if (!(await health())) spawnServer()
+	if (!(await health())) {
+		// systemd opens the log before the server runs, so its folder must exist on the first start.
+		mkdirSync(factoryHome(), { recursive: true })
+		const unit = startUnit()
+		const up = async () => (await health())?.version === version
+		if (unit && !(await waitFor(up, 5000))) {
+			// A user manager that cannot run the unit (some containers and CI runners): run it as a plain
+			// background process, which lasts until this thread's session ends, and say why.
+			const status = Bun.spawnSync(['systemctl', '--user', 'status', unit, '--no-pager', '-n', '5'], { stdout: 'pipe', stderr: 'pipe' })
+			console.error(
+				`factory: systemd could not start ${unit}, so the server runs as a background process of this session.\n${status.stdout.toString().trim()}\n${logTail()}`
+			)
+			spawnDetached()
+		} else if (!unit) spawnDetached()
+	}
 	const ok = await waitFor(async () => (await health())?.version === version, 8000)
 	if (!ok) {
 		const now = await health()
 		throw new Error(
 			now
 				? `the server on port ${port} runs version ${now.version}, not ${version}`
-				: `the factory server did not start; see ${join(factoryHome(), 'server.log')}`
+				: `the factory server did not start.\n${logTail()}`
 		)
 	}
+}
+
+function logTail() {
+	if (!existsSync(logPath())) return `${logPath()} does not exist`
+	const lines = readFileSync(logPath(), 'utf8').trimEnd().split('\n').slice(-10)
+	return `Last lines of ${logPath()}:\n${lines.join('\n')}`
 }
 
 function readFile(path: string | undefined, flag: string) {
