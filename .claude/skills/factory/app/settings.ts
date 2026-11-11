@@ -20,15 +20,26 @@ export type Settings = {
 	planApproval: 'auto' | 'always' | 'never'
 	reviewRounds: number
 	rulings: string
+	/** Logins or org/team to request once the PR is ready, green and bot-clean. */
+	reviewers: string[]
+	/** Bot logins whose review of the current head is waited for. */
+	bots: string[]
+	approval: 'auto' | 'required' | 'off'
+	merge: 'auto' | 'ask' | 'never'
+	/** Extra logins whose comments count. */
+	trust: string[]
+	/** Logins never acted on. */
+	ignore: string[]
+	reviewOverdueHours: number
 }
+
+const LISTS = ['reviewers', 'bots', 'trust', 'ignore'] as const
+const SCALARS = ['planApproval', 'reviewRounds', 'rulings', 'approval', 'merge', 'reviewOverdueHours'] as const
 
 export type PartialSettings = {
 	orchestrator?: Target
 	stages?: { [S in Stage]?: Settings['stages'][S] }
-	planApproval?: Settings['planApproval']
-	reviewRounds?: number
-	rulings?: string
-}
+} & Partial<Pick<Settings, (typeof LISTS)[number] | (typeof SCALARS)[number]>>
 
 export type Source = 'default' | 'global' | 'file' | 'repo'
 export type Resolved = { settings: Settings; sources: Record<string, Source> }
@@ -45,10 +56,22 @@ export const defaults: Settings = {
 	},
 	planApproval: 'auto',
 	reviewRounds: 2,
-	rulings: ''
+	rulings: '',
+	reviewers: [],
+	bots: [],
+	approval: 'auto',
+	merge: 'auto',
+	trust: [],
+	ignore: [],
+	reviewOverdueHours: 24
 }
 
 const APPROVALS = ['auto', 'always', 'never']
+const ENUMS: Record<string, string[]> = {
+	planApproval: APPROVALS,
+	approval: ['auto', 'required', 'off'],
+	merge: ['auto', 'ask', 'never']
+}
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
 	typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -85,7 +108,7 @@ function checkTarget(value: Record<string, unknown>, path: string, extra: string
 export function validate(value: unknown, where = 'settings'): PartialSettings {
 	if (value === null || value === undefined) return {}
 	if (!isObject(value)) throw new Error(`${where}: must be a mapping`)
-	checkKeys(value, ['orchestrator', 'stages', 'planApproval', 'reviewRounds', 'rulings'], '')
+	checkKeys(value, ['orchestrator', 'stages', ...LISTS, ...SCALARS], '')
 	if (value.orchestrator !== undefined) {
 		if (!isObject(value.orchestrator)) throw new Error('orchestrator: must be a mapping')
 		checkTarget(value.orchestrator, 'orchestrator')
@@ -101,18 +124,37 @@ export function validate(value: unknown, where = 'settings'): PartialSettings {
 			if (settings.note !== undefined) checkString(settings.note, `${path}.note`)
 		}
 	}
-	if (value.planApproval !== undefined && !APPROVALS.includes(value.planApproval as string)) {
-		throw new Error(`planApproval: must be one of ${APPROVALS.join(', ')}`)
-	}
-	if (value.reviewRounds !== undefined) {
-		const rounds = value.reviewRounds
-		if (typeof rounds !== 'number' || !Number.isInteger(rounds) || rounds < 0 || rounds > 5) {
-			throw new Error('reviewRounds: must be a whole number from 0 to 5')
+	for (const [key, allowed] of Object.entries(ENUMS)) {
+		if (value[key] !== undefined && !allowed.includes(value[key] as string)) {
+			throw new Error(`${key}: must be one of ${allowed.join(', ')}`)
 		}
 	}
+	checkWhole(value.reviewRounds, 'reviewRounds', 0, 5)
+	checkWhole(value.reviewOverdueHours, 'reviewOverdueHours', 1, 720)
 	if (value.rulings !== undefined) checkString(value.rulings, 'rulings')
+	for (const key of LISTS) {
+		const list = value[key]
+		if (list === undefined) continue
+		if (!Array.isArray(list)) throw new Error(`${key}: must be a list of logins`)
+		list.forEach((login, i) => {
+			if (typeof login !== 'string' || !/^[A-Za-z0-9][\w.\-[\]]*(\/[\w.-]+)?$/.test(login)) {
+				throw new Error(`${key}[${i}]: ${String(login)} is not a GitHub login or org/team`)
+			}
+		})
+	}
 	return value as PartialSettings
 }
+
+function checkWhole(value: unknown, key: string, min: number, max: number) {
+	if (value === undefined) return
+	if (typeof value !== 'number' || !Number.isInteger(value) || value < min || value > max) {
+		throw new Error(`${key}: must be a whole number from ${min} to ${max}`)
+	}
+}
+
+/** Compares logins as GitHub does: case-insensitively, with a bot's `[bot]` suffix optional. */
+export const sameLogin = (a: string, b: string) =>
+	a.toLowerCase().replace(/\[bot\]$/, '') === b.toLowerCase().replace(/\[bot\]$/, '')
 
 const targetOf = (value: Target): Target => {
 	const target: Target = { provider: value.provider, model: value.model }
@@ -132,7 +174,7 @@ export function resolve(layers: Layers): Resolved {
 		if (stage !== 'land') mark(`stages.${stage}`, 'default')
 		mark(`stages.${stage}.note`, 'default')
 	}
-	for (const key of ['planApproval', 'reviewRounds', 'rulings']) mark(key, 'default')
+	for (const key of [...SCALARS, ...LISTS]) mark(key, 'default')
 
 	const ordered: [Source, PartialSettings | null | undefined][] = [
 		['global', layers.global],
@@ -158,17 +200,11 @@ export function resolve(layers: Layers): Resolved {
 				mark(`stages.${stage}.note`, source)
 			}
 		}
-		if (layer.planApproval !== undefined) {
-			settings.planApproval = layer.planApproval
-			mark('planApproval', source)
-		}
-		if (layer.reviewRounds !== undefined) {
-			settings.reviewRounds = layer.reviewRounds
-			mark('reviewRounds', source)
-		}
-		if (layer.rulings !== undefined) {
-			settings.rulings = layer.rulings
-			mark('rulings', source)
+		// A list replaces the list below it, like any other value.
+		for (const key of [...SCALARS, ...LISTS]) {
+			if (layer[key] === undefined) continue
+			;(settings as Record<string, unknown>)[key] = layer[key]
+			mark(key, source)
 		}
 	}
 

@@ -4,6 +4,7 @@
 
 ## What changes for a factory thread
 
+- **Mark the PR ready first.** Implement opened a draft, and a draft cannot be merged. Once the last internal review of the head is clean, run `gh pr ready <number>` before `land-pr`'s step 2, since many workflows and review bots run only on a ready PR.
 - **Questions.** Where `land-pr` would ask with the question tool, ask a factory decision instead (`decisions.md`): its budget running out (three pushed fixes, 60 minutes, the same failure twice) and a step outside its grant are `blocked`; a merge it cannot make is `merge`. End the turn and wait.
 - **The PR body.** Its **Evidence** is the implementer's claims with their evidence, plus anything you proved yourself; its **Merge Danger** comes from the last review's `risk`.
 - **The merge gate** gets four more conditions. Merge only when all hold:
@@ -14,7 +15,7 @@
 
   When one fails and you cannot fix it, ask a `merge` decision with what failed and your recommendation, and end the turn.
 - **Release.** Ship a release-please release only when the land note says so.
-- **End the run.** After the deploy check: `factory report --run <land run> --done "<merge commit and deploy result>"`.
+- **End the run.** After the deploy check: `factory report --run <land run> --done -` with the merge commit and the deploy result on stdin.
 
 ## The deploy result
 

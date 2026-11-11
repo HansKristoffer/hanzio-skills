@@ -34,6 +34,7 @@ test('the issue body cannot close its fence', () => {
 test('reporting names the run and the CLI by its absolute path', () => {
 	const brief = buildBrief({ stage: 'review', runId: 'r_abc', settings: defaults, issue })
 	expect(brief).toContain(`bun ${join(APP_DIR, 'cli.ts')} report --run r_abc --done`)
+	expect(brief).toContain(`report --run r_abc - <<'EOF'`)
 	expect(brief).toContain("severity: 'important' | 'nit' | 'pre-existing'")
 })
 

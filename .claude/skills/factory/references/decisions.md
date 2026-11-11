@@ -1,6 +1,6 @@
 # Asking the user
 
-Every question goes through `factory ask`. The page shows it under Needs you, and the answer comes back to this thread as a message that starts with `Factory decisions answered on the page:`, or the user types it here (record that with `factory answer <id> "<their words>"`).
+Every question goes through `factory ask`. The page shows it under Needs you, and the answer comes back to this thread as a message that starts with `Factory decisions answered on the page:`, or the user types it here (record that with `factory answer <id> -` and their words on stdin).
 
 ## Blocking or provisional
 

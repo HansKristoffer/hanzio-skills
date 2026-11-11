@@ -14,7 +14,7 @@ Issue commands (inside a T3 Code thread; the thread is the issue):
   start --title <t> [--body-file <path>] [--source <id>]
   status
   run --stage research|plan|implement|review|land [--on plan|pr] [--context-file <path>]
-  report [--run <id>] [--done | --failed] <text>
+  report [--run <id>] [--done | --failed] <text | ->      - reads the text from stdin
   update [--kind bug|feature] [--title <t>] [--pr <url>]
   ask --kind plan|question|blocked|merge --question <q> --recommend <text>
       [--provisional] [--body-file <path>] [--option <label>]...
@@ -25,6 +25,7 @@ Issue commands (inside a T3 Code thread; the thread is the issue):
 Anywhere:
   settings                       the settings an issue started here would get
   new --title <t> [--body-file <path>] [--source <id>] [--again]
+  drop <issue> [<reason | ->]   close an open issue as dropped, from outside its thread
   board
   history [--days <n>]
   serve                          run the server in the foreground
@@ -52,7 +53,7 @@ async function call(method: string, path: string, body?: unknown) {
 async function health() {
 	try {
 		const res = await fetch(`${base}/health`, { signal: AbortSignal.timeout(1000) })
-		return res.ok ? ((await res.json()) as { version: string }) : null
+		return res.ok ? ((await res.json()) as { version: string; appDir?: string }) : null
 	} catch {
 		return null
 	}
@@ -129,6 +130,14 @@ async function ensureServer() {
 	const version = appVersion()
 	const running = await health()
 	if (running?.version === version) return
+	if (running?.appDir && running.appDir !== APP_DIR) {
+		// Another checkout of the skill (a development copy, a thread's worktree of hanzio-skills) never
+		// replaces the machine's server: it uses it, and says so.
+		console.error(
+			`factory: the server on port ${port} runs version ${running.version} from ${running.appDir}; this CLI is version ${version} from ${APP_DIR}. Using the running server.`
+		)
+		return
+	}
 	if (running) {
 		await call('POST', '/api/shutdown', {}).catch(() => {})
 		await waitFor(async () => (await health())?.version !== running.version, 5000)
@@ -186,6 +195,13 @@ function args<const T extends ParseArgsOptionsConfig>(argv: string[], options: T
 
 const str = (value: unknown) => (typeof value === 'string' ? value : undefined)
 
+/** The text an agent passes: `-` reads it from stdin, so backticks and `$(...)` reach the service unchanged
+ * instead of being run by the shell. People can still type it as words. */
+async function textOf(positionals: string[]) {
+	if (positionals.length === 1 && positionals[0] === '-') return (await Bun.stdin.text()).trimEnd()
+	return positionals.join(' ')
+}
+
 async function main(argv: string[]) {
 	const [command, ...rest] = argv
 	if (!command || command === 'help' || command === '--help') {
@@ -228,8 +244,8 @@ async function main(argv: string[]) {
 	}
 	if (command === 'report') {
 		const { values, positionals } = args(rest, { run: { type: 'string' }, done: { type: 'boolean' }, failed: { type: 'boolean' } })
-		const message = positionals.join(' ')
-		if (!message) throw new UsageError('report: give the text to report')
+		const message = await textOf(positionals)
+		if (!message) throw new UsageError('report: give the text to report, or - to read it from stdin')
 		if ((values.done || values.failed) && !values.run) throw new UsageError('--done and --failed need --run')
 		if (!threadId) throw new UsageError('run this inside a T3 Code thread: T3CODE_THREAD_ID is not set')
 		await ensureServer()
@@ -291,9 +307,10 @@ async function main(argv: string[]) {
 		case 'answer': {
 			const { positionals } = args(rest, {})
 			const [decision, ...words] = positionals
-			if (!decision || !words.length) throw new UsageError('answer: give the decision id and the answer')
+			const answer = await textOf(words)
+			if (!decision || !answer) throw new UsageError('answer: give the decision id and the answer')
 			await ensureServer()
-			return print(await call('POST', '/api/issue/answer', { decision, text: words.join(' ') }))
+			return print(await call('POST', '/api/issue/answer', { decision, text: answer }))
 		}
 		case 'close': {
 			const { values, positionals } = args(rest, {
@@ -308,7 +325,7 @@ async function main(argv: string[]) {
 					outcome: values.outcome,
 					deploy: values.deploy,
 					report,
-					summary: positionals.join(' ')
+					summary: await textOf(positionals)
 				})
 			)
 		}
@@ -330,6 +347,14 @@ async function main(argv: string[]) {
 					again: values.again
 				})
 			)
+		}
+		case 'drop': {
+			const { positionals } = args(rest, {})
+			const [issue, ...words] = positionals
+			if (!issue) throw new UsageError('drop: give the issue id, as factory board lists it')
+			const reason = await textOf(words)
+			await ensureServer()
+			return print(await call('POST', `/api/issues/${encodeURIComponent(issue)}/drop`, { reason: reason || undefined }))
 		}
 		case 'board': {
 			await ensureServer()

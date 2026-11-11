@@ -79,7 +79,8 @@ export function buildBrief(input: BriefInput) {
 	parts.push(
 		[
 			'## Reporting',
-			`Report each step worth a line (started, reproduced, tests red, tests green, PR opened) with \`${report} "<one line>"\`. End with \`${report} --done "<summary>"\`, or \`--failed "<why>"\` when you could not do the stage.`,
+			`Report each step worth a line (started, reproduced, tests red, tests green, PR opened). Pass the text on stdin with a quoted heredoc, so the shell runs nothing inside it:\n\n\`\`\`bash\n${report} - <<'EOF'\n<one line>\nEOF\n\`\`\``,
+			`End with \`${report} --done - <<'EOF'\` and your summary, or \`--failed\` with why when you could not do the stage.`,
 			`Then give this as your final message, as JSON:\n\n${RESULTS[file]}\n\nor one of:\n\n${OTHER_OUTCOMES.map((line) => `- ${line}`).join('\n')}`
 		].join('\n\n')
 	)

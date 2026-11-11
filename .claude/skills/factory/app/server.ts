@@ -49,6 +49,8 @@ const MUST_BLOCK = ['plan', 'blocked', 'merge']
 const QUIET_MS = 20 * 60 * 1000
 const QUIET_LAND_MS = 60 * 60 * 1000
 const MAX_NUDGES = 2
+const MISSING_LIMIT = 3
+const MAX_POKES = 3
 
 class HttpError extends Error {
 	constructor(
@@ -74,6 +76,17 @@ function text(value: unknown, name: string, { required = false, max = 100_000 } 
 	if (value.length > max) fail(400, `${name} is ${value.length} characters, the limit is ${max}`)
 	return value
 }
+
+const BODY_MAX = 100_000
+
+/** An issue's text: a long one is cut, not refused, since it was copied from somewhere the thread cannot shorten. */
+function longText(value: unknown, name: string) {
+	const given = text(value, name, { max: 20_000_000 })
+	if (!given || given.length <= BODY_MAX) return given
+	return `${given.slice(0, BODY_MAX)}\n\n[The factory cut this text here: ${(given.length - BODY_MAX).toLocaleString('en')} more characters were left out.]`
+}
+
+const isDuplicateSource = (error: unknown) => String((error as Error)?.message).includes('issues.repo, issues.source')
 
 const oneOf = <T extends string>(value: unknown, allowed: readonly T[], name: string) => {
 	if (!allowed.includes(value as T)) fail(400, `${name}: ${String(value)} is not one of ${allowed.join(', ')}`)
@@ -101,8 +114,9 @@ export function startServer(options: ServerOptions) {
 	const encoder = new TextEncoder()
 	const clients = new Set<ReadableStreamDefaultController<Uint8Array>>()
 	const servers: Server<undefined>[] = []
+	const starting = new Set<string>()
 	const hosts = new Set([`127.0.0.1:${options.port}`, `localhost:${options.port}`])
-	let tailnet = options.tailnet ?? null
+	let tailnet: Tailnet | null = null
 
 	// ---- reads ----
 
@@ -115,14 +129,26 @@ export function startServer(options: ServerOptions) {
 		db.query('select * from events where issue_id = $id order by id').all({ id }) as EventRow[]
 	const lastEvent = (id: string) =>
 		db.query('select * from events where issue_id = $id order by id desc limit 1').get({ id }) as EventRow | null
+	const openWithSource = (repo: string, source: string, except = '') => {
+		const open = db
+			.query(`select * from issues where repo = $repo and source = $source and state = 'open' and id != $except`)
+			.get({ repo, source, except }) as IssueRow | null
+		return open ? { duplicateOf: { id: open.id, title: open.title, threadLink: open.thread_link } } : null
+	}
 	const settingsRow = (scope: string) => {
 		const row = db.query('select value from settings where scope = $scope').get({ scope }) as { value: string } | null
 		return row ? (JSON.parse(row.value) as PartialSettings) : undefined
 	}
 
-	const stageOf = (id: string): Stage => runsOf(id).at(-1)?.stage ?? 'research'
+	/** The newest run that still runs, else the newest run: a fix run that ended inside land shows land again. */
+	const stageOf = (id: string): Stage => {
+		const runs = runsOf(id)
+		return (runs.filter((r) => r.state === 'running').at(-1) ?? runs.at(-1))?.stage ?? 'research'
+	}
 	const waits = (d: DecisionRow) => d.answer === null || (d.answered_via === 'page' && d.delivery !== 'sent')
-	const needsYou = (issue: IssueRow) => decisionsOf(issue.id).some(waits) || issue.nudges >= MAX_NUDGES
+	const gone = (issue: IssueRow) => issue.thread_missing >= MISSING_LIMIT
+	const needsYou = (issue: IssueRow) =>
+		decisionsOf(issue.id).some(waits) || issue.nudges >= MAX_NUDGES || gone(issue) || issue.pr_pokes >= MAX_POKES
 	const blockingOpen = (id: string) => decisionsOf(id).some((d) => d.answer === null && !d.provisional)
 
 	const pageUrl = (id: string) => `http://${tailnet?.name ?? tailnet?.ip ?? '127.0.0.1'}:${options.port}/#/issue/${id}`
@@ -170,7 +196,8 @@ export function startServer(options: ServerOptions) {
 		prUrl: i.pr_url,
 		configError: i.config_error,
 		needsYou: needsYou(i),
-		stuck: i.nudges >= MAX_NUDGES,
+		stuck: i.nudges >= MAX_NUDGES || i.pr_pokes >= MAX_POKES,
+		threadGone: gone(i),
 		createdAt: i.created_at,
 		updatedAt: i.updated_at,
 		closedAt: i.closed_at
@@ -265,7 +292,7 @@ export function startServer(options: ServerOptions) {
 	async function issueStart(req: Request, body: Record<string, unknown>) {
 		const id = thread(req)
 		const title = text(body.title, 'title', { max: 300 })
-		const issueBody = text(body.body, 'body')
+		const issueBody = longText(body.body, 'body')
 		const source = text(body.source, 'source', { max: 500 })
 		let issue = getIssue(id)
 		const info = issue ? { repo: issue.repo, root: issue.root } : repoInfo(text(body.cwd, 'cwd', { required: true })!)
@@ -274,29 +301,31 @@ export function startServer(options: ServerOptions) {
 
 		if (!issue) {
 			if (!title) fail(400, 'title is required for a new issue')
-			if (source) {
-				const open = db
-					.query(`select * from issues where repo = $repo and source = $source and state = 'open' and id != $id`)
-					.get({ repo: info.repo, source, id }) as IssueRow | null
-				if (open) return { duplicateOf: { id: open.id, title: open.title, threadLink: open.thread_link } }
+			const duplicate = source ? openWithSource(info.repo, source, id) : null
+			if (duplicate) return duplicate
+			// Inserted before anything is awaited, and the unique index catches a race between two processes.
+			try {
+				db.query(
+					`insert into issues (id, title, body, repo, root, source, settings, config_error, created_at, updated_at)
+					values ($id, $title, $body, $repo, $root, $source, $settings, $error, $now, $now)`
+				).run({
+					id,
+					title: title!,
+					body: issueBody ?? null,
+					repo: info.repo,
+					root: info.root,
+					source: source ?? null,
+					settings: JSON.stringify(resolved),
+					error: config.error ?? null,
+					now
+				})
+			} catch (error) {
+				if (isDuplicateSource(error)) return openWithSource(info.repo, source!, id)!
+				throw error
 			}
-			const link = (await threadShow(id))?.link ?? null
-			db.query(
-				`insert into issues (id, title, body, repo, root, source, thread_link, settings, config_error, created_at, updated_at)
-				values ($id, $title, $body, $repo, $root, $source, $link, $settings, $error, $now, $now)`
-			).run({
-				id,
-				title: title!,
-				body: issueBody ?? null,
-				repo: info.repo,
-				root: info.root,
-				source: source ?? null,
-				link,
-				settings: JSON.stringify(resolved),
-				error: config.error ?? null,
-				now
-			})
 			addEvent(id, 'started', `Issue started: ${title}`)
+			const link = (await threadShow(id))?.link
+			if (link) db.query('update issues set thread_link = $link where id = $id').run({ link, id })
 		} else {
 			db.query(
 				`update issues set settings = $settings, config_error = $error,
@@ -354,6 +383,13 @@ export function startServer(options: ServerOptions) {
 		const id = randomId('r')
 		const now = Date.now()
 		const settings = parseResolved(issue).settings
+		const subjectOf = stage === 'review' ? (on ?? 'pr') : null
+		for (const old of runsOf(issue.id)) {
+			if (old.state === 'running' && old.stage === stage && old.subject === subjectOf) {
+				endRun(old, 'failed', `Superseded: ${stage} was started again`)
+				addEvent(issue.id, 'run', `${stage} superseded by a new run`, old.id)
+			}
+		}
 		if (stage === 'land') {
 			db.query(
 				`insert into runs (id, issue_id, stage, thread_id, provider, model, options, started_at)
@@ -505,6 +541,31 @@ export function startServer(options: ServerOptions) {
 		return { ok: true }
 	}
 
+	/** Closes an open issue from outside its thread, and tells the thread when T3 still has it. */
+	async function dropIssue(issueId: string, body: Record<string, unknown>) {
+		const issue = getIssue(issueId) ?? fail(404, `no issue ${issueId}`)
+		if (issue.state !== 'open') fail(409, `issue ${issue.id} is ${issue.state}`)
+		const reason = text(body.reason, 'reason', { max: MAX_EVENT }) ?? 'Dropped from the factory page'
+		for (const run of runsOf(issue.id).filter((r) => r.state === 'running')) endRun(run, 'failed', 'Ended when the issue was dropped')
+		db.query(
+			`update issues set state = 'closed', outcome = 'dropped', summary = $reason, waiting_on = null, closed_at = $now where id = $id`
+		).run({ reason, now: Date.now(), id: issue.id })
+		addEvent(issue.id, 'closed', `Dropped: ${reason}`)
+		let told = false
+		if (await threadShow(issue.id)) {
+			try {
+				await threadSend(
+					issue.id,
+					`Factory: this issue was dropped outside this thread (${reason}). Stop working on it: unwatch its PR and stop what you started. Leave the PR and the branch as they are; run no more factory commands for it.`
+				)
+				told = true
+			} catch {
+				told = false
+			}
+		}
+		return { ok: true, told }
+	}
+
 	function issueUpdate(issue: IssueRow, body: Record<string, unknown>) {
 		const kind = body.kind === undefined ? undefined : oneOf(body.kind, ['bug', 'feature'], 'kind')
 		const title = text(body.title, 'title', { max: 300 })
@@ -577,7 +638,7 @@ export function startServer(options: ServerOptions) {
 
 	async function newThread(body: Record<string, unknown>, loopback: boolean) {
 		const title = text(body.title, 'title', { required: true, max: 300 })!
-		const issueBody = text(body.body, 'body')
+		const issueBody = longText(body.body, 'body')
 		const source = text(body.source, 'source', { max: 500 })
 		let info: { repo: string; root: string }
 		if (body.cwd !== undefined) {
@@ -601,6 +662,20 @@ export function startServer(options: ServerOptions) {
 				return { closed: same.map((i) => ({ id: i.id, outcome: i.outcome, summary: i.summary, closedAt: i.closed_at })) }
 			}
 		}
+		// `t3 thread start` takes seconds, and a second `new` for the item must not start a second thread meanwhile.
+		const key = source ? `${info.repo}\n${source}` : null
+		if (key && starting.has(key)) {
+			return { duplicateOf: { id: null, title, threadLink: null, starting: 'a thread for this item is starting now' } }
+		}
+		if (key) starting.add(key)
+		try {
+			return await startThread(info, title, issueBody, source)
+		} finally {
+			if (key) starting.delete(key)
+		}
+	}
+
+	async function startThread(info: { repo: string; root: string }, title: string, issueBody?: string, source?: string) {
 		const offline = !fetchDefault(info.root)
 		const { config, resolved } = resolveFor(info.root, info.repo, false)
 		const branch = freeBranch(info.root, slugify(title))
@@ -619,29 +694,37 @@ export function startServer(options: ServerOptions) {
 			worktree: defaultRef(info.root),
 			branch
 		})
+		// `t3 thread start` prints no link; `thread show` has it.
+		const link = started.link ?? (await threadShow(started.threadId))?.link ?? null
 		const now = Date.now()
-		db.query(
-			`insert into issues (id, title, body, repo, root, source, thread_link, settings, config_error, created_at, updated_at)
-			values ($id, $title, $body, $repo, $root, $source, $link, $settings, $error, $now, $now)
-			on conflict (id) do update set source = coalesce(excluded.source, source), body = coalesce(excluded.body, body),
-			thread_link = coalesce(excluded.thread_link, thread_link)`
-		).run({
-			id: started.threadId,
-			title,
-			body: issueBody ?? null,
-			repo: info.repo,
-			root: info.root,
-			source: source ?? null,
-			link: started.link ?? null,
-			settings: JSON.stringify(resolved),
-			error: config.error ?? null,
-			now
-		})
+		try {
+			db.query(
+				`insert into issues (id, title, body, repo, root, source, thread_link, settings, config_error, created_at, updated_at)
+				values ($id, $title, $body, $repo, $root, $source, $link, $settings, $error, $now, $now)
+				on conflict (id) do update set source = coalesce(excluded.source, source), body = coalesce(excluded.body, body),
+				thread_link = coalesce(excluded.thread_link, thread_link)`
+			).run({
+				id: started.threadId,
+				title,
+				body: issueBody ?? null,
+				repo: info.repo,
+				root: info.root,
+				source: source ?? null,
+				link,
+				settings: JSON.stringify(resolved),
+				error: config.error ?? null,
+				now
+			})
+		} catch (error) {
+			// The thread's own `factory start` was faster and took the item; the new thread will hear duplicateOf.
+			if (isDuplicateSource(error)) return openWithSource(info.repo, source!)!
+			throw error
+		}
 		addEvent(started.threadId, 'started', `Thread started on ${branch}`)
 		return {
 			issue: started.threadId,
 			url: pageUrl(started.threadId),
-			threadLink: started.link ?? null,
+			threadLink: link,
 			branch,
 			...(offline && { offline: 'git fetch failed; the thread starts from the default branch as it is' })
 		}
@@ -681,9 +764,30 @@ export function startServer(options: ServerOptions) {
 			const newest = runs.at(-1)
 			const limit = newest?.stage === 'land' && newest.state === 'running' ? QUIET_LAND_MS : QUIET_MS
 			const last = Math.max(lastEvent(issue.id)?.at ?? issue.created_at, issue.nudged_at ?? 0)
-			if (now - last < limit || issue.nudges >= MAX_NUDGES) continue
-			const threads = [issue.id, ...runs.filter((r) => r.state === 'running' && r.thread_id).map((r) => r.thread_id!)]
-			const states = await Promise.all(threads.map(threadShow))
+			// A thread already missing is looked for on every check, so its return clears the mark at once.
+			if (now - last < limit && !issue.thread_missing) continue
+			const own = await threadShow(issue.id)
+			if (!own) {
+				// T3 no longer knows the thread (deleted, or another machine's): show it, never nudge it.
+				const missing = Math.min(issue.thread_missing + 1, MISSING_LIMIT)
+				db.query('update issues set thread_missing = $missing where id = $id').run({ missing, id: issue.id })
+				if (missing === MISSING_LIMIT && issue.thread_missing < MISSING_LIMIT) {
+					db.query(`insert into events (issue_id, at, kind, text) values ($id, $now, 'gone', $text)`).run({
+						id: issue.id,
+						now,
+						text: 'T3 Code cannot find this thread any more: drop the issue, or start it again'
+					})
+					emit(issue.id)
+				}
+				continue
+			}
+			if (issue.thread_missing) {
+				db.query('update issues set thread_missing = 0 where id = $id').run({ id: issue.id })
+				emit(issue.id)
+			}
+			if (now - last < limit || issue.waiting_on || issue.nudges >= MAX_NUDGES) continue
+			const children = runs.filter((r) => r.state === 'running' && r.thread_id).map((r) => r.thread_id!)
+			const states = [own, ...(await Promise.all(children.map(threadShow)))]
 			if (states.some((s) => s && (isWorking(s) || s.pendingRequests > 0))) continue
 			if (states.some((s) => s === null)) continue
 			const minutes = Math.round((now - (lastEvent(issue.id)?.at ?? issue.created_at)) / 60000)
@@ -722,7 +826,7 @@ export function startServer(options: ServerOptions) {
 		}
 		const method = req.method
 
-		if (method === 'GET' && url.pathname === '/health') return { ok: true, version }
+		if (method === 'GET' && url.pathname === '/health') return { ok: true, version, appDir: APP_DIR }
 		if (method === 'GET' && url.pathname === '/api/board') return board()
 		if (method === 'GET' && parts[0] === 'api' && parts[1] === 'issues' && parts[2] && parts.length === 3) {
 			const issue = getIssue(decodeURIComponent(parts[2])) ?? fail(404, `no issue ${parts[2]}`)
@@ -782,6 +886,9 @@ export function startServer(options: ServerOptions) {
 		}
 		if (method === 'POST' && parts[0] === 'api' && parts[1] === 'decisions' && parts[3] === 'answer' && parts[2]) {
 			return pageAnswer(decodeURIComponent(parts[2]), await body())
+		}
+		if (method === 'POST' && parts[0] === 'api' && parts[1] === 'issues' && parts[3] === 'drop' && parts[2]) {
+			return dropIssue(decodeURIComponent(parts[2]), await body())
 		}
 		if (method === 'POST' && parts[0] === 'api' && parts[1] === 'issues' && parts[3] === 'deliver' && parts[2]) {
 			const issue = getIssue(decodeURIComponent(parts[2])) ?? fail(404, `no issue ${parts[2]}`)
@@ -857,15 +964,27 @@ export function startServer(options: ServerOptions) {
 		servers.push(Bun.serve({ hostname, port: options.port, fetch }))
 	}
 
+	/** Listens on the tailnet address, then allows its names: the IP, the full name, and the short name
+	 * MagicDNS also answers to. Returns false when the address cannot be bound, leaving loopback serving. */
 	function addTailnet(found: Tailnet) {
+		try {
+			listen(found.ip)
+		} catch (error) {
+			console.error(`factory: could not listen on ${found.ip}: ${(error as Error).message}`)
+			tailnet = null
+			return false
+		}
 		tailnet = found
 		hosts.add(`${found.ip}:${options.port}`)
-		if (found.name) hosts.add(`${found.name}:${options.port}`)
-		listen(found.ip)
+		if (found.name) {
+			hosts.add(`${found.name}:${options.port}`)
+			hosts.add(`${found.name.split('.')[0]}:${options.port}`)
+		}
+		return true
 	}
 
 	listen('127.0.0.1')
-	if (tailnet) addTailnet(tailnet)
+	if (options.tailnet) addTailnet(options.tailnet)
 
 	const timers: Timer[] = [
 		setInterval(() => {
@@ -884,13 +1003,7 @@ export function startServer(options: ServerOptions) {
 			setInterval(() => {
 				if (tailnet) return
 				const found = detectTailnet()
-				if (found) {
-					try {
-						addTailnet(found)
-					} catch {
-						tailnet = null
-					}
-				}
+				if (found) addTailnet(found)
 			}, 60_000)
 		)
 	}

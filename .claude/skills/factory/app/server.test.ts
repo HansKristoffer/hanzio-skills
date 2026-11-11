@@ -51,7 +51,7 @@ describe('issues', () => {
 		const status = await h.as('t1')('POST', '/api/issue/status', {})
 		const runs = status.body.runs as { id: string; state: string }[]
 		expect(runs.find((r) => r.id === id)?.state).toBe('failed')
-		expect(status.body.stage).toBe('research')
+		expect(status.body.stage).toBe('land')
 	})
 
 	test('--done without --run is refused, and a closed issue takes no reports', async () => {
