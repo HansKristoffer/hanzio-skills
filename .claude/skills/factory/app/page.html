@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Factory</title>
+<style>
+	:root {
+		--bg: #f7f7f5; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b6b66; --line: #e3e3de;
+		--accent: #2f5bd3; --accent-ink: #ffffff; --warn: #b4560a; --warn-bg: #fff4e8; --ok: #237a45; --bad: #b3261e;
+		color-scheme: light;
+	}
+	@media (prefers-color-scheme: dark) {
+		:root {
+			--bg: #151514; --panel: #1f1f1d; --ink: #ecece8; --muted: #9a9a93; --line: #33332f;
+			--accent: #7d9cf0; --accent-ink: #0d1530; --warn: #f0a35c; --warn-bg: #2b2117; --ok: #6cc28b; --bad: #f08a83;
+			color-scheme: dark;
+		}
+	}
+	* { box-sizing: border-box; }
+	body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+	header { display: flex; align-items: center; gap: 16px; padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 1; }
+	header h1 { font-size: 16px; margin: 0; }
+	nav { display: flex; gap: 4px; flex-wrap: wrap; }
+	nav a { color: var(--muted); text-decoration: none; padding: 4px 10px; border-radius: 6px; }
+	nav a.on { color: var(--ink); background: var(--bg); }
+	.live { margin-left: auto; font-size: 13px; color: var(--muted); white-space: nowrap; }
+	.live::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--bad); margin-right: 6px; }
+	.live.up::before { background: var(--ok); }
+	main { max-width: 1200px; margin: 0 auto; padding: 16px; }
+	h2 { font-size: 14px; color: var(--muted); font-weight: 600; margin: 24px 0 8px; }
+	.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; overflow-wrap: anywhere; }
+	.card.wait { border-color: var(--warn); background: var(--warn-bg); }
+	.meta { color: var(--muted); font-size: 13px; }
+	.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+	.columns { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+	@media (max-width: 900px) { .columns { grid-template-columns: 1fr; } }
+	.column h3 { font-size: 13px; color: var(--muted); margin: 0 0 6px; text-transform: capitalize; }
+	.tag { font-size: 12px; padding: 1px 8px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
+	.tag.warn { color: var(--warn); border-color: var(--warn); }
+	a { color: var(--accent); }
+	button { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+	button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+	button:disabled { opacity: .5; cursor: default; }
+	textarea, input, select { font: inherit; width: 100%; border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 8px; padding: 6px 8px; }
+	textarea { min-height: 70px; }
+	pre { white-space: pre-wrap; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px; font: 13px/1.45 ui-monospace, Menlo, monospace; max-height: 420px; overflow: auto; }
+	.timeline div { padding: 4px 0; border-bottom: 1px solid var(--line); }
+	.timeline time { color: var(--muted); font-size: 12px; margin-right: 8px; font-variant-numeric: tabular-nums; }
+	.error { color: var(--bad); }
+	label { display: block; font-size: 13px; color: var(--muted); margin: 8px 0 2px; }
+	.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+	.src { font-size: 12px; color: var(--muted); }
+	.empty { color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+	<h1>Factory</h1>
+	<nav id="nav"></nav>
+	<span class="live" id="live">offline</span>
+</header>
+<main id="main"></main>
+<script>
+const STAGES = ['research', 'plan', 'implement', 'review', 'land']
+const main = document.getElementById('main')
+let board = { issues: [], done: [], open: 0, needsYou: 0 }
+
+function h(tag, attrs, ...children) {
+	const el = document.createElement(tag)
+	for (const [key, value] of Object.entries(attrs || {})) {
+		if (value === undefined || value === null || value === false) continue
+		if (key.startsWith('on')) el.addEventListener(key.slice(2), value)
+		else if (key === 'class') el.className = value
+		else el.setAttribute(key, value === true ? '' : value)
+	}
+	for (const child of children.flat()) {
+		if (child === null || child === undefined || child === false) continue
+		el.append(child instanceof Node ? child : document.createTextNode(String(child)))
+	}
+	return el
+}
+
+/** replaceChildren turns null into the text "null", so empty parts are dropped first. */
+const render = (...nodes) => main.replaceChildren(...nodes.flat().filter((n) => n !== null && n !== undefined && n !== false))
+
+const ago = (ms) => {
+	if (!ms) return ''
+	const s = Math.round((Date.now() - ms) / 1000)
+	if (s < 60) return `${s}s ago`
+	if (s < 3600) return `${Math.round(s / 60)}m ago`
+	if (s < 86400) return `${Math.round(s / 3600)}h ago`
+	return `${Math.round(s / 86400)}d ago`
+}
+const clock = (ms) => new Date(ms).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+const safeLink = (url, label) => (url && /^https?:\/\//.test(url) ? h('a', { href: url, target: '_blank', rel: 'noreferrer' }, label) : null)
+
+async function api(method, path, body) {
+	const res = await fetch(path, { method, headers: { 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) })
+	const json = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
+	if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`)
+	return json
+}
+
+function route() {
+	const hash = location.hash.replace(/^#\/?/, '')
+	const [page, id] = hash.split('/')
+	return { page: page || 'board', id: id && decodeURIComponent(id) }
+}
+
+function drawNav() {
+	const { page } = route()
+	const nav = document.getElementById('nav')
+	nav.replaceChildren(
+		h('a', { href: '#/', class: page === 'board' ? 'on' : '' }, `Board${board.needsYou ? ` (${board.needsYou} for you)` : ''}`),
+		h('a', { href: '#/new', class: page === 'new' ? 'on' : '' }, 'New issue'),
+		h('a', { href: '#/settings', class: page === 'settings' ? 'on' : '' }, 'Settings'),
+		h('a', { href: '#/done', class: page === 'done' ? 'on' : '' }, 'Done')
+	)
+	document.title = board.needsYou ? `(${board.needsYou}) Factory` : 'Factory'
+}
+
+function decisionCard(issue, d, onDone) {
+	const error = h('div', { class: 'error' })
+	const field = h('textarea', { placeholder: 'Or answer in your own words' })
+	const send = async (answer) => {
+		for (const b of card.querySelectorAll('button')) b.disabled = true
+		try {
+			const result = await api('POST', `/api/decisions/${encodeURIComponent(d.id)}/answer`, { answer })
+			if (result.error) error.textContent = `Saved, but not delivered: ${result.error}`
+			onDone && onDone()
+		} catch (e) {
+			error.textContent = e.message
+			for (const b of card.querySelectorAll('button')) b.disabled = false
+		}
+	}
+	const retry = async () => {
+		try { await api('POST', `/api/issues/${encodeURIComponent(issue.id)}/deliver`, {}) } catch (e) { error.textContent = e.message }
+	}
+	const answered = d.answer !== null
+	const card = h('div', { class: 'card wait' },
+		h('div', { class: 'row' },
+			h('span', { class: 'tag warn' }, d.provisional ? 'provisional' : d.kind),
+			h('a', { href: `#/issue/${encodeURIComponent(issue.id)}` }, issue.title),
+			h('span', { class: 'meta' }, issue.repo)
+		),
+		h('p', {}, d.question),
+		d.provisional && !answered ? h('p', { class: 'meta' }, `The work went on with "${d.recommendation}". The merge waits for your answer.`) : null,
+		d.body ? h('pre', {}, d.body) : null,
+		answered
+			? h('div', {}, h('p', {}, `Answered: ${d.answer}`), h('p', { class: 'meta' }, d.delivery === 'held' ? 'Held until the other questions are answered.' : 'Not delivered to the thread yet.'), d.delivery === 'failed' ? h('button', { onclick: retry }, 'Retry delivery') : null)
+			: h('div', {},
+				h('div', { class: 'row' },
+					h('button', { class: 'primary', onclick: () => send(d.recommendation) }, `Accept: ${d.recommendation}`),
+					...(d.options || []).filter((o) => o !== d.recommendation).map((o) => h('button', { onclick: () => send(o) }, o))
+				),
+				h('label', {}, 'Your answer'),
+				field,
+				h('div', { class: 'row', style: 'margin-top:6px' }, h('button', { onclick: () => field.value.trim() && send(field.value.trim()) }, 'Send'))
+			),
+		error
+	)
+	return card
+}
+
+function issueCard(issue) {
+	return h('div', { class: `card${issue.needsYou ? ' wait' : ''}` },
+		h('a', { href: `#/issue/${encodeURIComponent(issue.id)}` }, issue.title),
+		h('div', { class: 'meta' }, [issue.repo, issue.kind].filter(Boolean).join(' · ')),
+		issue.lastEvent ? h('div', { class: 'meta' }, `${ago(issue.lastEvent.at)}: ${issue.lastEvent.text}`) : null,
+		h('div', { class: 'row' },
+			issue.stuck ? h('span', { class: 'tag warn' }, 'stuck') : null,
+			safeLink(issue.prUrl, 'PR'),
+			safeLink(issue.threadLink, 'Open in T3 Code')
+		)
+	)
+}
+
+function drawBoard() {
+	const waiting = board.issues.flatMap((issue) => issue.decisions.map((d) => [issue, d]))
+	const stuck = board.issues.filter((i) => i.stuck)
+	render(
+		h('h2', {}, 'Needs you'),
+		waiting.length || stuck.length
+			? h('div', {}, ...waiting.map(([issue, d]) => decisionCard(issue, d)), ...stuck.map((i) => h('div', { class: 'card wait' }, h('span', { class: 'tag warn' }, 'stuck'), ' ', h('a', { href: `#/issue/${encodeURIComponent(i.id)}` }, i.title), h('p', { class: 'meta' }, 'Nudged twice with no report. Look at the thread.'), safeLink(i.threadLink, 'Open in T3 Code'))))
+			: h('p', { class: 'empty' }, 'Nothing waits for you.'),
+		h('h2', {}, `Open issues (${board.open})`),
+		h('div', { class: 'columns' }, ...STAGES.map((stage) =>
+			h('div', { class: 'column' }, h('h3', {}, stage), ...board.issues.filter((i) => i.stage === stage).map(issueCard))
+		))
+	)
+}
+
+function drawDone() {
+	render(
+		h('h2', {}, 'Shipped and closed, last 30 days'),
+		board.done.length ? h('div', {}, ...board.done.map((i) => h('div', { class: 'card' },
+			h('div', { class: 'row' }, h('span', { class: 'tag' }, i.outcome + (i.deploy ? ` · deploy ${i.deploy}` : '')), h('a', { href: `#/issue/${encodeURIComponent(i.id)}` }, i.title)),
+			h('div', { class: 'meta' }, `${i.repo} · ${ago(i.closedAt)}`),
+			i.summary ? h('p', {}, i.summary) : null,
+			safeLink(i.prUrl, 'PR')
+		))) : h('p', { class: 'empty' }, 'Nothing closed yet.')
+	)
+}
+
+async function drawIssue(id) {
+	let data
+	try { data = await api('GET', `/api/issues/${encodeURIComponent(id)}`) } catch (e) { render(h('p', { class: 'error' }, e.message)); return }
+	if (route().id !== id) return
+	const i = data.issue
+	const runs = data.runs.map((r) => h('div', { class: 'card' },
+		h('div', { class: 'row' }, h('strong', {}, r.subject === 'plan' ? 'plan review' : r.stage), h('span', { class: 'tag' }, r.state), h('span', { class: 'meta' }, r.model ? `${r.provider} / ${r.model}${r.options ? ' ' + JSON.stringify(r.options) : ''}` : '')),
+		h('div', { class: 'meta' }, `${clock(r.startedAt)}${r.endedAt ? `, ${Math.round((r.endedAt - r.startedAt) / 60000)} min` : ''}`),
+		r.summary ? h('p', {}, r.summary) : null
+	))
+	render(
+		h('div', { class: 'row' }, h('span', { class: 'tag' }, i.state === 'open' ? i.stage : i.outcome), h('h2', { style: 'margin:0;color:var(--ink);font-size:18px' }, i.title)),
+		h('div', { class: 'row meta' }, h('span', {}, [i.repo, i.kind].filter(Boolean).join(' · ')), safeLink(i.prUrl, 'PR'), safeLink(i.threadLink, 'Open in T3 Code'), i.source ? (safeLink(i.source, 'Source') || h('span', {}, i.source)) : null),
+		i.configError ? h('p', { class: 'error' }, i.configError) : null,
+		...data.decisions.filter((d) => d.answer === null || (d.answeredVia === 'page' && d.delivery !== 'sent')).map((d) => decisionCard(i, d)),
+		data.report ? h('div', {}, h('h2', {}, 'Closing report'), h('pre', {}, data.report)) : null,
+		h('h2', {}, 'Runs'), runs.length ? h('div', { class: 'grid2' }, ...runs) : h('p', { class: 'empty' }, 'No runs yet.'),
+		h('h2', {}, 'Decisions'),
+		data.decisions.length ? h('div', {}, ...data.decisions.map((d) => h('div', { class: 'card' }, h('div', { class: 'meta' }, `${d.kind}${d.provisional ? ', provisional' : ''}`), h('p', {}, d.question), h('p', { class: 'meta' }, d.answer === null ? `Recommended: ${d.recommendation}` : `Answer (${d.answeredVia}): ${d.answer}`)))) : h('p', { class: 'empty' }, 'None.'),
+		h('h2', {}, 'Timeline'),
+		h('div', { class: 'card timeline' }, ...data.events.slice().reverse().map((e) => h('div', {}, h('time', {}, clock(e.at)), e.text))),
+		h('h2', {}, 'The issue as taken in'),
+		h('pre', {}, data.body || '(no text)')
+	)
+}
+
+const TARGET_KEYS = ['orchestrator', 'stages.research', 'stages.plan', 'stages.implement', 'stages.review']
+const getPath = (obj, path) => path.split('.').reduce((v, k) => (v == null ? v : v[k]), obj)
+const SOURCE_LABEL = { default: 'default', global: 'global', file: 'factory.config.yaml', repo: 'this machine' }
+
+async function drawSettings() {
+	let data
+	try { data = await api('GET', '/api/settings') } catch (e) { render(h('p', { class: 'error' }, e.message)); return }
+	const scopes = [['global', 'All repositories', data.global, { settings: data.defaults, sources: null }, null], ...Object.entries(data.repos).map(([repo, r]) => [`repo:${repo}`, repo, r.page, r.resolved, r])]
+	render(
+		h('p', { class: 'meta' }, 'Order: defaults, global, the repository\'s factory.config.yaml on its default branch, then this machine\'s settings for the repository. A running issue keeps the settings it started with.'),
+		...scopes.map(([scope, label, layer, resolved, repo]) => scopeEditor(scope, label, layer || {}, resolved, repo))
+	)
+}
+
+function scopeEditor(scope, label, layer, resolved, repo) {
+	const draft = JSON.parse(JSON.stringify(layer))
+	const error = h('div', { class: 'error' })
+	const fields = []
+	const targetRow = (key) => {
+		const current = getPath(draft, key) || {}
+		const shown = resolved ? getPath(resolved.settings, key) : null
+		const provider = h('input', { value: current.provider || '', placeholder: shown?.provider || '' })
+		const model = h('input', { value: current.model || '', placeholder: shown?.model || '' })
+		const opts = h('input', { value: current.options ? JSON.stringify(current.options) : '', placeholder: shown?.options ? JSON.stringify(shown.options) : '' })
+		fields.push(() => {
+			const parts = key.split('.')
+			let parent = draft
+			for (const p of parts.slice(0, -1)) parent = parent[p] = parent[p] || {}
+			const leaf = parts.at(-1)
+			const note = parent[leaf]?.note
+			if (!provider.value.trim() && !model.value.trim()) {
+				if (note !== undefined) parent[leaf] = { note }
+				else delete parent[leaf]
+				return
+			}
+			const next = { provider: provider.value.trim(), model: model.value.trim() }
+			if (opts.value.trim()) next.options = JSON.parse(opts.value)
+			if (note !== undefined) next.note = note
+			parent[leaf] = next
+		})
+		const fileValue = repo?.file ? getPath(repo.file, key) : null
+		return h('div', { class: 'card' }, h('strong', {}, key.replace('stages.', '')),
+			resolved?.sources ? h('div', { class: 'src' }, `from ${SOURCE_LABEL[resolved.sources[key]] || 'default'}${fileValue?.model ? ` · file says ${fileValue.provider}/${fileValue.model}` : ''}`) : null,
+			h('div', { class: 'grid2' }, h('div', {}, h('label', {}, 'Provider'), provider), h('div', {}, h('label', {}, 'Model'), model), h('div', {}, h('label', {}, 'Options (JSON)'), opts)))
+	}
+	const noteRow = (stage) => {
+		const area = h('textarea', { placeholder: resolved?.settings.stages[stage].note || '' }, getPath(draft, `stages.${stage}.note`) || '')
+		fields.push(() => {
+			draft.stages = draft.stages || {}
+			const value = area.value.trim()
+			if (value) draft.stages[stage] = { ...(draft.stages[stage] || {}), note: value }
+			else if (draft.stages[stage]) { delete draft.stages[stage].note; if (!Object.keys(draft.stages[stage]).length) delete draft.stages[stage] }
+		})
+		return h('div', {}, h('label', {}, `${stage} note${resolved?.sources ? ` (from ${SOURCE_LABEL[resolved.sources[`stages.${stage}.note`]]})` : ''}`), area)
+	}
+	const approval = h('select', {}, h('option', { value: '' }, `(inherit${resolved ? `: ${resolved.settings.planApproval}` : ''})`), ...['auto', 'always', 'never'].map((v) => h('option', { value: v, selected: draft.planApproval === v }, v)))
+	const rounds = h('input', { type: 'number', min: 0, max: 5, value: draft.reviewRounds ?? '', placeholder: resolved ? String(resolved.settings.reviewRounds) : '' })
+	const rulings = h('textarea', { placeholder: resolved?.settings.rulings || '' }, draft.rulings || '')
+	fields.push(() => {
+		if (approval.value) draft.planApproval = approval.value; else delete draft.planApproval
+		if (rounds.value !== '') draft.reviewRounds = Number(rounds.value); else delete draft.reviewRounds
+		if (rulings.value.trim()) draft.rulings = rulings.value.trim(); else delete draft.rulings
+	})
+	const save = async () => {
+		error.textContent = ''
+		try {
+			for (const f of fields) f()
+			if (draft.stages && !Object.keys(draft.stages).length) delete draft.stages
+			await api('PUT', `/api/settings/${encodeURIComponent(scope)}`, draft)
+			drawSettings()
+		} catch (e) { error.textContent = e.message }
+	}
+	return h('div', { class: 'card' },
+		h('h2', { style: 'margin-top:0;color:var(--ink)' }, label),
+		repo?.fileError ? h('p', { class: 'error' }, repo.fileError) : null,
+		repo?.file ? h('details', {}, h('summary', { class: 'meta' }, 'factory.config.yaml (read-only)'), h('pre', {}, JSON.stringify(repo.file, null, 2))) : null,
+		...TARGET_KEYS.map(targetRow),
+		h('div', { class: 'grid2' }, ...['research', 'plan', 'implement', 'review', 'land'].map(noteRow)),
+		h('div', { class: 'grid2' }, h('div', {}, h('label', {}, 'Plan approval'), approval), h('div', {}, h('label', {}, 'Review rounds'), rounds)),
+		h('label', {}, 'Rulings'), rulings,
+		h('div', { class: 'row', style: 'margin-top:10px' }, h('button', { class: 'primary', onclick: save }, `Save ${scope === 'global' ? 'global' : 'for this machine'}`)),
+		error
+	)
+}
+
+async function drawNew() {
+	const repos = [...new Set([...board.issues, ...board.done].map((i) => i.repo))].sort()
+	const error = h('div', { class: 'error' })
+	const repo = h('select', {}, ...repos.map((r) => h('option', { value: r }, r)))
+	const title = h('input', { placeholder: 'What should be fixed or built' })
+	const source = h('input', { placeholder: 'https://github.com/owner/repo/issues/12 (optional)' })
+	const body = h('textarea', { placeholder: 'Details' })
+	const start = async (e) => {
+		e.target.disabled = true
+		error.textContent = ''
+		try {
+			const result = await api('POST', '/api/threads', { repo: repo.value, title: title.value, body: body.value, source: source.value || undefined })
+			if (result.duplicateOf) error.textContent = `Already open: ${result.duplicateOf.title}`
+			else if (result.closed) error.textContent = 'The factory already closed this item. Start it from a thread with --again to reopen it.'
+			else location.hash = `#/issue/${encodeURIComponent(result.issue)}`
+		} catch (err) { error.textContent = err.message }
+		e.target.disabled = false
+	}
+	render(
+		h('h2', {}, 'New issue'),
+		repos.length ? h('div', { class: 'card' },
+			h('label', {}, 'Repository'), repo, h('label', {}, 'Title'), title, h('label', {}, 'Source'), source, h('label', {}, 'Text'), body,
+			h('div', { class: 'row', style: 'margin-top:10px' }, h('button', { class: 'primary', onclick: start }, 'Start a thread')), error
+		) : h('p', { class: 'empty' }, 'The factory starts threads in repositories it has seen. Start one issue from a T3 Code thread in the repository first.')
+	)
+}
+
+async function refreshBoard() {
+	try { board = await api('GET', '/api/board') } catch { return }
+	drawNav()
+}
+
+async function draw() {
+	drawNav()
+	const { page, id } = route()
+	if (page === 'issue' && id) return drawIssue(id)
+	if (page === 'settings') return drawSettings()
+	if (page === 'new') return drawNew()
+	if (page === 'done') return drawDone()
+	drawBoard()
+}
+
+let timer
+function connect() {
+	const live = document.getElementById('live')
+	const source = new EventSource('/api/stream')
+	source.onopen = () => { live.textContent = 'live'; live.classList.add('up') }
+	source.onerror = () => { live.textContent = 'reconnecting'; live.classList.remove('up') }
+	source.addEventListener('change', (e) => {
+		let data = {}
+		try { data = JSON.parse(e.data) } catch {}
+		clearTimeout(timer)
+		timer = setTimeout(async () => {
+			await refreshBoard()
+			const { page, id } = route()
+			if (page === 'board' || page === 'done' || (page === 'issue' && id === data.issue) || (page === 'settings' && data.issue === null)) draw()
+		}, 150)
+	})
+}
+
+window.addEventListener('hashchange', draw)
+refreshBoard().then(draw)
+connect()
+</script>
+</body>
+</html>
