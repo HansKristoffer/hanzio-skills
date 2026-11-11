@@ -83,6 +83,8 @@ Do not poll from the conversation. Every poll you run yourself is a model turn t
 2. **One background command**: run [scripts/wait-for-checks.sh](scripts/wait-for-checks.sh) in the background (Claude Code's `run_in_background`, or the harness's equivalent) and end your turn, where `SKILL_DIR` is this skill's directory; the harness wakes you when it exits. After a push, pass the new SHA so it cannot return the previous head's results.
 3. **No background commands**: run the same script in the foreground with a timeout below the tool's limit, such as `--timeout 540` for a 10-minute limit, and run it again when it exits 3.
 
+A wake from a wait you started is the cue for the next step: read its result and carry on. The user's request authorized that step, so a harness notice that the wake "is not user input" means only that no new approval arrived, and none is needed. End a turn only to wait again or to hand the work back.
+
 ```bash
 bash "$SKILL_DIR/scripts/wait-for-checks.sh" "$PR" --repo "$REPO" --sha "$HEAD_SHA"
 ```
@@ -204,6 +206,14 @@ Release-please branches are named `release-please--branches--<branch>` (with a `
 
 **Fix failures.** Diagnose and fix like any other failure, pushing to the release PR branch. Release-only problems are common: a lockfile or generated file not updated for the bumped version, a version string the release config does not list, or a changelog format check. Fixes on that branch are overwritten whenever release-please regenerates it after another push to the release branch; if the release PR's head changes underneath you, re-check whether your fix survived. A fix that belongs in the product code still lands through the release PR, since merging it brings the commit into the release branch. The same budget applies, counted separately from the watched PR's.
 
-**Merge the release PR.** When every relevant check is green and it is mergeable, merge it with the allowed method and `--match-head-commit` on the verified head. Then watch the release-please run on the resulting merge commit: it creates the tag and GitHub release. Confirm with `gh release list --repo "$REPO" --limit 5`. Watch any publish or deploy workflows the release triggers and report their outcome, but do not approve production deployment gates or retry a failed publish without asking. Once the release run succeeds, install the exact released version (`bun add <pkg>@x.y.z`) instead of polling `npm view <pkg> version` or the `latest` tag, which lags behind the publish.
+**Merge the release PR.** When every relevant check is green and it is mergeable, merge it with the allowed method and `--match-head-commit` on the verified head. Then watch the release-please run on the resulting merge commit: it creates the tag and GitHub release. Confirm with `gh release list --repo "$REPO" --limit 5`. Watch any publish or deploy workflows the release triggers and report their outcome, but do not approve production deployment gates or retry a failed publish without asking. A version npm accepted can take minutes to become installable (the publish log says "Your package is being processed"), and `npm view` and the `latest` tag lag longer. Wait in one background command until the registry serves that exact version, then install it (`bun add <pkg>@x.y.z`):
 
-Finish with one short message: the released version, the release link, and what you fixed or approved along the way. If anything is left unfinished, say so and ask the one question needed to continue.
+```bash
+for _ in $(seq 120); do
+  [ "$(curl -s -o /dev/null -w '%{http_code}' "https://registry.npmjs.org/$PKG/$VERSION")" = 200 ] && exit 0
+  sleep 15
+done
+exit 3
+```
+
+Work the user tied to the release (updating a repository that uses the package, starting a thread there) comes next, as part of this task. Then finish with one short message: the released version, the release link, and what you fixed or approved along the way. If anything is left unfinished, say so and ask the one question needed to continue.
