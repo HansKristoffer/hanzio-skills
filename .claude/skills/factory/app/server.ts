@@ -22,7 +22,7 @@ import {
 	type RunRow
 } from './db.ts'
 import { APP_DIR, appVersion, sh } from './env.ts'
-import { defaultRef, fetchDefault, freeBranch, readConfig, repoInfo, slugify } from './git.ts'
+import { defaultRef, fetchDefault, freeBranch, readConfig, repoInfo, slugify, type ConfigRead } from './git.ts'
 import {
 	STAGES,
 	defaults,
@@ -72,6 +72,10 @@ const DECISION_KINDS = ['plan', 'question', 'blocked', 'merge']
 const MUST_BLOCK = ['plan', 'blocked', 'merge']
 const QUIET_MS = 20 * 60 * 1000
 const QUIET_LAND_MS = 60 * 60 * 1000
+/** `owner/name`, or the folder's name for a repository with no origin. */
+const REPO_NAME = /^[^/\s]+(\/[^/\s]+)?$/
+/** Where a project's own settings live: its factory.config.yaml, or this machine. */
+type Store = 'file' | 'machine'
 const MAX_NUDGES = 2
 const MISSING_LIMIT = 3
 const MAX_POKES = 3
@@ -276,12 +280,19 @@ export function startServer(options: ServerOptions) {
 		closedAt: i.closed_at
 	})
 
-	const boardItem = (i: IssueRow) => ({
-		...publicIssue(i),
-		lastEvent: lastEvent(i.id),
-		decisions: decisionsOf(i.id).filter(waits).map(publicDecision),
-		waiting: waitingOf(i)
-	})
+	const boardItem = (i: IssueRow) => {
+		const runs = runsOf(i.id)
+		const running = runs.filter((r) => r.state === 'running').at(-1)
+		return {
+			...publicIssue(i),
+			lastEvent: lastEvent(i.id),
+			decisions: decisionsOf(i.id).filter(waits).map(publicDecision),
+			waiting: waitingOf(i),
+			/** The stages that have had a run, so the page can tell a skipped stage from a finished one. */
+			ran: [...new Set(runs.map((r) => r.stage))],
+			run: running ? { stage: running.stage, subject: running.subject, model: running.model, startedAt: running.started_at } : null
+		}
+	}
 
 	function waitingOf(i: IssueRow) {
 		if (!i.waiting_on || !i.waiting_since) return null
@@ -344,10 +355,22 @@ export function startServer(options: ServerOptions) {
 		return issue
 	}
 
+	/** The store chosen for a project on the page, or null when nobody chose. */
+	const storeChoice = (repo: string) => {
+		const row = db.query('select value from settings where scope = $scope').get({ scope: `store:${repo.toLowerCase()}` }) as { value: string } | null
+		return row ? (JSON.parse(row.value) as Store) : null
+	}
+	/** With no choice made, a project that has a file reads it, and one without keeps its settings here. */
+	const storeOf = (repo: string, config: ConfigRead): Store => storeChoice(repo) ?? (config.file || config.error ? 'file' : 'machine')
+	/** A project's own settings come from its store only: the other one is left out whole. */
+	const projectLayers = (repo: string, store: Store, config: ConfigRead) =>
+		resolve({ global: settingsRow('global'), ...(store === 'file' ? { file: config.file } : { repo: settingsRow(`repo:${repo}`) }) })
+
 	function resolveFor(root: string, repo: string, fetch: boolean) {
-		const config = readConfig(root, { fetch })
-		const resolved = resolve({ global: settingsRow('global'), file: config.file, repo: settingsRow(`repo:${repo}`) })
-		return { config, resolved }
+		// A project kept on this machine never reads the file, so a broken file there is no error.
+		const config: ConfigRead = storeChoice(repo) === 'machine' ? { file: null } : readConfig(root, { fetch })
+		const store = storeOf(repo, config)
+		return { config, store, resolved: projectLayers(repo, store, config) }
 	}
 
 	async function deliver(issueId: string) {
@@ -395,7 +418,7 @@ export function startServer(options: ServerOptions) {
 		const source = text(body.source, 'source', { max: 500 })
 		let issue = getIssue(id)
 		const info = issue ? { repo: issue.repo, root: issue.root } : repoInfo(text(body.cwd, 'cwd', { required: true })!)
-		const { config, resolved } = resolveFor(info.root, info.repo, true)
+		const { config, store, resolved } = resolveFor(info.root, info.repo, true)
 		const now = Date.now()
 
 		if (!issue) {
@@ -454,6 +477,7 @@ export function startServer(options: ServerOptions) {
 			url: pageUrl(id),
 			settings: resolved.settings,
 			sources: resolved.sources,
+			store,
 			...(config.error && { configError: config.error }),
 			...(config.offline && { offline: 'git fetch failed; read the default branch as it is' }),
 			...(earlier.length && {
@@ -900,18 +924,38 @@ export function startServer(options: ServerOptions) {
 				config = { file: null, error: (error as Error).message }
 			}
 			const page = settingsRow(`repo:${repo}`) ?? {}
+			const store = storeOf(repo, config)
+			let branch: string | null = null
+			try {
+				branch = defaultRef(root)
+			} catch {}
 			repos[repo] = {
+				store,
+				branch,
 				file: config.file,
 				...(config.error && { fileError: config.error }),
 				page,
-				resolved: resolve({ global: settingsRow('global'), file: config.file, repo: page })
+				/** This machine's settings as the file would hold them, to commit when the project moves to its repository. */
+				yaml: Object.keys(page).length ? Bun.YAML.stringify(page, null, 2) : '',
+				resolved: projectLayers(repo, store, config)
 			}
 		}
 		return { defaults, global: settingsRow('global') ?? {}, repos }
 	}
 
+	function putStore(repo: string, body: Record<string, unknown>) {
+		if (!REPO_NAME.test(repo)) fail(400, `repo: ${repo} is not <owner/name>`)
+		const store = oneOf(body.store, ['file', 'machine'] as const, 'store')
+		db.query('insert into settings (scope, value) values ($scope, $value) on conflict (scope) do update set value = $value').run({
+			scope: `store:${repo.toLowerCase()}`,
+			value: JSON.stringify(store)
+		})
+		emit(null)
+		return { ok: true, store }
+	}
+
 	function putSettings(scope: string, body: unknown) {
-		if (scope !== 'global' && !/^repo:[^/\s]+\/[^/\s]+$|^repo:[^/\s]+$/.test(scope)) {
+		if (scope !== 'global' && !(scope.startsWith('repo:') && REPO_NAME.test(scope.slice('repo:'.length)))) {
 			fail(400, `scope: ${scope} is not global or repo:<owner/name>`)
 		}
 		let layer: PartialSettings
@@ -1599,9 +1643,10 @@ export function startServer(options: ServerOptions) {
 		if (method === 'POST' && url.pathname === '/api/settings/resolve') {
 			local()
 			const info = repoInfo(text((await body()).cwd, 'cwd', { required: true })!)
-			const { config, resolved } = resolveFor(info.root, info.repo, true)
+			const { config, store, resolved } = resolveFor(info.root, info.repo, true)
 			return {
 				repo: info.repo,
+				store,
 				settings: resolved.settings,
 				sources: resolved.sources,
 				...(config.error && { configError: config.error }),
@@ -1617,6 +1662,9 @@ export function startServer(options: ServerOptions) {
 		if (method === 'POST' && parts[0] === 'api' && parts[1] === 'issues' && parts[3] === 'deliver' && parts[2]) {
 			const issue = getIssue(decodeURIComponent(parts[2])) ?? fail(404, `no issue ${parts[2]}`)
 			return deliver(issue.id)
+		}
+		if (method === 'PUT' && url.pathname.startsWith('/api/stores/')) {
+			return putStore(decodeURIComponent(url.pathname.slice('/api/stores/'.length)), await body())
 		}
 		if (method === 'PUT' && url.pathname.startsWith('/api/settings/')) {
 			// The scope can hold a slash, as in repo:acme/api, so it is the whole rest of the path.
