@@ -157,7 +157,25 @@ export const MIGRATIONS = [
 		outcome_note text,
 		outcome_run text references runs(id)
 	);
-	create index findings_issue on findings (issue_id);`
+	create index findings_issue on findings (issue_id);`,
+	// What a reviewer looks at: the screenshots and videos of the change, and the dev environment to try it in.
+	`alter table issues add column preview text;
+	create table evidence (
+		id text primary key,
+		issue_id text not null references issues(id) on delete cascade,
+		kind text not null check (kind in ('image', 'video')),
+		title text not null,
+		label text check (label in ('before', 'after')),
+		note text,
+		file text not null,
+		poster text,
+		clip text,
+		bytes integer not null,
+		head text,
+		published text,
+		created_at integer not null
+	);
+	create index evidence_issue on evidence (issue_id);`
 ]
 
 export const MAX_EVENT = 2000
@@ -197,6 +215,29 @@ export type IssueRow = {
 	risk_head: string | null
 	risk_rule: string | null
 	merge_cap: 'ask' | 'never' | null
+	/** The dev environment a reviewer tries the change in, as JSON (`Preview` in evidence.ts). */
+	preview: string | null
+}
+
+/** One screenshot or video of the change. `file`, `poster` and `clip` are names in the issue's evidence folder. */
+export type EvidenceRow = {
+	id: string
+	issue_id: string
+	kind: 'image' | 'video'
+	title: string
+	label: 'before' | 'after' | null
+	note: string | null
+	file: string
+	/** A still frame of a video. */
+	poster: string | null
+	/** A short GIF of a video, which GitHub shows inline where it cannot play an mp4. */
+	clip: string | null
+	bytes: number
+	/** The commit the capture shows. */
+	head: string | null
+	/** Where it is on GitHub once pushed, as JSON `{ base, commit, files }`. */
+	published: string | null
+	created_at: number
 }
 
 export type ItemRow = {
@@ -321,7 +362,7 @@ export function pruneOld(db: Database, now = Date.now()) {
 	const old = `select id from issues where state != 'open' and closed_at < $before`
 	db.query(`delete from events where issue_id in (${old})`).run({ before })
 	db.query(`delete from decisions where issue_id in (${old})`).run({ before })
-	for (const table of ['pr_items', 'pr_written', 'pr_rounds', 'findings']) {
+	for (const table of ['pr_items', 'pr_written', 'pr_rounds', 'findings', 'evidence']) {
 		db.query(`delete from ${table} where issue_id in (${old})`).run({ before })
 	}
 	db.query(`delete from runs where issue_id in (${old})`).run({ before })

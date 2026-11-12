@@ -149,7 +149,9 @@ export const addReviewers = (url: string, reviewers: string[]) => must(['pr', 'e
 export const requestAgain = (ref: PrRef, reviewer: string) =>
 	must(['api', '-X', 'POST', `repos/${ref.owner}/${ref.name}/pulls/${ref.number}/requested_reviewers`, '-f', `reviewers[]=${reviewer}`])
 
-export const comment = (url: string, body: string) => must(['pr', 'comment', url, '--body-file', '-'], body)
+/** A comment on a pull request or an issue, whichever the URL is. */
+export const comment = (url: string, body: string) =>
+	must([/\/issues\/\d+/.test(url) ? 'issue' : 'pr', 'comment', url, '--body-file', '-'], body)
 
 export async function replyInThread(threadId: string, body: string) {
 	const out = await must([

@@ -60,9 +60,13 @@ export const RESULT_SHAPES = {
 			claims: list(obj({ claim: str, evidence: str })),
 			notChecked: list(str),
 			decisions: list(obj({ decision: str, confidence: oneOf('low', 'medium', 'high') })),
-			findings: list(obj({ id: str, outcome: oneOf('fixed', 'declined'), commit: str, reason: str }, ['commit', 'reason']))
+			findings: list(obj({ id: str, outcome: oneOf('fixed', 'declined'), commit: str, reason: str }, ['commit', 'reason'])),
+			/** What was captured for the reviewer and why, or why nothing was. */
+			media: str,
+			/** How a person tries the change in the running app. */
+			tryIt: str
 		},
-		['findings']
+		['findings', 'media', 'tryIt']
 	),
 	review: obj(
 		{

@@ -57,7 +57,7 @@ ignore: [copilot-pull-request-reviewer]
 - `orchestrator` is the model of the issue's own thread. `stages.research`, `plan`, `implement` and `review` each run on their own target; a stage without one runs on the orchestrator's. The review target also reviews plans.
 - A target is `provider` and `model` together, as T3 Code's `orchestrator_capabilities` lists them, with optional `options` (Claude's `effort`, Codex's `reasoningEffort`). A layer that sets a target replaces the whole target below it.
 - `fallback` is the target a stage runs on when its own provider refuses the run (a usage limit, a sign-in, a model that is gone). Without one, such a run stops the issue at a `blocked` decision until the user answers. A layer can set it with or without the stage's own target. For review, pick a provider other than the implementer's when one is offered.
-- `note` is added to that stage's brief under "For this project". `land.note` says how the project deploys, how to check it, and whether to ship its release.
+- `note` is added to that stage's brief under "For this project". `implement.note` is the place for the seeded account to sign in with when the implementer captures the change in the running app. `land.note` says how the project deploys, how to check it, and whether to ship its release.
 - `planApproval`: `auto` (the default) asks the user to approve the plan of a feature, a large change or a one-way door; `always` and `never` do what they say.
 - `reviewRounds`: review rounds on a PR before the merge becomes a decision, 0 to 5, default 2; 0 skips the review.
 - `rulings`: standing rules added to every brief.
@@ -76,7 +76,7 @@ A list replaces the list of the layer below it.
 
 ## Who can change settings
 
-Anyone who can reach the factory page (this machine, and the tailnet when the page listens there) can change the settings and rulings that go into every brief, start threads and answer decisions. There is no sign-in: keep the tailnet to people you trust.
+Anyone who can reach the factory page (this machine, and the tailnet when the page listens there) can change the settings and rulings that go into every brief, start threads, answer decisions, and ask an issue's thread to start or stop its dev environment. There is no sign-in: keep the tailnet to people you trust.
 
 ## When it is broken
 
