@@ -9,7 +9,7 @@ After the internal review, the PR goes to the people and bots on GitHub. This fi
 When the last internal review of the head is clean (step 7 of `SKILL.md`):
 
 1. `factory run --stage land`. The land run lasts until the merge. Read its `note`.
-2. Write the PR body with the `land-pr` skill's **Write the PR body**: its **Evidence** is the implementer's claims with their evidence and anything you proved yourself, its **Merge Danger** the last review's `risk`.
+2. Bring the PR body up to date with the `land-pr` skill's **Write the PR body** (the implementer wrote it for the first commit): its **Evidence** is the implementer's claims with their evidence and anything you proved yourself, its **Merge Danger** the last review's `risk`.
 3. Check the leave-open rules in the `dispatched-run` skill's step 7 against the diff (a flow change, money, a migration or data change, new access, a new outbound call, over about 400 lines, something unverified, a second fix for an item that came back), and record the verdict for the head: `factory risk --head <sha> --none`, or `--rule "<the rule that holds>"`.
 4. `factory pr ready`. It marks the PR ready, which starts the workflows and bots that skip drafts, and adds the reviewer notes (the decisions left open, what was not checked, where to look first) to the body.
 5. `factory wait --on checks`, watch the PR (`watch_pull_request`), and end the turn.
@@ -89,14 +89,14 @@ It syncs, then prints `ready` or the blockers, each in words.
 
 - `ready`: go to `land.md`.
 - Blocked by `checks`, `bots`, `approval`, `changes-requested`, `threads` or `merge-setting` with merge `never`: wait. `factory wait --on checks|bots|review|merge --note "<who or what>"`, keep the PR watched, and end the turn. The issue shows under Waiting on others, is never nudged as stuck, and the service reads the PR every ten minutes and messages you when something needs you.
-- Blocked by `risk`, or `merge-setting` with merge `ask`: ask a `merge` decision about this head, with what holds and your recommendation, and end the turn:
+- Blocked by `risk`, by `merge-setting` with merge `ask`, or by `internal-review` after the user answered to go on without one: once nothing else blocks, ask a `merge` decision about this head, with what holds and your recommendation, and end the turn:
 
   ```bash
   factory ask --kind merge --head <sha> --question "<what holds, for which PR>" --recommend "<Merge, or what to change first>"
   ```
 
   Only the answer Merge on that head clears it; a push since means asking again.
-- Blocked by `items`, `internal-review` or `risk-unchecked`: steps 3 and 4.
+- Blocked by `items`, `risk-unchecked`, or `internal-review` on a head no review was tried on: steps 3 and 4.
 - Blocked by `decisions`: answer what came back, or wait for it.
 - Something you cannot fix: a `blocked` decision with what you tried.
 

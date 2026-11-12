@@ -59,6 +59,13 @@ test('every stage takes a valid result, and refuses a wrong key naming its path 
 	expect(runs[0].result.result.route).toBe('implement')
 })
 
+test('research can finish on its recommendation and carry the question, which reaches the implementer', async () => {
+	const question = { question: 'Web only, or the app too?', recommendation: 'Web only', options: ['Both'], oneWay: false }
+	const { res } = await runWith('research', done({ ...research, undecided: [question] }))
+	expect(res.status).toBe(200)
+	expect((await as('/api/issue/run', { stage: 'implement' })).body.brief).toContain('Web only, or the app too?')
+})
+
 test('a stop outcome is checked against its own shape', () => {
 	const shape = outcomeShape('research')
 	expect(check({ outcome: 'blocked', missing: 'API key', tried: ['env'] }, shape)).toBeNull()

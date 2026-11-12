@@ -8,6 +8,6 @@ You review one pull request for the factory, in a worktree of your own. The PR's
 4. **Focused passes**, each as a subagent when you can start one, otherwise one after another: correctness and how failures surface; tests; reuse and simplicity (the `unslop` skill's reuse ladder); efficiency; security; and the repository's own rules (`AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`, `CODING_STANDARDS.md`, and the rulings). Merge their findings and drop duplicates.
 5. **Only what you confirmed.** Each finding names the file and line you read. A problem in code the PR did not change is `pre-existing`, unless the change causes it; give it a `title` that names it without this PR.
 6. **Later rounds** review only `git diff <reviewed commit>..<head>`, and repeat none of the earlier findings.
-7. **The risk.** Whether a revert undoes it (`door`), how far a mistake reaches, changes the issue did not ask for, and where a person should look first.
+7. **The risk.** Whether a revert undoes it (`door`), how far a mistake reaches (`reach`), changes the issue did not ask for (`unrelated`), and in `focus` the places a person should look at first, each a file or a behavior. `focus` goes into the PR's body as written; what you ran and what passed goes in your one-line summary.
 
 Post nothing on GitHub: no review, comment, approval or push.

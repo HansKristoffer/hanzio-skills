@@ -25,7 +25,7 @@ To set up a project's settings, in its `factory.config.yaml` or kept on this mac
 
 ## 1. Take the issue in
 
-In the project's main checkout, move to a worktree first: `t3_worktree_status`, then `t3_worktree_handoff` with branch `factory/<slug>` (the next free `-2`, `-3` when `git ls-remote --heads origin "factory/<slug>*"` shows it taken), `baseRef` the default branch, `startFromOrigin: true`, and a `continuationPrompt` that says "Continue the factory issue from step 1, in the worktree". Do nothing else that turn. A thread that `factory new` started is already in its worktree.
+In the project's main checkout, move to a worktree first: `t3_worktree_status`, then `t3_worktree_handoff` with branch `factory/<slug>` (the next free `-2`, `-3` when `git ls-remote --heads origin "factory/<slug>*"` shows it taken), `baseRef` the default branch, `startFromOrigin: true`, and a `continuationPrompt` that says "Continue the factory issue from step 1, in the worktree". Do nothing else that turn. A thread already in a worktree (T3 Code or `factory new` put it there) stays on its branch.
 
 In the worktree, write the item's text to a temp file outside the repository (for a GitHub issue, `gh issue view <url> --json title,body,comments`), then:
 
@@ -57,12 +57,18 @@ Ask the user only through `factory ask`, never in a plain message or the questio
 
 For research, plan, implement and review:
 
-1. `factory run --stage <stage>` (add `--on plan` for a review of a plan). It answers `{ run, target, brief }`. The service writes into the brief what the stage needs from stored results: research's result, the latest plan, the review findings with their ids and outcomes, the PR and the head to review. Add `--context-file /tmp/<file>` (outside the repository) only for what it cannot know: `earlier` attempts for research, the user's feedback for a plan, reviewers' comments for an implement run. A review takes no context file, so the implementer's claims never reach it; run a review of the PR from this worktree on the PR's head, or pass `--head <sha>`.
-2. `delegate_task` with `task` set to the `brief` exactly as given, `target` set to `{ providerInstanceId: target.provider, model: target.model, options: target.options }`, `role` to match, and `isolation: 'worktree'` for a review, `'shared'` for the rest. When the child's provider, model or options differ from the target, `factory report` that line.
+1. `factory run --stage <stage>` (add `--on plan` for a review of a plan). It answers `{ run, target, task, briefFile }`. The service writes into the brief what the stage needs from stored results: research's result, the latest plan, the review findings with their ids and outcomes, the PR and the head to review. Add `--context-file /tmp/<file>` (outside the repository) only for what it cannot know: for research, the `earlier` attempts, and that the user typed the request in this thread themselves, so it is wanted; the user's feedback for a plan; reviewers' comments for an implement run; the answer to a stage's `needs-decision` when you run that stage again. A review takes no context file, so the implementer's claims never reach it; run a review of the PR from this worktree on the PR's head, or pass `--head <sha>`.
+2. `delegate_task` with `task` set to the `task` line exactly as given (it names `briefFile`, which the child reads; the brief itself stays out of your messages), `target` set to `{ providerInstanceId: target.provider, model: target.model, options: target.options }`, `role` to match, and `isolation: 'worktree'` for a review, `'shared'` for the rest. When the child's provider, model or options differ from the target, `factory report` that line.
 3. The child ends its run with its result, which the service checks against the stage's shape and keeps. Read it from `factory status` (each run's `result`), not from the child's last message.
-4. A child that ended without `--done`: end its run with `factory report --run <run> --failed -` (the reason on stdin) and run the stage once more. A second silent end is a `blocked` decision.
+4. A child that ended without `--done`: end its run with `factory report --run <run> --failed -` (the reason on stdin). When the child named a wall a second try would meet too (its provider's usage limit, a sign-in, a model that is gone), ask a `blocked` decision now, with the model and the provider's words. Otherwise run the stage once more; a second silent end is a `blocked` decision.
 
-A child's `needs-decision` becomes a `factory ask` (blocking when `oneWay`), and `blocked` becomes a `blocked` decision with what it tried. Report each stage's outcome in one line with `factory report`.
+What a result asks of the user:
+
+- `needs-decision`: the child stopped because nothing can be built until this is answered. Ask it blocking, and when the answer comes run the stage again with the answer in `--context-file`.
+- `undecided` (research and plan): the child finished on its recommendation. Ask each one, blocking when `oneWay`, the rest provisional, and go on.
+- `blocked`: a `blocked` decision with what it tried.
+
+Report each stage's outcome in one line with `factory report`.
 
 **Done when** the stage's run is `done` or `failed` in `factory status`, and you acted on its result.
 
@@ -87,8 +93,8 @@ Read [references/plan-flow.md](references/plan-flow.md) and follow it: a plan ru
 
 1. Run implement. It opens a draft PR. `factory update --pr <url>`, and link the PR in T3 Code.
 2. With `reviewRounds` above 0, pull the PR branch here and run a review of its head.
-3. `important` findings go to a new implement run; the service lists the open ones with their ids, and the implementer reports each as `fixed` or `declined`. The next review covers only the new commits, sees every earlier finding with its outcome, and can uphold a decline. Stop after `reviewRounds` rounds.
-4. Fix `nit` findings yourself, in this worktree, on the PR branch, and record each with `factory finding <id> --fixed <commit>`. Keep `pre-existing` findings for step 9.
+3. An `important` finding starts a new implement run. The service lists every open finding with its id, nits included, and the implementer reports each as `fixed` or `declined`. The next review covers only the new commits, sees every earlier finding with its outcome, and can uphold a decline. Stop after `reviewRounds` rounds.
+4. A review with only `nit` findings needs no run: fix them yourself, in this worktree, on the PR branch, and record each with `factory finding <id> --fixed <commit>`. Keep `pre-existing` findings for step 9.
 
 **Done when** the last review of the PR's current head has no `important` finding, or the rounds are used up (then the gate holds the merge until a `merge` decision on that head is answered Merge).
 

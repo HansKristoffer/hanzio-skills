@@ -18,6 +18,9 @@ const list = (of: Shape, max?: number): Shape => ({ t: 'list', of, ...(max !== u
 const obj = (fields: Record<string, Shape>, optional: string[] = []): Shape => ({ t: 'object', fields, optional })
 const either = (...of: Shape[]): Shape => ({ t: 'either', of })
 
+/** A question only the user can settle, with what the stage went on with. */
+const undecided = list(obj({ question: str, recommendation: str, options: list(str), oneWay: bool }, ['options']))
+
 const reviewFinding = (withFile: boolean) =>
 	obj(
 		{
@@ -37,15 +40,16 @@ export const RESULT_SHAPES = {
 			route: oneOf('implement', 'plan'),
 			reproduction: either(obj({ command: str }), obj({ notPossible: str })),
 			checks: list(obj({ command: str, baseline: str })),
+			undecided,
 			notes: str
 		},
-		['notes']
+		['undecided', 'notes']
 	),
 	plan: obj({
 		plan: str,
 		criteria: list(str, 5),
 		proof: str,
-		undecided: list(obj({ question: str, recommendation: str, oneWay: bool })),
+		undecided,
 		later: list(obj({ title: str, body: str }))
 	}),
 	'review-plan': obj({ findings: list(reviewFinding(false)), upheld: list(str) }, ['upheld']),
