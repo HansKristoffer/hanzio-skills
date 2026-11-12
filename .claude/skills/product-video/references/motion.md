@@ -10,6 +10,8 @@ How to build a composition that reads as a professionally edited launch film rat
 - Never use `setTimeout`, `setInterval`, `requestAnimationFrame`, `Date.now()`, CSS transitions or `Math.random()` without a fixed seed. A CSS animation is tolerated (seek pauses it at the film time) but GSAP is better.
 - Never let two tweens drive the same property of the same element at the same time; they cancel each other. End a drift where the exit begins, or wrap the element: camera > push > subject, one transform per wrapper.
 - Measure layout (`offsetLeft`, `getBoundingClientRect`) at the top of `build`, before any `from()` tween moves things.
+- Build soft colour fields from `radial-gradient`, as the templates do. A large `filter: blur()` or a `backdrop-filter` is redrawn on every frame and makes each one several times slower to render; `lint` names the element.
+- Mark a product mock built in HTML with `data-lint="ui"`: its interface-sized text is exempt from the 28 px rule that `lint` applies to everything else.
 - A `<video data-start="3.2" src="assets/clip.mp4">` plays from 3.2 s on the film clock, seeked frame by frame. Use it for a recorded live walkthrough (`<part>/video.mp4`) inside a browser or device frame.
 - Size comes from `<meta name="film-size" content="1920x1080">`. Use `1080x1920` for vertical social cuts and `1080x1080` for square.
 
@@ -77,7 +79,7 @@ These come up in nearly every first cut; build them in from the start.
 ## Pacing
 
 - About 12-15 compositions in 30 s; beats of 1.4-3.5 s.
-- In graphics beats (type, numbers, cards, the end card) no motionless stretch over 0.6 s; a held graphic gets a slow 3-5 % push (`Film.drift`) plus a tertiary change. `check` measures this. Product footage is the exception: the camera holds still while the product acts.
+- In graphics beats (type, numbers, cards, the end card) no motionless stretch over 0.6 s; a held graphic gets a slow 3-5 % push (`Film.drift`) plus a tertiary change. `lint` reports these before a render and `check` measures them after. Product footage is the exception: the camera holds still while the product acts.
 - Hold longest on the frames that carry the message: the product doing its job, the number, the CTA.
 - End card: 1.5-2 s readable, gently drifting, music resolving on it.
 - Launch films: 15-45 s, music-led, no narration, every claim on screen. Explainers: as long as the narration needs.
@@ -98,7 +100,7 @@ These come up in nearly every first cut; build them in from the start.
 | `Film.swap(tl, el, at, text)` | A value or status changes state with a pop. |
 | `Film.stack(tl, cards, at)` | Cards arrive and stack; covered cards recede. |
 | `Film.counter(tl, el, at, { to, decimals })` | A number counts up; `decimals: 1` for 8.4. |
-| `film.cue(t, sound, gainDb)` | A sound effect from `sfx/` at `t` (see `audio.md`). |
+| `film.cue(t, sound, gainDb, { pitch, pan })` | A sound effect from `sfx/` whose loudest moment lands on the visual event at `t` (see `audio.md`). |
 | `film.dip(from, to, gainDb)` | Pulls the music down, e.g. a dead stop before the logo hit. |
 
 Raw GSAP is always available for anything else (`tl.to`, `tl.from`, `tl.fromTo`, eases `land`, `leave`, `swap`, `SplitText`).

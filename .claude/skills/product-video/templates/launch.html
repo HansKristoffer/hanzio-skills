@@ -28,15 +28,17 @@
 * { box-sizing: border-box; }
 body { background: var(--bg); color: var(--text); font-family: var(--font); -webkit-font-smoothing: antialiased; }
 
-/* Living background: two soft colour fields that drift for the whole film. */
+/* Living background: two soft colour fields that drift for the whole film. They are radial
+   gradients, not blurred shapes: a large blur is redrawn on every frame and makes each one take
+   several times longer to render. */
 .bg { position: absolute; inset: 0; overflow: hidden; }
-.blob { position: absolute; width: 1100px; height: 1100px; border-radius: 50%; filter: blur(140px); opacity: 0.55; }
-.blob.a { background: var(--accent); left: -300px; top: -420px; }
-.blob.b { background: var(--accent-2); right: -360px; bottom: -520px; opacity: 0.4; }
+.blob { position: absolute; width: 1700px; height: 1700px; border-radius: 50%; opacity: 0.6; }
+.blob.a { background: radial-gradient(closest-side, var(--accent) 20%, transparent); left: -600px; top: -720px; }
+.blob.b { background: radial-gradient(closest-side, var(--accent-2) 20%, transparent); right: -660px; bottom: -820px; opacity: 0.45; }
 .grain { position: absolute; inset: 0; background: radial-gradient(transparent 60%, rgba(0, 0, 0, 0.05)); }
 
 .layer { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
-.eyebrow { font-size: 26px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent); }
+.eyebrow { font-size: 28px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent); }
 h1 { margin: 0; font-size: 150px; line-height: 1; letter-spacing: -0.045em; font-weight: 700; text-align: center; }
 h2 { margin: 0; font-size: 96px; line-height: 1.02; letter-spacing: -0.035em; font-weight: 700; }
 .muted { color: var(--muted); }
@@ -88,9 +90,9 @@ h2 { margin: 0; font-size: 96px; line-height: 1.02; letter-spacing: -0.035em; fo
 	border: 1px solid var(--line); box-shadow: 0 40px 100px rgba(20, 20, 40, 0.14);
 	display: flex; flex-direction: column; justify-content: center; gap: 14px;
 }
-.card .k { font-size: 22px; font-weight: 600; color: var(--accent); letter-spacing: 0.1em; text-transform: uppercase; }
+.card .k { font-size: 28px; font-weight: 600; color: var(--accent); letter-spacing: 0.1em; text-transform: uppercase; }
 .card .t { font-size: 54px; font-weight: 700; letter-spacing: -0.025em; }
-.card .d { font-size: 26px; color: var(--muted); }
+.card .d { font-size: 30px; color: var(--muted); }
 
 /* Number */
 #number .inner { display: flex; align-items: baseline; gap: 40px; }
@@ -122,7 +124,8 @@ h2 { margin: 0; font-size: 96px; line-height: 1.02; letter-spacing: -0.035em; fo
 
 <section class="layer" id="product">
 	<div id="cam">
-		<div id="window">
+		<!-- data-lint="ui": a built product mock keeps its interface-sized text; lint skips it. -->
+		<div id="window" data-lint="ui">
 			<div class="titlebar"><i></i><i></i><i></i><span class="url">app.product.com</span></div>
 			<div class="sidebar">
 				<div class="nav active">Projects</div><div class="nav">Inbox</div><div class="nav">Reports</div><div class="nav">Settings</div>
@@ -180,7 +183,7 @@ h2 { margin: 0; font-size: 96px; line-height: 1.02; letter-spacing: -0.035em; fo
 <script>
 Film.create({
 	duration: 18,
-	// music: 'assets/music.mp3', musicGain: -8,   after `video.ts music`; -8 leaves room for the effects
+	// music: 'assets/music.mp3', musicGain: -8,   after `video.ts music`; the effects are levelled against it
 	build(film) {
 		const { tl, cue } = film
 		const $ = (selector) => document.querySelector(selector)
@@ -205,7 +208,7 @@ Film.create({
 		Film.headline(tl, '#hook-b', 0.35)
 		tl.from('#hook .mark', { rotate: -12, duration: 1.2, ease: 'land' }, 0)
 		Film.flyThrough(tl, '#hook .inner', 2.3)
-		cue(2.25, 'whoosh')
+		cue(2.55, 'whoosh') // a cue names the visual event: the whoosh peaks as the line passes the camera
 
 		// 2. The product is already in place underneath and swings in as the line clears.
 		Film.show(tl, '#product', 2.3, 9.4)
@@ -222,28 +225,30 @@ Film.create({
 		tl.set('#result', { autoAlpha: 1 }, 4.75)
 		tl.from('#result', { scaleY: 0.2, transformOrigin: '50% 0%', duration: 0.5, ease: 'land' }, 4.75)
 		Film.rise(tl, '#result > *', 4.9, { y: 14, blur: 6 })
-		cue(4.8, 'pop')
+		cue(4.75, 'pop')
 
-		// The new project keeps working on its own: its status moves on, which is the point.
-		Film.swap(tl, $('#result .tag'), 5.6, 'Shared')
-		cue(5.75, 'tick', -2)
+		// The new project keeps working on its own: its status moves on, which is the point. The
+		// swap waits until the row's entrance has finished: two tweens on one element cancel.
+		Film.swap(tl, $('#result .tag'), 5.85, 'Shared')
+		cue(6.0, 'tick')
 
 		// 4. The camera moves onto the detail that matters, and a callout names it.
 		Film.focus(tl, $('#cam'), $('#focus-region'), 6.2, { fill: 0.62 })
-		cue(6.15, 'swipe')
+		cue(6.7, 'swipe')
 		tl.from('#callout', { y: '+=20', autoAlpha: 0, duration: 0.5, ease: 'land' }, 7.1)
 		Film.swap(tl, $('#focus-region .tag'), 8.0, 'Approved')
-		cue(8.15, 'tick', -2)
+		cue(8.15, 'tick')
 		tl.to('#cursor', { autoAlpha: 0, duration: 0.3 }, 6.2)
 		Film.leave(tl, '#product', 9.1, { y: 0, blur: 16 })
-		cue(9.05, 'whoosh')
+		cue(9.3, 'whoosh')
 
 		// 5. Benefits stack up, each card covering the last.
 		// New text enters only once the outgoing scene has cleared: text never crosses text.
 		Film.show(tl, '#features', 9.4, 12.5)
 		Film.headline(tl, '#features h2', 9.45)
 		Film.stack(tl, [...document.querySelectorAll('.card')], 9.8, { gap: 0.6 })
-		;[9.8, 10.4, 11.0].forEach((t) => cue(t, 'pop', -4))
+		// One sound three times reads as a machine; each card's pop sits a little higher.
+		;[9.8, 10.4, 11.0].forEach((t, i) => cue(t, 'pop', -3, { pitch: i * 2 }))
 		Film.drift(tl, '#features .inner', 9.4, 12.1, { scale: 1.04 })
 		Film.leave(tl, '#features .inner', 12.1)
 
@@ -253,7 +258,7 @@ Film.create({
 		Film.rise(tl, '#number h2', 12.7)
 		Film.drift(tl, '#number .inner', 12.45, 14.0, { scale: 1.05 })
 		Film.flyThrough(tl, '#number .inner', 14.0)
-		cue(13.95, 'swipe')
+		cue(14.25, 'swipe')
 
 		// 7. Three words, one beat each, swapping in place.
 		Film.show(tl, '#words', 14.4, 16.6)
@@ -261,14 +266,14 @@ Film.create({
 			const at = 14.45 + i * 0.55
 			tl.set(word, { autoAlpha: 1 }, at)
 			// A slot roll: each word starts 0.05 s before the previous one has gone, so no frame is empty.
-			Film.headline(tl, word, at, i < 2 ? { out: at + 0.45, outDur: 0.15 } : {})
-			if (i > 0) tl.set(['#w1', '#w2', '#w3'][i - 1], { autoAlpha: 0 }, at)
+			const leaving = Film.headline(tl, word, at, i < 2 ? { out: at + 0.45, outDur: 0.15 } : {})
+			if (i < 2) tl.set(word, { autoAlpha: 0 }, leaving.gone)
 		})
 		tl.set(['#w2', '#w3'], { autoAlpha: 0 }, 0)
 
 		// 8. The last word flies through and reveals the end card, already in place underneath.
 		Film.flyThrough(tl, '#words .inner', 16.15, { dur: 0.45 })
-		cue(16.1, 'whoosh', -3)
+		cue(16.05, 'whoosh', -3) // peaks in the dead stop, so it rises into the hit
 		Film.show(tl, '#end', 16.15)
 		tl.from('.lockup .mark', { scale: 0, rotate: -45, duration: 0.8, ease: 'back.out(1.6)' }, 16.2)
 		tl.from('.lockup .name', { x: -40, autoAlpha: 0, filter: 'blur(12px)', duration: 0.8, ease: 'land' }, 16.35)
