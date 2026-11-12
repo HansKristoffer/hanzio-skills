@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { buildBrief, fenced } from './brief.ts'
 import { APP_DIR } from './env.ts'
@@ -22,6 +23,15 @@ test('a stage with no note, context or rulings leaves those parts out', () => {
 	expect(brief).not.toContain('## For this project')
 	expect(brief).not.toContain('## This run')
 	expect(brief).not.toContain('## Rulings')
+})
+
+test("the implement brief names the CLI and the skill's capture guide by their real paths", () => {
+	const brief = buildBrief({ stage: 'implement', runId: 'r_1', settings: defaults, issue })
+	expect(brief).not.toContain('{{')
+	expect(brief).toContain(`bun ${join(APP_DIR, 'cli.ts')} evidence add`)
+	const guide = join(APP_DIR, '..', 'references', 'evidence.md')
+	expect(brief).toContain(guide)
+	expect(existsSync(guide)).toBe(true)
 })
 
 test('the issue body cannot close its fence', () => {

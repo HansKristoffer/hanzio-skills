@@ -39,7 +39,9 @@ export function stageFile(stage: DelegatedStage, on?: 'plan' | 'pr'): ResultKind
 export function buildBrief(input: BriefInput) {
 	const file = stageFile(input.stage, input.on)
 	const cli = join(APP_DIR, 'cli.ts')
-	const parts = [readFileSync(join(SKILL_DIR, 'references', `${file}.md`), 'utf8').trim()]
+	// A stage's text names the CLI and the skill's own files by these two tokens, since a child knows neither path.
+	const text = readFileSync(join(SKILL_DIR, 'references', `${file}.md`), 'utf8').trim()
+	const parts = [text.replaceAll('{{factory}}', `bun ${cli}`).replaceAll('{{skill}}', SKILL_DIR)]
 
 	const note = input.settings.stages[input.stage].note
 	if (note) parts.push(`## For this project\n\n${note.trim()}`)

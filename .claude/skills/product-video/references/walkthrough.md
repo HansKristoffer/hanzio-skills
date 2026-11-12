@@ -71,6 +71,16 @@ Time between `rec.scene` calls is never in the video, so a slow setup step or a 
 - Only a browser tab is recorded. To show a desktop app such as Excel, take a screenshot of it and show it in a composition, or leave it out and say so.
 - `record({ cursor: false })` leaves the drawn pointer out, for a clip where nothing is clicked.
 
+## A silent clip for a reviewer
+
+Use this when a pull request needs a short recording of a flow as proof, not a film: one live part, captions for words, nothing else. It needs no key, no brand work, no music and no critic.
+
+1. Write `<build>/<name>.json`, one silent scene per step, each long enough to read its caption and see its result: `[{ "id": "select", "dur": 4 }, { "id": "pay", "dur": 5 }]`.
+2. `bun $SKILL/video.ts narrate <build>/<name>.json` writes the timing from those lengths.
+3. Write `<build>/<name>.walk.mjs` as in **Recording**: reach the start state before `record()`, then one `rec.scene` per scene with a `rec.caption` that says what the step shows, and every action through the `rec` helpers.
+4. `bun $SKILL/video.ts walk <build>/<name>.walk.mjs --rehearse --headless` checks the selectors in seconds; the same without `--rehearse`, with `--scale 1`, records `<build>/<name>/video.mp4` at 1920x1080.
+5. Read a frame from the middle (`stills <build>/<name>/video.mp4 --at <seconds>`) before you hand the clip on.
+
 ## Product demo walkthrough
 
 Use this when the user wants a demo of the product, or of a feature, rather than an explanation of a change.

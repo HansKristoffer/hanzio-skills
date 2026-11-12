@@ -2,10 +2,12 @@
 // The only thing agents run. Every command talks to the machine's factory service over loopback
 // HTTP, starting it first when it is not answering, and prints JSON. Usage: `bun cli.ts help`.
 import { existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { parseArgs, type ParseArgsOptionsConfig } from 'node:util'
 import { APP_DIR, DEFAULT_PORT, appVersion, factoryHome, factoryPort, sh } from './env.ts'
+import { parseUrlFlags, repoWebBase } from './evidence.ts'
 import * as gh from './gh.ts'
+import { buncargoDown, buncargoUp, prepare, pushEvidence, usesBuncargo } from './media.ts'
 import { withSections } from './pr.ts'
 import { detectTailnet, startServer } from './server.ts'
 import { UNIT, install, uninstall, unitInstalled } from './service.ts'
@@ -41,6 +43,21 @@ The review on GitHub (gh runs here, as this thread's login):
   risk --head <sha> --none | --rule <text>
   wait --on checks|bots|review|merge|deploy [--note <text>] | wait --clear
 
+What the reviewer looks at (git, ffmpeg and buncargo run here, in this checkout):
+  evidence add <file> --title <t> [--label before|after] [<note> | -]
+      A screenshot (png, jpg, webp, gif) or a video (mp4, webm, mov) of the change, shown on the issue's
+      page. Two captures under one title, labelled before and after, show side by side. The same title
+      and label again replaces the capture.
+  evidence list | evidence remove <id>
+  evidence publish [--to <issue or PR url>]
+      Push the captures to a ref on GitHub and show them in the PR's body; --to also posts them as one
+      comment there. pr ready publishes too.
+  preview up [--apps <a,b>] [--url <name>=<url>]...
+      Start this checkout's dev environment (buncargo's detached run) and put its URLs on the page.
+      With --url nothing is started: the URLs of an app you started yourself are registered.
+  preview down                   stop it
+  preview failed <reason | ->    say on the page why it did not start
+
 Anywhere:
   settings                       the settings an issue started here would get
   new --title <t> [--body-file <path>] [--source <id>] [--merge ask|never] [--again]
@@ -50,7 +67,7 @@ Anywhere:
   serve                          run the server in the foreground
   service install|uninstall      keep the server up across reboots`
 
-const ISSUE_COMMANDS = new Set(['start', 'status', 'run', 'update', 'ask', 'answer', 'close', 'finding', 'pr', 'gate', 'risk', 'wait'])
+const ISSUE_COMMANDS = new Set(['start', 'status', 'run', 'update', 'ask', 'answer', 'close', 'finding', 'pr', 'gate', 'risk', 'wait', 'evidence', 'preview'])
 
 class UsageError extends Error {}
 
@@ -315,10 +332,9 @@ async function main(argv: string[]) {
 			if (!values.stage) throw new UsageError('run: --stage is required')
 			const context = readFile(str(values['context-file']), '--context-file')
 			// A review of the PR reviews the commit this worktree is on, unless told another.
-			const head =
-				values.head ?? (values.stage === 'review' && values.on !== 'plan' ? sh(['git', 'rev-parse', 'HEAD']).out || undefined : undefined)
+			const reviewed = values.head ?? (values.stage === 'review' && values.on !== 'plan' ? head() : undefined)
 			await ensureServer()
-			return print(withBriefFile(await call('POST', '/api/issue/run', { stage: values.stage, on: values.on, context, head, fallback: values.fallback })))
+			return print(withBriefFile(await call('POST', '/api/issue/run', { stage: values.stage, on: values.on, context, head: reviewed, fallback: values.fallback })))
 		}
 		case 'update': {
 			const { values } = args(rest, { kind: { type: 'string' }, title: { type: 'string' }, pr: { type: 'string' }, merge: { type: 'string' } })
@@ -400,6 +416,12 @@ async function main(argv: string[]) {
 		case 'pr':
 			await ensureServer()
 			return print(await prCommand(rest))
+		case 'evidence':
+			await ensureServer()
+			return print(await evidenceCommand(rest))
+		case 'preview':
+			await ensureServer()
+			return print(await previewCommand(rest))
 		case 'gate': {
 			await ensureServer()
 			return print((await sync()).gate)
@@ -475,12 +497,14 @@ async function prCommand(argv: string[]) {
 			if (reviewers.length) await gh.addReviewers(String(plan.url), reviewers)
 			return call('POST', '/api/issue/pr/written', { action: 'requested', reviewers })
 		}
+		// The captures go up first, so the body that goes ready already shows them.
+		const evidence = await publishEvidence()
 		const plan = await call('POST', '/api/issue/pr/plan', { action: 'ready' })
 		const url = String(plan.url)
 		await gh.markReady(url)
 		await gh.setBody(url, withSections(await gh.prBody(url), String(plan.sections)))
 		await call('POST', '/api/issue/pr/written', { action: 'ready' })
-		return sync()
+		return { ...(await sync()), evidence }
 	}
 	if (action === 'reply') {
 		const { values, positionals } = args(rest, { fixed: { type: 'string' }, declined: { type: 'boolean' }, answered: { type: 'boolean' } })
@@ -526,6 +550,128 @@ async function prCommand(argv: string[]) {
 		return call('POST', '/api/issue/pr/written', { action: 'round', reviewers: again })
 	}
 	throw new UsageError('pr: sync, ready, reply, ignore or round')
+}
+
+const head = () => sh(['git', 'rev-parse', 'HEAD']).out || undefined
+const checkoutTop = () => sh(['git', 'rev-parse', '--show-toplevel']).out || process.cwd()
+
+/** Pushes the captures GitHub does not have yet. A push that fails is reported, never thrown: the captures
+ * stay on the page, and the PR's body says so. */
+async function publishEvidence() {
+	const plan = await call('POST', '/api/issue/evidence', { action: 'plan' })
+	const files = plan.files as { name: string; path: string }[]
+	if (!plan.unpublished) return { pushed: 0 }
+	try {
+		const { commit } = pushEvidence(process.cwd(), String(plan.ref), files, String(plan.message))
+		const base = repoWebBase(sh(['git', 'remote', 'get-url', 'origin']).out)
+		await call('POST', '/api/issue/evidence', { action: 'published', commit, files: files.map((f) => f.name), base: base ?? undefined })
+		return { pushed: Number(plan.unpublished), commit, ref: plan.ref }
+	} catch (error) {
+		const message = (error as Error).message
+		await call('POST', '/api/issue/report', { text: `Captures could not be pushed to GitHub, so they show on the page only: ${message}`.slice(0, 1900) })
+		return { pushed: 0, error: message }
+	}
+}
+
+async function evidenceCommand(argv: string[]) {
+	const [action, ...rest] = argv
+	if (action === 'list') return call('POST', '/api/issue/evidence', { action: 'list' })
+	if (action === 'add') {
+		const { values, positionals } = args(rest, { title: { type: 'string' }, label: { type: 'string' } })
+		const [file, ...words] = positionals
+		if (!file || !values.title) throw new UsageError('evidence add: give the file and --title <what it shows>')
+		const path = resolve(file)
+		if (!existsSync(path)) throw new UsageError(`evidence add: ${path} does not exist`)
+		const note = words.length ? await textOf(words) : undefined
+		let prepared: ReturnType<typeof prepare>
+		try {
+			prepared = prepare(path)
+		} catch (error) {
+			throw new UsageError(`evidence add: ${(error as Error).message}`)
+		}
+		try {
+			const added = await call('POST', '/api/issue/evidence', {
+				action: 'add',
+				path: prepared.file,
+				poster: prepared.poster,
+				clip: prepared.clip,
+				title: values.title,
+				label: values.label,
+				note: note || undefined,
+				head: head()
+			})
+			return { ...added, ...(prepared.warning && { warning: prepared.warning }) }
+		} finally {
+			prepared.cleanup()
+		}
+	}
+	if (action === 'remove') {
+		const { positionals } = args(rest, {})
+		if (!positionals[0]) throw new UsageError('evidence remove: give the id, as factory evidence list prints it')
+		return call('POST', '/api/issue/evidence', { action: 'remove', id: positionals[0] })
+	}
+	if (action === 'publish') {
+		const { values } = args(rest, { to: { type: 'string' } })
+		const pushed = await publishEvidence()
+		const status = await call('POST', '/api/issue/status', {})
+		const pr = (status.issue as { prUrl?: string }).prUrl
+		// The body holds what the reviewer reads first, so it is brought up to date even when nothing new was pushed.
+		if (pr) {
+			const plan = await call('POST', '/api/issue/pr/plan', { action: 'notes' })
+			await gh.setBody(pr, withSections(await gh.prBody(pr), String(plan.sections)))
+		}
+		let commented: string | undefined
+		if (values.to) {
+			const plan = await call('POST', '/api/issue/evidence', { action: 'comment', to: values.to, login: await gh.login() })
+			await gh.comment(String(plan.to), String(plan.body))
+			await call('POST', '/api/issue/evidence', { action: 'commented', to: values.to })
+			commented = String(plan.to)
+		}
+		return { ...pushed, prBody: pr ? 'updated' : 'no PR yet', ...(commented && { commented }) }
+	}
+	throw new UsageError('evidence: add, list, remove or publish')
+}
+
+async function previewCommand(argv: string[]) {
+	const [action, ...rest] = argv
+	const top = checkoutTop()
+	if (action === 'up') {
+		const { values } = args(rest, { apps: { type: 'string' }, url: { type: 'string', multiple: true } })
+		let urls: { name: string; url: string }[]
+		try {
+			urls = parseUrlFlags(values.url ?? [])
+		} catch (error) {
+			throw new UsageError((error as Error).message)
+		}
+		let warning = ''
+		if (!urls.length) {
+			if (!usesBuncargo(top)) {
+				throw new UsageError(
+					`preview up: ${top} has no dev.config.ts, so there is no buncargo run to start. Start the app as the repository's AGENTS.md says, then give each address: --url <name>=<url>`
+				)
+			}
+			const started = buncargoUp(top, str(values.apps))
+			urls = started.urls
+			warning = started.output
+			if (!urls.length) {
+				await call('POST', '/api/issue/preview', { state: 'failed', error: (warning || 'buncargo printed no URL').slice(0, 1900) })
+				throw new Error(`the dev environment did not start, and the page says so.\n${warning}`)
+			}
+		}
+		const result = await call('POST', '/api/issue/preview', { state: 'up', urls, head: head(), error: warning ? warning.slice(0, 1900) : undefined })
+		return { ...result, urls, ...(warning && { warning }) }
+	}
+	if (action === 'down') {
+		const stopped = usesBuncargo(top) ? buncargoDown(top) : { ok: true, output: '' }
+		const result = await call('POST', '/api/issue/preview', { state: 'down' })
+		return { ...result, ...(!stopped.ok && { warning: stopped.output }) }
+	}
+	if (action === 'failed') {
+		const reason = await textOf(rest)
+		if (!reason) throw new UsageError('preview failed: give the reason, or - to read it from stdin')
+		return call('POST', '/api/issue/preview', { state: 'failed', error: reason })
+	}
+	throw new UsageError('preview: up, down or failed')
 }
 
 /** A brief runs to a thousand words, and an orchestrator that retypes it into `delegate_task` can change it.

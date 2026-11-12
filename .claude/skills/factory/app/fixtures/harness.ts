@@ -7,8 +7,8 @@ import { startServer, type ServerOptions } from '../server.ts'
 
 export const FAKE_T3 = join(import.meta.dir, 'fake-t3.ts')
 export const FAKE_GH = join(import.meta.dir, 'fake-gh.ts')
-chmodSync(FAKE_T3, 0o755)
-chmodSync(FAKE_GH, 0o755)
+export const FAKE_BUNCARGO = join(import.meta.dir, 'fake-buncargo.ts')
+for (const fake of [FAKE_T3, FAKE_GH, FAKE_BUNCARGO]) chmodSync(fake, 0o755)
 
 export function freePort() {
 	const probe = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: () => new Response() })

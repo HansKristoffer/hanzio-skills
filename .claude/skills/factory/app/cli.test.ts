@@ -1,15 +1,15 @@
 // Runs the real CLI: it must start a server that outlives it, outside the caller's systemd scope,
 // and replace a server that runs other code. Uses a free port and a temp home, never 4400.
 import { afterAll, beforeAll, expect, test } from 'bun:test'
-import { cpSync, readFileSync, rmSync } from 'node:fs'
+import { cpSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { SKILL_DIR } from './env.ts'
-import { FAKE_T3, freePort, scratchRepo, tempDir } from './fixtures/harness.ts'
+import { FAKE_BUNCARGO, FAKE_T3, freePort, git, scratchRepo, tempDir } from './fixtures/harness.ts'
 
 const CLI = join(import.meta.dir, 'cli.ts')
 const dir = tempDir()
 const port = freePort()
-const { work } = scratchRepo(dir)
+const { work, bare } = scratchRepo(dir)
 const linuxSystemd =
 	process.platform === 'linux' &&
 	Bun.spawnSync(['systemctl', '--user', 'show-environment'], { stdout: 'ignore', stderr: 'ignore' }).exitCode === 0
@@ -113,3 +113,62 @@ test('a CLI from another folder uses the running server and warns, never replaci
 	expect(res.err).toContain('this CLI is version v3')
 	expect((await health())?.version).toBe('v2')
 }, 15_000)
+
+test('evidence add keeps a capture with its note and commit, and publish pushes it to a ref no branch lists', async () => {
+	const png = join(dir, 'orders.png')
+	writeFileSync(png, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64'))
+	const note = 'Three rows `selected` and $(echo nope)'
+	const added = cli(['evidence', 'add', png, '--title', 'Orders page', '--label', 'after', '-'], { FACTORY_VERSION: 'v2' }, { stdin: `${note}\n` })
+	expect(added.err).toBe('')
+	const item = JSON.parse(added.out).evidence
+	expect(item).toMatchObject({ kind: 'image', title: 'Orders page', label: 'after', note, head: git(work, 'rev-parse', 'HEAD') })
+	expect((await fetch(`http://127.0.0.1:${port}${item.url}`)).status).toBe(200)
+	expect(cli(['evidence', 'add', join(dir, 'missing.png'), '--title', 'x'], { FACTORY_VERSION: 'v2' }).err).toContain('does not exist')
+
+	const published = cli(['evidence', 'publish'], { FACTORY_VERSION: 'v2' })
+	expect(published.err).toBe('')
+	const result = JSON.parse(published.out)
+	expect(result).toMatchObject({ pushed: 1, ref: 'refs/factory/evidence/cli-thread', prBody: 'no PR yet' })
+	expect(git(bare, 'rev-parse', 'refs/factory/evidence/cli-thread')).toBe(result.commit)
+	expect(git(bare, 'branch', '--list')).not.toContain('evidence')
+	expect(JSON.parse(cli(['evidence', 'publish'], { FACTORY_VERSION: 'v2' }).out).pushed).toBe(0)
+	const listed = JSON.parse(cli(['evidence', 'list'], { FACTORY_VERSION: 'v2' }).out).evidence
+	expect(listed[0].pushed).toBe(true)
+}, 20_000)
+
+test('preview up starts the detached buncargo run in the checkout and puts its addresses on the page', async () => {
+	const log = join(dir, 'buncargo.log')
+	writeFileSync(log, '')
+	const env = { FACTORY_VERSION: 'v2', FACTORY_BUNCARGO: FAKE_BUNCARGO, FAKE_BUNCARGO_LOG: log }
+	const status = () => JSON.parse(cli(['status'], env).out).preview
+	const calls = () => readFileSync(log, 'utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line) as { args: string[]; cwd: string })
+
+	const without = cli(['preview', 'up'], env)
+	expect(without.code).toBe(1)
+	expect(without.err).toContain('has no dev.config.ts')
+	expect(without.err).toContain('--url <name>=<url>')
+	expect(JSON.parse(cli(['preview', 'up', '--url', 'web=http://localhost:9'], env).out).urls).toEqual([{ name: 'web', url: 'http://localhost:9' }])
+	expect(calls()).toEqual([])
+
+	writeFileSync(join(work, 'dev.config.ts'), 'export default {}\n')
+	const up = cli(['preview', 'up', '--apps', 'web'], env)
+	expect(up.err).toBe('')
+	expect(JSON.parse(up.out).urls).toEqual([
+		{ name: 'web', url: 'http://localhost:5173' },
+		{ name: 'shopify admin', url: 'https://admin.example.test/store' }
+	])
+	expect(calls().map((c) => c.args)).toEqual([['dev', '--detach', '--apps=web'], ['url']])
+	expect(calls()[0]!.cwd).toBe(work)
+	expect(status()).toMatchObject({ state: 'up', head: git(work, 'rev-parse', 'HEAD') })
+
+	const failed = cli(['preview', 'up'], { ...env, FAKE_BUNCARGO_FAIL: '1' })
+	expect(failed.code).toBe(1)
+	expect(failed.err).toContain('did not start')
+	expect(status()).toMatchObject({ state: 'failed' })
+	expect(status().error).toContain('port 3000 is held by another checkout')
+
+	expect(cli(['preview', 'down'], env).code).toBe(0)
+	expect(calls().at(-1)!.args).toEqual(['stop', '--all'])
+	expect(status().state).toBe('down')
+	rmSync(join(work, 'dev.config.ts'))
+}, 30_000)

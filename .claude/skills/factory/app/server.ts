@@ -2,8 +2,8 @@
 // shows it on a live page, builds each stage's brief, and sends the user's answers back to threads.
 // It starts no stage and moves no issue by itself: the orchestrator thread decides.
 import type { Server } from 'bun'
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { isAbsolute, join } from 'node:path'
 import { buildBrief, fenced, stageFile } from './brief.ts'
 import {
 	MAX_EVENT,
@@ -14,6 +14,7 @@ import {
 	settleDeliveries,
 	type DecisionRow,
 	type EventRow,
+	type EvidenceRow,
 	type CommentRow,
 	type FindingRow,
 	type IssueRow,
@@ -22,6 +23,7 @@ import {
 	type RunRow
 } from './db.ts'
 import { APP_DIR, appVersion, sh } from './env.ts'
+import { MAX_PUSH_BYTES, MIME, evidenceMarkdown, extOf, kindOf, publicEvidence, repoWebBase, type Preview, type PreviewUrl } from './evidence.ts'
 import { defaultRef, fetchDefault, freeBranch, readConfig, repoInfo, slugify, type ConfigRead } from './git.ts'
 import {
 	STAGES,
@@ -84,6 +86,15 @@ const POKE_EVERY_MS = 30 * 60 * 1000
 const MAX_ROUNDS = 3
 const MAX_ROUND_PUSHES = 3
 const MERGE_OPTIONS = ['Merge', 'Do not merge'] as const
+const MAX_EVIDENCE_BYTES = 300 * 1024 * 1024
+const MAX_EVIDENCE = 40
+const MAX_PREVIEW_URLS = 12
+const PROBE_MS = 2500
+const REASK_MS = 10 * 60 * 1000
+const PREVIEW_START =
+	"Factory: the reviewer asked on the factory page for this issue's dev environment, to try the change. Run `factory preview up` in this worktree, with a 10-minute timeout, as the factory skill's **The reviewer's dev environment** says, and answer in one line. Change no code for it."
+const PREVIEW_STOP =
+	"Factory: the reviewer asked on the factory page to stop this issue's dev environment. Run `factory preview down`, and answer in one line."
 const ROUND_OPTIONS = ['Go on', 'Stop'] as const
 
 class HttpError extends Error {
@@ -218,6 +229,34 @@ export function startServer(options: ServerOptions) {
 		return null
 	}
 
+	// ---- evidence and the dev environment ----
+
+	/** A thread id is not always safe as a folder name. */
+	const folderOf = (issueId: string) => issueId.replace(/[^\w-]/g, '_')
+	const evidenceDir = (issueId: string) => join(options.home, 'evidence', folderOf(issueId))
+	const evidenceRows = (id: string) =>
+		db.query('select * from evidence where issue_id = $id order by created_at, rowid').all({ id }) as EvidenceRow[]
+	/** The PR's own address is the surest base for GitHub's URLs; a push before the PR existed kept the remote's. */
+	const evidenceOf = (id: string) => {
+		const base = repoWebBase(getIssue(id)?.pr_url)
+		return evidenceRows(id).map((row) => publicEvidence(row, folderOf(id), base))
+	}
+	const filesOf = (row: EvidenceRow) => [row.file, row.poster, row.clip].filter((name): name is string => !!name)
+	const previewOf = (issue: IssueRow) => (issue.preview ? (JSON.parse(issue.preview) as Preview) : null)
+
+	function dropEvidence(row: EvidenceRow) {
+		for (const name of filesOf(row)) rmSync(join(evidenceDir(row.issue_id), name), { force: true })
+		db.query('delete from evidence where id = $id').run({ id: row.id })
+	}
+
+	/** Folders whose rows were pruned with their issue, or lost to a crash between the copy and the insert. */
+	function sweepEvidence() {
+		const root = join(options.home, 'evidence')
+		if (!existsSync(root)) return
+		const kept = new Set((db.query('select distinct issue_id from evidence').all() as { issue_id: string }[]).map((r) => folderOf(r.issue_id)))
+		for (const folder of readdirSync(root)) if (!kept.has(folder)) rmSync(join(root, folder), { recursive: true, force: true })
+	}
+
 	const publicFinding = (f: FindingRow) => ({
 		id: f.id,
 		subject: f.subject,
@@ -289,6 +328,8 @@ export function startServer(options: ServerOptions) {
 			lastEvent: lastEvent(i.id),
 			decisions: decisionsOf(i.id).filter(waits).map(publicDecision),
 			waiting: waitingOf(i),
+			captures: evidenceRows(i.id).length,
+			preview: previewOf(i)?.state ?? null,
 			/** The stages that have had a run, so the page can tell a skipped stage from a finished one. */
 			ran: [...new Set(runs.map((r) => r.stage))],
 			run: running ? { stage: running.stage, subject: running.subject, model: running.model, startedAt: running.started_at } : null
@@ -498,6 +539,8 @@ export function startServer(options: ServerOptions) {
 			mergeHeld: decisions.some((d) => d.answer === null),
 			settings: parseResolved(issue).settings,
 			findings: findingsOf(issue.id).map(publicFinding),
+			evidence: evidenceOf(issue.id),
+			preview: previewOf(issue),
 			warnings: warningsOf(issue),
 			pr: issue.pr_state ? JSON.parse(issue.pr_state) : null,
 			gate: gateOf(issue),
@@ -1414,13 +1457,17 @@ export function startServer(options: ServerOptions) {
 		const implement = latestResult(issue.id, 'implement')?.result as
 			| { decisions?: { decision: string; confidence: string }[]; notChecked?: string[] }
 			| undefined
+		const built = latestResult(issue.id, 'implement')?.result as { media?: string; tryIt?: string } | undefined
 		const review = latestResult(issue.id, 'review', 'pr')?.result as { risk?: { focus?: string[] } } | undefined
+		const shown = evidenceMarkdown(evidenceOf(issue.id)) || built?.media?.trim()
 		const order = ['low', 'medium', 'high']
 		const decisions = [...(implement?.decisions ?? [])].sort((a, b) => order.indexOf(a.confidence) - order.indexOf(b.confidence))
 		const list = (rows: string[]) => (rows.length ? rows.map((r) => `- ${r}`).join('\n') : '- Nothing')
 		return [
 			'<!-- factory:review-notes -->',
 			'## For the reviewer',
+			...(shown ? ['### What it looks like', shown] : []),
+			...(built?.tryIt?.trim() ? ['### Try it', built.tryIt.trim()] : []),
 			'### Decisions the issue left open, least confident first',
 			list(decisions.map((d) => `(${d.confidence}) ${d.decision}`)),
 			'### Not checked',
@@ -1433,12 +1480,12 @@ export function startServer(options: ServerOptions) {
 
 	/** Tells the CLI what to write on GitHub. The CLI writes it in the thread, then reports with `written`. */
 	function prPlan(issue: IssueRow, body: Record<string, unknown>) {
-		const action = oneOf(body.action, ['ready', 'request', 'reply', 'round'] as const, 'action')
+		const action = oneOf(body.action, ['ready', 'notes', 'request', 'reply', 'round'] as const, 'action')
 		const url = issue.pr_url ?? fail(409, 'this issue has no PR yet: run factory update --pr <url>')
 		const pr = issue.pr_state ? (JSON.parse(issue.pr_state) as PrState) : null
 		const who = text(body.login, 'login', { max: 100 }) ?? 'the maintainer'
 		const marker = MARKER(issue.id)
-		if (action === 'ready') return { url, sections: reviewSections(issue) }
+		if (action === 'ready' || action === 'notes') return { url, sections: reviewSections(issue) }
 		if (!pr) return fail(409, 'the PR was never synced: run factory pr sync')
 		if (action === 'request') {
 			const settings = parseResolved(issue).settings
@@ -1618,6 +1665,199 @@ export function startServer(options: ServerOptions) {
 		addEvent(issue.id, 'closed', summary)
 	}
 
+	// ---- evidence and the dev environment: writes ----
+
+	function issueEvidence(issue: IssueRow, body: Record<string, unknown>) {
+		const action = oneOf(body.action, ['add', 'remove', 'list', 'plan', 'published', 'comment', 'commented'] as const, 'action')
+		const rows = evidenceRows(issue.id)
+		if (action === 'list') return { evidence: evidenceOf(issue.id), url: pageUrl(issue.id) }
+		if (action === 'add') {
+			const source = (name: string, required = false) => {
+				const path = text(body[name], name, { required, max: 4000 })
+				if (!path) return null
+				if (!isAbsolute(path) || !existsSync(path) || !statSync(path).isFile()) fail(400, `${name}: ${path} is not a file`)
+				return path
+			}
+			const path = source('path', true)!
+			const kind = kindOf(path) ?? fail(400, `path: ${path} is not an image or a video`)
+			const bytes = statSync(path).size
+			if (bytes > MAX_EVIDENCE_BYTES) {
+				fail(400, `path: ${path} is ${Math.round(bytes / 1024 / 1024)} MB, the limit is ${MAX_EVIDENCE_BYTES / 1024 / 1024} MB`)
+			}
+			const title = text(body.title, 'title', { required: true, max: 200 })!.replace(/\s+/g, ' ').trim()
+			const label = body.label === undefined || body.label === null ? null : oneOf(body.label, ['before', 'after'] as const, 'label')
+			const note = text(body.note, 'note', { max: 2000 }) ?? null
+			const head = text(body.head, 'head', { max: 64 }) ?? null
+			const poster = kind === 'video' ? source('poster') : null
+			const clip = kind === 'video' ? source('clip') : null
+			// A capture under the same title and label is a newer take of the same thing.
+			const replaced = rows.filter((row) => row.title === title && row.label === label)
+			if (rows.length - replaced.length >= MAX_EVIDENCE) fail(409, `this issue has ${MAX_EVIDENCE} captures already: remove one first`)
+			const id = randomId('e')
+			const dir = evidenceDir(issue.id)
+			mkdirSync(dir, { recursive: true })
+			const keep = (from: string | null, suffix: string) => {
+				if (!from) return null
+				const name = `${id}${suffix}.${extOf(from)}`
+				copyFileSync(from, join(dir, name))
+				return name
+			}
+			const names = { file: keep(path, '')!, poster: keep(poster, '-poster'), clip: keep(clip, '-clip') }
+			for (const row of replaced) dropEvidence(row)
+			db.query(
+				`insert into evidence (id, issue_id, kind, title, label, note, file, poster, clip, bytes, head, created_at)
+				values ($id, $issue, $kind, $title, $label, $note, $file, $poster, $clip, $bytes, $head, $now)`
+			).run({ id, issue: issue.id, kind, title, label, note, ...names, bytes, head, now: Date.now() })
+			addEvent(issue.id, 'evidence', `Capture ${replaced.length ? 'replaced' : 'added'}: ${title}${label ? ` (${label})` : ''}`)
+			return { evidence: evidenceOf(issue.id).find((e) => e.id === id), url: pageUrl(issue.id) }
+		}
+		if (action === 'remove') {
+			const id = text(body.id, 'id', { required: true })!
+			const row = rows.find((r) => r.id === id) ?? fail(404, `no capture ${id} on this issue; the ids are in factory evidence list`)
+			dropEvidence(row)
+			addEvent(issue.id, 'evidence', `Capture removed: ${row.title}${row.label ? ` (${row.label})` : ''}`)
+			return { ok: true }
+		}
+		if (action === 'plan') {
+			const dir = evidenceDir(issue.id)
+			const files = rows.flatMap((row) =>
+				filesOf(row)
+					.map((name) => ({ name, path: join(dir, name) }))
+					.filter((file) => statSync(file.path).size <= MAX_PUSH_BYTES)
+			)
+			return {
+				ref: `refs/factory/evidence/${folderOf(issue.id)}`,
+				files,
+				unpublished: rows.filter((row) => !row.published).length,
+				message: `Evidence for ${issue.title}`,
+				prUrl: issue.pr_url
+			}
+		}
+		if (action === 'published') {
+			const commit = text(body.commit, 'commit', { required: true, max: 64 })!
+			if (!/^[0-9a-f]{7,64}$/.test(commit)) fail(400, `commit: ${commit} is not a commit id`)
+			const pushed = new Set(Array.isArray(body.files) ? (body.files as unknown[]).filter((n): n is string => typeof n === 'string') : [])
+			const base = repoWebBase(text(body.base, 'base', { max: 500 }))
+			for (const row of rows) {
+				const published = { base, commit, files: filesOf(row).filter((name) => pushed.has(name)) }
+				db.query('update evidence set published = $published where id = $id').run({ published: JSON.stringify(published), id: row.id })
+			}
+			addEvent(issue.id, 'evidence', `${rows.length} capture${rows.length === 1 ? '' : 's'} pushed to GitHub at ${commit.slice(0, 7)}`)
+			return { ok: true, evidence: evidenceOf(issue.id) }
+		}
+		const to = text(body.to, 'to', { required: true, max: 500 })!
+		if (!/^https:\/\/[^/\s]+\/[^/\s]+\/[^/\s]+\/(issues|pull)\/\d+$/.test(to)) fail(400, `to: ${to} is not an issue or pull request URL`)
+		if (action === 'commented') {
+			addEvent(issue.id, 'evidence', `Captures posted to ${to}`)
+			return { ok: true }
+		}
+		const onGithub = evidenceOf(issue.id).filter((e) => e.github?.url || e.github?.clip || e.github?.poster)
+		if (!onGithub.length) fail(409, 'no capture is on GitHub yet: run factory evidence publish first')
+		const who = text(body.login, 'login', { max: 100 }) ?? 'the maintainer'
+		const intro = `What was built for this${issue.pr_url ? `, in ${issue.pr_url}` : ''}:`
+		return { to, body: [noteFor(issue, who), intro, evidenceMarkdown(onGithub), MARKER(issue.id)].join('\n\n') }
+	}
+
+	function setPreview(issueId: string, preview: Preview | null) {
+		db.query('update issues set preview = $preview where id = $id').run({ preview: preview ? JSON.stringify(preview) : null, id: issueId })
+		emit(issueId)
+	}
+
+	/** What the thread says about the dev environment it started or stopped. */
+	function issuePreview(issue: IssueRow, body: Record<string, unknown>) {
+		const state = oneOf(body.state, ['up', 'down', 'failed'] as const, 'state')
+		const error = text(body.error, 'error', { max: MAX_EVENT }) ?? null
+		if (state === 'failed' && !error) fail(400, 'error: say why it did not start')
+		// Closing an issue stops its dev environment whether or not one ran: nothing to record when none did.
+		const before = previewOf(issue)
+		if (state === 'down' && (!before || before.state === 'down')) return { ok: true, url: pageUrl(issue.id) }
+		let urls: PreviewUrl[] = []
+		if (state === 'up') {
+			if (!Array.isArray(body.urls) || !body.urls.length) fail(400, 'urls: give at least one')
+			urls = (body.urls as unknown[]).slice(0, MAX_PREVIEW_URLS).map((entry, n) => {
+				const given = (entry ?? {}) as Record<string, unknown>
+				const url = text(given.url, `urls[${n}].url`, { required: true, max: 500 })!
+				if (!/^https?:\/\/\S+$/.test(url)) fail(400, `urls[${n}].url: ${url} is not an http URL`)
+				return { name: text(given.name, `urls[${n}].name`, { required: true, max: 60 })!, url }
+			})
+		}
+		setPreview(issue.id, { state, urls, head: text(body.head, 'head', { max: 64 }) ?? null, error, at: Date.now() })
+		const said =
+			state === 'up'
+				? `Dev environment up: ${urls.map((u) => u.name).join(', ')}${error ? ' (not every app came up)' : ''}`
+				: state === 'down'
+					? 'Dev environment stopped'
+					: `Dev environment did not start: ${error}`
+		addEvent(issue.id, 'preview', said)
+		return { ok: true, url: pageUrl(issue.id) }
+	}
+
+	/** The page's ask. The thread starts and stops the dev environment, since it has the checkout, the
+	 * project's environment and an agent to fix what does not start; the service only passes the ask on. */
+	async function pagePreview(issueId: string, body: Record<string, unknown>) {
+		const issue = getIssue(issueId) ?? fail(404, `no issue ${issueId}`)
+		if (issue.state !== 'open') fail(409, `issue ${issue.id} is ${issue.state}, and its thread no longer works on it`)
+		const action = oneOf(body.action, ['start', 'stop'] as const, 'action')
+		const before = previewOf(issue)
+		const asking = action === 'start' ? 'requested' : 'stopping'
+		// A second click while the thread still works on the first asks for nothing new.
+		if (before?.state === asking && Date.now() - before.at < REASK_MS) return { ok: true, preview: before }
+		if (!(await threadShow(issue.id))) fail(409, "T3 Code cannot find this issue's thread, so nothing here can start its dev environment")
+		setPreview(issue.id, { state: asking, urls: action === 'stop' ? (before?.urls ?? []) : [], head: before?.head ?? null, error: null, at: Date.now() })
+		try {
+			await threadSend(issue.id, action === 'start' ? PREVIEW_START : PREVIEW_STOP)
+		} catch (error) {
+			setPreview(issue.id, before)
+			return fail(502, `could not reach the thread: ${(error as Error).message}`)
+		}
+		addEvent(issue.id, 'preview', action === 'start' ? 'Dev environment asked for on the page' : 'Asked on the page to stop the dev environment')
+		return { ok: true, preview: previewOf(getIssue(issue.id)!) }
+	}
+
+	/** Whether each URL of a running dev environment answers, so the page never offers a dead link as live. */
+	async function probePreview(issueId: string) {
+		const issue = getIssue(issueId) ?? fail(404, `no issue ${issueId}`)
+		const preview = previewOf(issue)
+		if (preview?.state !== 'up') return { urls: [] }
+		const urls = await Promise.all(
+			preview.urls.map(async (entry) => {
+				try {
+					// Any answer counts, a 404 or a self-signed certificate included: the question is whether something listens.
+					// `fetch` alone is this server's own request handler, further down.
+					await globalThis.fetch(entry.url, { redirect: 'manual', signal: AbortSignal.timeout(PROBE_MS), tls: { rejectUnauthorized: false } })
+					return { ...entry, ok: true }
+				} catch {
+					return { ...entry, ok: false }
+				}
+			})
+		)
+		return { urls }
+	}
+
+	function serveEvidence(pathname: string) {
+		const missing = () => new Response('No such capture', { status: 404 })
+		let parts: string[]
+		try {
+			parts = pathname.split('/').filter(Boolean).map(decodeURIComponent)
+		} catch {
+			return missing()
+		}
+		const [, folder, name] = parts
+		if (!folder || !name) return missing()
+		// Only a name the database holds for this issue is ever joined to a path.
+		const owners = db.query('select issue_id from evidence where file = $name or poster = $name or clip = $name').all({ name }) as { issue_id: string }[]
+		if (!owners.some((row) => folderOf(row.issue_id) === folder)) return missing()
+		const path = join(options.home, 'evidence', folder, name)
+		if (!existsSync(path)) return missing()
+		return new Response(Bun.file(path), {
+			headers: {
+				'content-type': MIME[extOf(name)] ?? 'application/octet-stream',
+				'cache-control': 'private, max-age=31536000, immutable',
+				'x-content-type-options': 'nosniff'
+			}
+		})
+	}
+
 	// ---- HTTP ----
 
 	async function route(req: Request, url: URL, loopback: boolean): Promise<unknown> {
@@ -1654,6 +1894,9 @@ export function startServer(options: ServerOptions) {
 				rounds: db.query('select * from pr_rounds where issue_id = $id order by n').all({ id: issue.id })
 			}
 		}
+		if (method === 'GET' && parts[0] === 'api' && parts[1] === 'issues' && parts[3] === 'preview' && parts[2] && parts.length === 4) {
+			return probePreview(decodeURIComponent(parts[2]))
+		}
 		if (method === 'GET' && url.pathname === '/api/settings') return settingsView()
 		if (method === 'GET' && url.pathname === '/api/history') {
 			const days = Number(url.searchParams.get('days') ?? 7)
@@ -1680,10 +1923,16 @@ export function startServer(options: ServerOptions) {
 			local()
 			const input = await body()
 			if (parts[2] === 'start') return issueStart(req, input)
-			const issue = parts[2] === 'status' ? (getIssue(thread(req)) ?? fail(404, `no factory issue for thread ${thread(req)}; run factory start first`)) : openIssueOf(req)
+			// A closed issue still answers `status`, and still hears that its dev environment was stopped.
+			const anyState = parts[2] === 'status' || (parts[2] === 'preview' && input.state === 'down')
+			const issue = anyState ? (getIssue(thread(req)) ?? fail(404, `no factory issue for thread ${thread(req)}; run factory start first`)) : openIssueOf(req)
 			switch (parts[2]) {
 				case 'status':
 					return issueStatus(issue)
+				case 'evidence':
+					return issueEvidence(issue, input)
+				case 'preview':
+					return issuePreview(issue, input)
 				case 'update':
 					return issueUpdate(issue, input)
 				case 'run':
@@ -1730,6 +1979,9 @@ export function startServer(options: ServerOptions) {
 		if (method === 'POST' && parts[0] === 'api' && parts[1] === 'issues' && parts[3] === 'drop' && parts[2]) {
 			return dropIssue(decodeURIComponent(parts[2]), await body())
 		}
+		if (method === 'POST' && parts[0] === 'api' && parts[1] === 'issues' && parts[3] === 'preview' && parts[2]) {
+			return pagePreview(decodeURIComponent(parts[2]), await body())
+		}
 		if (method === 'POST' && parts[0] === 'api' && parts[1] === 'issues' && parts[3] === 'deliver' && parts[2]) {
 			const issue = getIssue(decodeURIComponent(parts[2])) ?? fail(404, `no issue ${parts[2]}`)
 			return deliver(issue.id)
@@ -1763,6 +2015,7 @@ export function startServer(options: ServerOptions) {
 		if (req.method === 'GET' && url.pathname === '/') {
 			return new Response(page, { headers: { 'content-type': 'text/html; charset=utf-8' } })
 		}
+		if (req.method === 'GET' && url.pathname.startsWith('/evidence/')) return serveEvidence(url.pathname)
 		if (req.method === 'GET' && url.pathname === '/api/stream') {
 			server.timeout(req, 0)
 			let controller: ReadableStreamDefaultController<Uint8Array>
@@ -1826,6 +2079,7 @@ export function startServer(options: ServerOptions) {
 		return true
 	}
 
+	sweepEvidence()
 	listen('127.0.0.1')
 	if (options.tailnet) addTailnet(options.tailnet)
 

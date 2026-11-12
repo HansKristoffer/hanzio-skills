@@ -98,8 +98,9 @@ Read [references/plan-flow.md](references/plan-flow.md) and follow it: a plan ru
 2. With `reviewRounds` above 0, pull the PR branch here and run a review of its head.
 3. An `important` finding starts a new implement run. The service lists every open finding with its id, nits included, and the implementer reports each as `fixed` or `declined`. The next review covers only the new commits, sees every earlier finding with its outcome, and can uphold a decline. Stop after `reviewRounds` rounds.
 4. A review with only `nit` findings needs no run: fix them yourself, in this worktree, on the PR branch, and record each with `factory finding <id> --fixed <commit>`. Keep `pre-existing` findings for step 9.
+5. Check the captures: the screenshots and videos the reviewer sees on the page and in the PR. `factory status` lists them under `evidence`, each with the commit it shows, and the implement result's `media` says what was captured and why. A feature a person can see with nothing captured, or a capture older than a commit that changed what it shows, is one more implement run with that in `--context-file`. A bug fix needs none.
 
-**Done when** the last review of the PR's current head has no `important` finding, or the rounds are used up (then the gate holds the merge until a `merge` decision on that head is answered Merge).
+**Done when** the last review of the PR's current head has no `important` finding, or the rounds are used up (then the gate holds the merge until a `merge` decision on that head is answered Merge), and the captures show the head's behavior.
 
 ## 8. The review on GitHub, then land
 
@@ -109,10 +110,23 @@ Read [references/review-loop.md](references/review-loop.md) and follow it: the P
 
 ## 9. Close and write back
 
-1. Write the closing overview to a temp file (the format is in `references/land.md`), then `factory close --outcome shipped --deploy verified|unverified|none --report-file /tmp/<file> -` with one line on stdin.
-2. Each `pre-existing` finding and each `later` slice of the plan becomes a GitHub issue: `gh issue create` with a title that names the problem on its own and a line saying the factory filed it, then `factory finding <id> --filed <url>` for a finding. Never add the factory's intake label; labelling it is the user's approval.
-3. With a tracker named, write the outcome back: resolved when merged, the PR link otherwise, the reason when stopped.
-4. An issue that stops without a PR closes with its outcome (`not-a-bug`, `already-fixed`, `duplicate`, `dropped`) and one comment on the source issue saying why.
-5. Stop every server, browser tab and background job this thread started, and unwatch the PR.
+1. While the issue is still open, stop the reviewer's dev environment (`factory preview down`), and for a shipped issue that came from a GitHub issue and has captures, post them there as one comment, so the person who asked sees what was built: `factory evidence publish --to <the issue's URL>`.
+2. Write the closing overview to a temp file (the format is in `references/land.md`), then `factory close --outcome shipped --deploy verified|unverified|none --report-file /tmp/<file> -` with one line on stdin.
+3. Each `pre-existing` finding and each `later` slice of the plan becomes a GitHub issue: `gh issue create` with a title that names the problem on its own and a line saying the factory filed it, then `factory finding <id> --filed <url>` for a finding. Never add the factory's intake label; labelling it is the user's approval.
+4. With a tracker named, write the outcome back: resolved when merged, the PR link otherwise, the reason when stopped.
+5. An issue that stops without a PR closes with its outcome (`not-a-bug`, `already-fixed`, `duplicate`, `dropped`) and one comment on the source issue saying why.
+6. Stop every server, browser tab and background job this thread started, and unwatch the PR.
 
 **Done when** `factory status` shows the issue `shipped` or `closed`, and nothing this thread started still runs.
+
+## The reviewer's dev environment
+
+The issue's page has a button that asks this thread to start the app, so the reviewer can try the change. The ask arrives as a message that starts with `Factory: the reviewer asked`, at any stage, and needs no `factory status` first.
+
+- **Start:** make sure this worktree is on the PR's head, then `factory preview up`, with a 10-minute timeout. In a checkout with a `dev.config.ts` it runs buncargo's detached run, which outlives your turn, and puts every address `bunx buncargo url` prints on the page. Anywhere else, start the app as the repository's `AGENTS.md` says, in a way that outlives your turn, and register it: `factory preview up --url <name>=<url>`, with an address the reviewer's own machine can open.
+- **It did not start:** fix what the output names when that is setup (dependencies not installed, a missing local file the repository documents) and run it once more. Otherwise `factory preview failed -` with the reason on stdin. Change no code for it.
+- **Stop:** `factory preview down`.
+
+It stays up between your turns until the reviewer stops it or the issue closes (step 9), so it is the one thing you started that you leave running. After a push, an environment that does not reload by itself is started again with `factory preview up`.
+
+**Done when** the page shows the addresses, or the reason it did not start.

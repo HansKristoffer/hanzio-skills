@@ -218,6 +218,45 @@
 	.tl > div:first-child { color: var(--ink); }
 	.tl time { display: block; }
 
+
+	/* What the reviewer looks at: captures, the dev environment, and what the implementer proved */
+	.shots { display: grid; gap: 24px; padding: 20px; }
+	.shots h3 { font-size: 14px; line-height: 20px; font-weight: 500; overflow-wrap: anywhere; }
+	.shots h3 + p { max-width: 72ch; margin-top: 2px; font-size: 13px; color: var(--ink2); overflow-wrap: anywhere; }
+	.shot-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 12px; margin-top: 12px; }
+	.shot-row.pair { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+	.shot { position: relative; display: block; width: 100%; padding: 0; border: 0; border-radius: 10px; background: var(--raised); box-shadow: 0 0 0 1px var(--line2); overflow: hidden; cursor: zoom-in; transition: box-shadow .15s var(--ease); }
+	.shot:hover { box-shadow: 0 0 0 1px var(--ink2); }
+	.shot img { display: block; width: 100%; aspect-ratio: 16 / 10; object-fit: cover; object-position: top center; }
+	.shot .blank { display: grid; place-items: center; aspect-ratio: 16 / 10; color: var(--muted); font-size: 13px; }
+	.tag { position: absolute; left: 8px; top: 8px; padding: 1px 8px; border-radius: 6px; background: var(--panel); color: var(--ink); font: 500 12px/18px var(--sans); box-shadow: 0 0 0 1px var(--line2); }
+	.play { position: absolute; left: 50%; top: 50%; display: grid; place-items: center; width: 48px; height: 48px; margin: -24px 0 0 -24px; border-radius: 50%; background: var(--ink); color: var(--bg); }
+	.play svg { width: 20px; height: 20px; margin-left: 2px; fill: currentColor; stroke: none; }
+	.shot-meta { margin-top: 6px; font: 12px/16px var(--mono); color: var(--muted); overflow-wrap: anywhere; }
+	.env { gap: 8px; }
+	.env i { width: 6px; height: 6px; border-radius: 50%; background: var(--passed); }
+	.env.ok i { background: var(--ok-dot); }
+	.env.dead i { background: var(--bad-dot); }
+	.body .tryit { max-width: 72ch; color: var(--ink2); white-space: pre-wrap; overflow-wrap: anywhere; }
+	.body .sub { font-size: 13px; line-height: 20px; font-weight: 500; }
+	.claims-head, .claim { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 4px 24px; padding: 12px 20px; }
+	.claims-head { padding-bottom: 8px; font-size: 12px; line-height: 16px; color: var(--muted); }
+	.claim { border-top: 1px solid var(--line); overflow-wrap: anywhere; }
+	.proof { font: 12px/18px var(--mono); color: var(--ink2); white-space: pre-wrap; }
+	.claims + .body { border-top: 1px solid var(--line); }
+	@container (max-width: 640px) {
+		.claims-head { display: none; }
+		.claim { grid-template-columns: minmax(0, 1fr); }
+	}
+	dialog.view { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; margin: 0; padding: 0; border: 0; background: var(--bg); color: var(--ink); }
+	dialog.view[open] { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
+	.view-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; min-height: 56px; padding: 8px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+	.view-bar strong { font-size: 15px; font-weight: 500; overflow-wrap: anywhere; }
+	.view-stage { display: grid; place-items: center; min-height: 0; padding: 16px; }
+	.view-stage img, .view-stage video { max-width: 100%; max-height: 100%; min-height: 0; border-radius: 8px; box-shadow: 0 0 0 1px var(--line2); background: var(--raised); object-fit: contain; }
+	.view-note { max-width: 80ch; margin: 0 auto; padding: 0 16px 16px; text-align: center; color: var(--ink2); overflow-wrap: anywhere; }
+	.view-note:empty { display: none; }
+
 	/* Settings */
 	.sgrid { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 32px; align-items: start; margin-top: 24px; }
 	.snav { position: sticky; top: 80px; display: grid; gap: 2px; }
@@ -304,7 +343,12 @@ const ICONS = {
 	back: '<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>',
 	pr: '<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><path d="M6 9v12"/>',
 	thread: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
-	source: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>'
+	source: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
+	play: '<path d="m7 4 13 8-13 8z"/>',
+	prev: '<path d="m15 18-6-6 6-6"/>',
+	next: '<path d="m9 18 6-6-6-6"/>',
+	close: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+	out: '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>'
 }
 const main = document.getElementById('main')
 let board = { issues: [], done: [], open: 0, needsYou: 0 }
@@ -377,6 +421,9 @@ const isUrl = (url) => !!url && /^https?:\/\//.test(url)
 const safeLink = (url, label) => (isUrl(url) ? h('a', { href: url, target: '_blank', rel: 'noreferrer' }, label) : null)
 const out = (url, label, name, cls = 'btn sm', title) => (isUrl(url) ? h('a', { class: cls, href: url, target: '_blank', rel: 'noreferrer', title }, icon(name), label) : null)
 const issueHref = (issue) => `#/issue/${encodeURIComponent(issue.id)}`
+const short = (sha) => (sha ? sha.slice(0, 7) : '')
+const sameCommit = (a, b) => !!a && !!b && (a.startsWith(b) || b.startsWith(a))
+const count = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
 const chip = (text, kind) => h('span', { class: `chip${kind ? ` ${kind}` : ''}` }, text)
 const field = (label, control, hint) => h('label', { class: 'field' }, h('span', { class: 'flabel' }, label), control, hint ? h('span', { class: 'fhint' }, hint) : null)
 const fold = (key, summary, ...body) => h('details', { open: opened.has(key), ontoggle: (e) => (e.target.open ? opened.add(key) : opened.delete(key)) }, h('summary', {}, summary), ...body)
@@ -466,6 +513,7 @@ function decisionCard(issue, d, own = false) {
 			h('span', { class: 'kind' }, d.provisional ? 'Provisional' : cap(d.kind)),
 			own ? null : h('a', { href: issueHref(issue) }, issue.title),
 			own ? null : h('span', {}, issue.repo),
+			!own && d.kind === 'merge' && issue.captures ? h('a', { href: issueHref(issue) }, `See what was built: ${count(issue.captures, 'capture')}`) : null,
 			when(d.askedAt)
 		),
 		h('p', { class: 'question' }, d.question),
@@ -519,7 +567,7 @@ function issueRow(i) {
 	return h('div', { class: 'lrow' },
 		h('div', { class: 'cell-main' },
 			h('a', { class: 'title', href: issueHref(i) }, i.title),
-			h('div', { class: 'meta' }, [i.repo, i.kind].filter(Boolean).join(' · ')),
+			h('div', { class: 'meta' }, dotted(i.repo, i.kind, i.captures ? count(i.captures, 'capture') : null, i.preview === 'up' ? 'dev environment up' : null)),
 			i.lastEvent ? h('div', { class: 'last' }, when(i.lastEvent.at), i.lastEvent.text) : null
 		),
 		h('div', { class: 'cell-track' }, track(i, s), h('span', { class: 'stage-name' }, cap(i.stage))),
@@ -628,6 +676,11 @@ async function drawIssue(id) {
 	const pending = data.decisions.filter((d) => d.answer === null || (d.answeredVia === 'page' && d.delivery !== 'sent'))
 	const status = statusOf({ ...i, decisions: pending, waiting: data.waiting, run: data.runs.findLast((r) => r.state === 'running') })
 	const section = (title, count, ...body) => [h('div', { class: 'sec' }, h('h2', {}, title), count ? h('span', { class: 'count' }, count) : null), ...body]
+	const result = (stage, subject = null) => data.runs.findLast((r) => r.stage === stage && r.subject === subject && r.result?.outcome === 'done')?.result.result
+	const built = result('implement')
+	const shots = data.evidence || []
+	if (data.preview?.state === 'up') probe(id)
+	else probes.delete(id)
 	render(
 		h('a', { class: 'back', href: i.state === 'open' ? '#/' : '#/done' }, icon('back'), i.state === 'open' ? 'Board' : 'Done'),
 		h('div', { class: 'ititle' },
@@ -654,6 +707,9 @@ async function drawIssue(id) {
 		h('div', { class: 'igrid' },
 			h('div', {},
 				data.report ? section('Closing report', null, h('pre', {}, data.report)) : null,
+				shots.length || built?.media ? section('What it looks like', shots.length, gallery(shots, built?.media, data.pr?.head)) : null,
+				(i.state === 'open' && (built || data.preview)) || data.preview?.state === 'up' ? section('Try it', null, previewPanel(i, data.preview, built?.tryIt, data.pr?.head)) : null,
+				built ? section('What was built', null, builtPanel(built, result('review', 'pr'))) : null,
 				data.pr ? section('Pull request', `#${data.pr.number}`, prPanel(data)) : null,
 				data.items?.length ? section('Review on GitHub', data.items.length, reviewItems(data.items)) : null,
 				data.findings?.length ? section('Internal review findings', data.findings.length, findingsList(data.findings)) : null,
@@ -667,6 +723,156 @@ async function drawIssue(id) {
 			),
 			h('div', {}, section('Timeline', null, h('div', { class: 'tl' }, ...data.events.slice().reverse().map((e) => h('div', {}, cap(e.text), h('time', {}, clock(e.at)))))))
 		)
+	)
+}
+
+/** The viewer sits outside <main>, so a live redraw never closes it or restarts a video. */
+const viewer = { el: null, items: [], at: 0 }
+function showViewer() {
+	const item = viewer.items[viewer.at]
+	const many = viewer.items.length > 1
+	const step = (by) => () => { viewer.at = (viewer.at + by + viewer.items.length) % viewer.items.length; showViewer() }
+	const stage = item.kind === 'video'
+		? h('video', { src: item.url, poster: item.poster, controls: true, autoplay: true, playsinline: true })
+		: h('img', { src: item.url, alt: item.label ? `${cap(item.label)}: ${item.title}` : item.title })
+	viewer.el.replaceChildren(
+		h('div', { class: 'view-bar' },
+			h('div', { class: 'row' }, h('strong', {}, item.title), item.label ? chip(cap(item.label)) : null, many ? h('span', { class: 'num' }, `${viewer.at + 1} / ${viewer.items.length}`) : null),
+			h('div', { class: 'row' },
+				many ? h('button', { class: 'btn sm', onclick: step(-1), title: 'Previous (left arrow)', 'aria-label': 'Previous' }, icon('prev')) : null,
+				many ? h('button', { class: 'btn sm', onclick: step(1), title: 'Next (right arrow)', 'aria-label': 'Next' }, icon('next')) : null,
+				out(new URL(item.url, location.href).href, 'Original', 'out'),
+				h('button', { class: 'btn sm', onclick: () => viewer.el.close(), 'aria-label': 'Close' }, icon('close'), 'Close')
+			)
+		),
+		h('div', { class: 'view-stage' }, stage),
+		h('p', { class: 'view-note' }, item.note || '')
+	)
+}
+function openViewer(items, at) {
+	if (!viewer.el) {
+		viewer.el = h('dialog', { class: 'view', 'aria-label': 'Capture', onkeydown: (e) => {
+			if (viewer.items.length < 2 || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return
+			// The arrows scrub a video that has the focus; they change capture everywhere else.
+			if (e.target.tagName === 'VIDEO') return
+			viewer.at = (viewer.at + (e.key === 'ArrowLeft' ? -1 : 1) + viewer.items.length) % viewer.items.length
+			showViewer()
+		}, onclose: () => viewer.el.replaceChildren() })
+		document.body.append(viewer.el)
+	}
+	viewer.items = items
+	viewer.at = at
+	showViewer()
+	viewer.el.showModal()
+}
+
+/** Captures under one title sit together; a before and an after sit side by side. */
+function gallery(shots, why, prHead) {
+	if (!shots.length) return h('div', { class: 'panel body' }, h('p', { class: 'tryit' }, why))
+	// Before comes first, so the arrows in the viewer flip between the two.
+	const rank = { before: 0, after: 1 }
+	const titles = [...new Set(shots.map((s) => s.title))]
+	const ordered = titles.flatMap((title) => shots.filter((s) => s.title === title).sort((a, b) => (rank[a.label] ?? 2) - (rank[b.label] ?? 2)))
+	const tile = (shot) => {
+		const still = shot.kind === 'video' ? shot.poster : shot.url
+		const name = `${shot.label ? `${cap(shot.label)}: ` : ''}${shot.title}`
+		return h('div', {},
+			h('button', { class: 'shot', onclick: () => openViewer(ordered, ordered.indexOf(shot)), 'aria-label': `${shot.kind === 'video' ? 'Play' : 'Open'} ${name}` },
+				still ? h('img', { src: still, alt: name, loading: 'lazy' }) : h('div', { class: 'blank' }, 'Video'),
+				shot.label ? h('span', { class: 'tag' }, cap(shot.label)) : null,
+				shot.kind === 'video' ? h('span', { class: 'play', 'aria-hidden': 'true' }, icon('play').firstChild) : null
+			),
+			h('div', { class: 'shot-meta' }, dotted(
+				shot.kind === 'video' ? 'video' : null,
+				shot.head ? `at ${short(shot.head)}${prHead && !sameCommit(shot.head, prHead) ? ', before the PR\'s last commit' : ''}` : null,
+				shot.github ? 'on GitHub' : 'on this page only'
+			))
+		)
+	}
+	return h('div', { class: 'panel shots' }, ...titles.map((title) => {
+		const mine = ordered.filter((s) => s.title === title)
+		const notes = [...new Set(mine.map((s) => s.note).filter(Boolean))]
+		const pair = mine.length === 2 && mine[0].label === 'before' && mine[1].label === 'after'
+		return h('div', {}, h('h3', {}, title), notes.length ? h('p', {}, notes.join(' ')) : null, h('div', { class: `shot-row${pair ? ' pair' : ''}` }, ...mine.map(tile)))
+	}))
+}
+
+/** Whether each address of a running dev environment answers, asked at most every 30 seconds. */
+const probes = new Map()
+async function probe(id) {
+	const last = probes.get(id)
+	if (last && Date.now() - last.at < 30000) return
+	probes.set(id, { at: Date.now(), ok: last ? last.ok : new Map() })
+	try {
+		const { urls } = await api('GET', `/api/issues/${encodeURIComponent(id)}/preview`)
+		const changed = !last || urls.some((u) => last.ok.get(u.url) !== u.ok)
+		probes.set(id, { at: Date.now(), ok: new Map(urls.map((u) => [u.url, u.ok])) })
+		if (changed && route().id === id) draw()
+	} catch {}
+}
+
+/** The dev environment runs in the issue's own checkout, so its thread starts and stops it when asked here. */
+function previewPanel(i, preview, tryIt, prHead) {
+	const error = h('p', { class: 'error' })
+	const ask = (action) => async (e) => {
+		e.target.disabled = true
+		error.textContent = ''
+		try { await api('POST', `/api/issues/${encodeURIComponent(i.id)}/preview`, { action }) } catch (err) { error.textContent = err.message; e.target.disabled = false }
+	}
+	// A closed issue's thread no longer works on it, so there is nobody to ask.
+	const live = i.state === 'open' && !i.threadGone
+	const start = (label) => live ? h('button', { class: 'btn primary', onclick: ask('start') }, label) : null
+	const thread = out(i.threadLink, 'Open the thread', 'thread', 'btn')
+	const state = preview ? preview.state : 'down'
+	const seen = probes.get(i.id)?.ok
+	const links = (preview?.urls || []).filter((u) => isUrl(u.url))
+	let parts
+	if (state === 'up') {
+		const dead = !!seen && links.length > 0 && links.every((u) => seen.get(u.url) === false)
+		const moved = prHead && preview.head && !sameCommit(preview.head, prHead)
+		parts = [
+			h('div', { class: 'row' },
+				...links.map((u, n) => h('a', { class: `btn env${n === 0 && !dead ? ' primary' : ''}${seen?.get(u.url) === true ? ' ok' : seen?.get(u.url) === false ? ' dead' : ''}`, href: u.url, target: '_blank', rel: 'noreferrer', title: seen?.get(u.url) === false ? 'Nothing answers here' : u.url }, h('i'), `Open ${u.name}`)),
+				dead ? start('Start it again') : live ? h('button', { class: 'btn quiet', onclick: ask('stop') }, 'Stop') : null
+			),
+			h('p', { class: 'meta' }, dead
+				? 'Nothing answers at these addresses any more. It was probably stopped.'
+				: dotted('Running', preview.head ? `on ${short(preview.head)}` : null, moved ? `the PR has moved to ${short(prHead)} since` : null, h('span', {}, 'started ', when(preview.at)))),
+			preview.error ? fold(`preview:${i.id}`, 'Not every app came up', h('pre', {}, preview.error)) : null
+		]
+	} else if (state === 'requested') {
+		parts = [h('div', { class: 'row' }, h('button', { class: 'btn primary', disabled: true }, 'Starting'), thread), h('p', { class: 'meta' }, 'The thread was asked to start it ', when(preview.at), '. The links show here when it is up.')]
+	} else if (state === 'stopping') {
+		parts = [h('div', { class: 'row' }, h('button', { class: 'btn', disabled: true }, 'Stopping'), thread), h('p', { class: 'meta' }, 'The thread was asked to stop it ', when(preview.at), '.')]
+	} else if (state === 'failed') {
+		parts = [h('div', { class: 'row' }, start('Try again'), thread), h('p', { class: 'notice bad', style: 'margin-top:0' }, 'It did not start.'), preview.error ? h('pre', {}, preview.error) : null]
+	} else {
+		parts = [h('div', { class: 'row' }, start('Start the dev environment')), h('p', { class: 'meta' }, i.threadGone ? 'T3 Code cannot find the thread that would start it.' : 'The issue\'s thread starts it in its own checkout, on the branch of the PR. It takes a minute or two.')]
+	}
+	return h('div', { class: 'panel body' }, ...parts, error, tryIt ? h('p', { class: 'tryit' }, tryIt) : null)
+}
+
+/** What the implementer says it proved, and what the reviewer model says to look at. */
+function builtPanel(built, reviewed) {
+	const list = (title, rows) => rows && rows.length ? h('div', {}, h('h3', { class: 'sub' }, title), h('ul', { class: 'plain' }, ...rows.map((r) => h('li', {}, r)))) : null
+	const order = ['low', 'medium', 'high']
+	const open = (built.decisions || []).slice().sort((a, b) => order.indexOf(a.confidence) - order.indexOf(b.confidence)).map((d) => `${d.decision} (${d.confidence} confidence)`)
+	const risk = reviewed?.risk
+	const rest = [
+		risk ? h('div', { class: 'row' }, chip(`${risk.door} door`, risk.door === 'one-way' ? 'warn' : ''), chip(`reaches the ${risk.reach}`, risk.reach === 'data' || risk.reach === 'app' ? 'warn' : '')) : null,
+		list('Where to look first', risk?.focus),
+		list('Not checked', built.notChecked),
+		list('Decided without you, least sure first', open),
+		list('Changed beyond what was asked', risk?.unrelated)
+	].filter(Boolean)
+	const claims = built.claims || []
+	return h('div', { class: 'panel' },
+		claims.length ? h('div', { class: 'claims' },
+			h('div', { class: 'claims-head' }, h('span', {}, 'Asked for'), h('span', {}, 'Proof')),
+			...claims.map((c) => h('div', { class: 'claim' }, h('div', {}, c.claim), h('div', { class: 'proof' }, c.evidence)))
+		) : null,
+		rest.length ? h('div', { class: 'body' }, ...rest) : null,
+		!claims.length && !rest.length ? h('div', { class: 'body' }, h('p', { class: 'muted' }, 'The implementer listed no claims')) : null
 	)
 }
 

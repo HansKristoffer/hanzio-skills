@@ -20,7 +20,7 @@ Read only the reference the current step needs:
 | Storyboard and building a composition | `references/motion.md` |
 | Music, sound effects, narration mix | `references/audio.md` |
 | The quality bar, the critic loop, delivering | `references/review.md` |
-| Recording the real product, demos, a chaptered written script | `references/walkthrough.md` |
+| Recording the real product, demos, a chaptered written script, a silent clip as proof for a pull request | `references/walkthrough.md` |
 
 ## Choose the mix
 
