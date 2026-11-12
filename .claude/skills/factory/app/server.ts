@@ -39,6 +39,7 @@ import { readPr, type RawPr } from './gh.ts'
 import {
 	MARKER,
 	blocksMerge,
+	checksDone,
 	computeGate,
 	fromPerson,
 	hiddenCount,
@@ -522,6 +523,28 @@ export function startServer(options: ServerOptions) {
 	function stageContext(issue: IssueRow, stage: DelegatedStage, subject: 'plan' | 'pr' | null, head: string | null) {
 		const parts: string[] = []
 		const json = (title: string, value: unknown) => `### ${title}\n\n\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\``
+		// What the user was asked, so a stage builds on their word, or on the recommendation while they have not answered.
+		const asked = decisionsOf(issue.id).filter((d) => d.kind === 'question')
+		const questions = asked.length
+			? `### Questions asked of the user\n\n${asked
+					.map(
+						(d) =>
+							`- ${d.question.replaceAll('\n', ' ')}\n  ${d.answer === null ? `Not answered yet. Build on the recommendation: ${d.recommendation}` : `Answered: ${d.answer}`}`
+					)
+					.join('\n')}\n\nAn answer is the user's word. Where one is not answered yet, build on its recommendation as part of the change itself; shape no commit around an answer that may differ.`
+			: null
+		// A run that ended early (a provider's limit, a crash) leaves its progress lines: the next run starts from them.
+		const before = runsOf(issue.id)
+			.filter((r) => r.stage === stage && r.subject === subject)
+			.at(-1)
+		if (before?.state === 'failed' && (!before.head || !head || sameCommit(before.head, head))) {
+			const lines = db.query(`select text from events where run_id = $run and kind = 'report' order by id`).all({ run: before.id }) as { text: string }[]
+			if (lines.length) {
+				parts.push(
+					`### An earlier run of this stage ended without a result\n\nIts progress lines. They are leads to check again, never results:\n\n${lines.map((l) => `- ${l.text.replaceAll('\n', ' ')}`).join('\n')}`
+				)
+			}
+		}
 		const research = latestResult(issue.id, 'research')
 		const plan = latestResult(issue.id, 'plan')
 		const findings = findingsOf(issue.id)
@@ -533,6 +556,7 @@ export function startServer(options: ServerOptions) {
 			const open = findings.filter((f) => f.subject === 'plan' && isOpenFinding(f))
 			const section = list('Review findings on the previous plan', open, 'Address each one in the new plan.')
 			if (section) parts.push(section)
+			if (questions) parts.push(questions)
 		}
 		if (stage === 'review' && subject === 'plan') {
 			if (plan) parts.push(json('The plan', plan.result))
@@ -547,6 +571,7 @@ export function startServer(options: ServerOptions) {
 		if (stage === 'implement') {
 			if (research) parts.push(json("Research's result", research.result))
 			if (plan) parts.push(json('The approved plan', plan.result))
+			if (questions) parts.push(questions)
 			if (issue.pr_url) parts.push(`### The PR\n\n${issue.pr_url}`)
 			const open = findings.filter((f) => f.subject === 'pr' && isOpenFinding(f))
 			const section = list(
@@ -588,10 +613,16 @@ export function startServer(options: ServerOptions) {
 			fail(400, "context: a review run takes no --context-file. The service writes a review's context, so the implementer's claims cannot reach it.")
 		}
 		const head = text(body.head, 'head', { max: 64 }) ?? null
+		const settings = parseResolved(issue).settings
+		const onFallback = !!body.fallback
+		if (onFallback && stage === 'land') fail(400, 'fallback: land runs in the orchestrator, which has no fallback')
+		const chosen = stage === 'land' ? null : stageTarget(settings, stage, onFallback)
+		if (stage !== 'land' && !chosen) {
+			fail(400, `fallback: the settings name no fallback for ${stage} (stages.${stage}.fallback). Ask a blocked decision instead.`)
+		}
 		clearWaiting(issue.id)
 		const id = randomId('r')
 		const now = Date.now()
-		const settings = parseResolved(issue).settings
 		const subjectOf = stage === 'review' ? (on ?? 'pr') : null
 		for (const old of runsOf(issue.id)) {
 			if (old.state === 'running' && old.stage === stage && old.subject === subjectOf) {
@@ -617,7 +648,7 @@ export function startServer(options: ServerOptions) {
 		}
 		const delegated = stage as DelegatedStage
 		const subject = delegated === 'review' ? (on ?? 'pr') : null
-		const target = stageTarget(settings, delegated)
+		const target = chosen!
 		const reviewHead = subject === 'pr' ? (head ?? (latestResult(issue.id, 'implement')?.result.commit as string | undefined) ?? null) : null
 		const context = [stageContext(issue, delegated, subject, reviewHead), extra?.trim() ? `### From the orchestrator\n\n${extra.trim()}` : '']
 			.filter(Boolean)
@@ -645,7 +676,7 @@ export function startServer(options: ServerOptions) {
 			issue: { title: issue.title, source: issue.source, body: issue.body }
 		})
 		const label = subject === 'plan' ? 'Plan review' : stage[0]!.toUpperCase() + stage.slice(1)
-		addEvent(issue.id, 'run', `${label} started on ${target.model}`, id)
+		addEvent(issue.id, 'run', `${label} started on ${target.model}${onFallback ? ', the fallback' : ''}`, id)
 		return { run: id, target, brief }
 	}
 
@@ -760,11 +791,18 @@ export function startServer(options: ServerOptions) {
 		if (!Array.isArray(options) || options.some((o) => typeof o !== 'string')) fail(400, 'options must be a list of labels')
 		let head: string | null = null
 		let round: number | null = null
+		let accepts = ''
 		if (kind === 'merge') {
 			// Decision 16: only the word Merge on the head the question names approves a merge.
 			head = text(body.head, 'head', { required: true, max: 64 })!
 			if ((options as string[]).length) fail(400, 'option: a merge decision always has the options Merge and Do not merge')
 			options = [...MERGE_OPTIONS]
+			const open = decisionsOf(issue.id).filter((d) => d.answer === null && d.provisional)
+			if (open.length) {
+				accepts = `Answering Merge also accepts the recommendation of each open question, which this head was built on:\n\n${open
+					.map((d) => `- ${d.question.replaceAll('\n', ' ')}\n  Recommendation: ${d.recommendation}`)
+					.join('\n')}`
+			}
 		}
 		if (body.round) {
 			if (kind !== 'blocked') fail(400, 'round: a question about going on past the round budget is a blocked decision')
@@ -781,7 +819,7 @@ export function startServer(options: ServerOptions) {
 			kind,
 			provisional: provisional ? 1 : 0,
 			question,
-			body: text(body.body, 'body') ?? null,
+			body: [text(body.body, 'body'), accepts].filter(Boolean).join('\n\n') || null,
 			recommendation,
 			options: JSON.stringify(options),
 			head,
@@ -799,6 +837,24 @@ export function startServer(options: ServerOptions) {
 		return decision
 	}
 
+	/** A head was built on the recommendation of every provisional question still open, so the answer Merge
+	 * on that head accepts them: the user says yes once, not once per question. */
+	function acceptWithMerge(decision: DecisionRow, answer: string, via: 'page' | 'thread') {
+		if (decision.kind !== 'merge' || answer !== 'Merge') return
+		const open = decisionsOf(decision.issue_id).filter((d) => d.answer === null && d.provisional && d.asked_at <= decision.asked_at)
+		const now = Date.now()
+		for (const d of open) {
+			db.query('update decisions set answer = $answer, answered_via = $via, delivery = $delivery, answered_at = $now where id = $id').run({
+				answer: d.recommendation,
+				via,
+				delivery: via === 'page' ? 'held' : null,
+				now,
+				id: d.id
+			})
+		}
+		if (open.length) addEvent(decision.issue_id, 'answer', `Accepted with the merge: ${open.map((d) => d.id).join(', ')}`)
+	}
+
 	async function issueAnswer(issue: IssueRow, body: Record<string, unknown>) {
 		const decision = decisionOf(text(body.decision, 'decision', { required: true })!, issue.id)
 		const answer = text(body.text, 'text', { required: true, max: MAX_EVENT })!
@@ -808,6 +864,7 @@ export function startServer(options: ServerOptions) {
 			id: decision.id
 		})
 		addEvent(issue.id, 'answer', `Answered in the thread: ${decision.question} → ${answer}`)
+		acceptWithMerge(decision, answer, 'thread')
 		await deliver(issue.id)
 		return { ok: true }
 	}
@@ -821,6 +878,7 @@ export function startServer(options: ServerOptions) {
 			`update decisions set answer = $answer, answered_via = 'page', delivery = 'held', answered_at = $now where id = $id`
 		).run({ answer, now: Date.now(), id: decisionId })
 		addEvent(issue.id, 'answer', `Answered on the page: ${decision.question} → ${answer}`)
+		acceptWithMerge(decision, answer, 'page')
 		return deliver(issue.id)
 	}
 
@@ -976,6 +1034,7 @@ export function startServer(options: ServerOptions) {
 		const title = text(body.title, 'title', { required: true, max: 300 })!
 		const issueBody = longText(body.body, 'body')
 		const source = text(body.source, 'source', { max: 500 })
+		const merge = body.merge === undefined ? null : oneOf(body.merge, ['ask', 'never'] as const, 'merge')
 		let info: { repo: string; root: string }
 		if (body.cwd !== undefined) {
 			if (!loopback) fail(403, 'cwd is accepted from this machine only')
@@ -1005,13 +1064,19 @@ export function startServer(options: ServerOptions) {
 		}
 		if (key) starting.add(key)
 		try {
-			return await startThread(info, title, issueBody, source)
+			return await startThread(info, title, issueBody, source, merge)
 		} finally {
 			if (key) starting.delete(key)
 		}
 	}
 
-	async function startThread(info: { repo: string; root: string }, title: string, issueBody?: string, source?: string) {
+	async function startThread(
+		info: { repo: string; root: string },
+		title: string,
+		issueBody?: string,
+		source?: string,
+		merge: 'ask' | 'never' | null = null
+	) {
 		const offline = !fetchDefault(info.root)
 		const { config, resolved } = resolveFor(info.root, info.repo, false)
 		const branch = freeBranch(info.root, slugify(title))
@@ -1035,8 +1100,8 @@ export function startServer(options: ServerOptions) {
 		const now = Date.now()
 		try {
 			db.query(
-				`insert into issues (id, title, body, repo, root, source, thread_link, settings, config_error, created_at, updated_at)
-				values ($id, $title, $body, $repo, $root, $source, $link, $settings, $error, $now, $now)
+				`insert into issues (id, title, body, repo, root, source, thread_link, settings, config_error, merge_cap, created_at, updated_at)
+				values ($id, $title, $body, $repo, $root, $source, $link, $settings, $error, $merge, $now, $now)
 				on conflict (id) do update set source = coalesce(excluded.source, source), body = coalesce(excluded.body, body),
 				thread_link = coalesce(excluded.thread_link, thread_link)`
 			).run({
@@ -1049,6 +1114,7 @@ export function startServer(options: ServerOptions) {
 				link,
 				settings: JSON.stringify(resolved),
 				error: config.error ?? null,
+				merge,
 				now
 			})
 		} catch (error) {
@@ -1293,6 +1359,10 @@ export function startServer(options: ServerOptions) {
 			).run({ state: JSON.stringify(pr), url: pr.url, id: issue.id })
 			if (by === 'thread') {
 				db.query('update issues set pr_synced_by_thread = $now, pr_pokes = 0, pr_poked_at = null where id = $id').run({ now, id: issue.id })
+				// The thread has now seen what it waited for, so the wait is over and nothing wakes it for it again.
+				const over =
+					(issue.waiting_on === 'checks' && checksDone(pr)) || (issue.waiting_on === 'bots' && pr.bots.every((b) => b.reviewedHead))
+				if (over) clearWaiting(issue.id)
 			}
 			// Decision 11: a round opens when a person's request first needs action, and counts its head changes.
 			const round = latestRound(issue.id)
@@ -1373,7 +1443,7 @@ export function startServer(options: ServerOptions) {
 		if (action === 'request') {
 			const settings = parseResolved(issue).settings
 			if (pr.draft) fail(409, 'the PR is still a draft: run factory pr ready first')
-			if (pr.checks.state !== 'passing') fail(409, `checks are ${pr.checks.state} on the head; request reviewers once they pass`)
+			if (!checksDone(pr)) fail(409, `checks are ${pr.checks.state} on the head; request reviewers once they pass`)
 			const missing = pr.bots.filter((b) => !b.reviewedHead)
 			if (missing.length) fail(409, `${missing.map((b) => b.login).join(', ')} has not reviewed the head yet`)
 			const botItems = loadItems(issue.id).filter(({ item, handling }) => needsAction(item, handling) && !fromPerson(item))
@@ -1474,12 +1544,12 @@ export function startServer(options: ServerOptions) {
 		return { ok: true }
 	}
 
-	/** Decision 8: while an issue waits, read its PR every few minutes and wake an idle thread that has work. */
+	/** Decision 8: read every open issue's PR every few minutes and wake an idle thread that has work. An issue
+	 * that waits is woken for anything it waits on. One that does not (it works, or a decision is open) is told
+	 * only that its PR was merged or closed, which a person can do at any moment and nothing else would report. */
 	async function reconcile(now = Date.now()) {
-		const waiting = db
-			.query(`select * from issues where state = 'open' and pr_url is not null and waiting_on in ('checks', 'bots', 'review', 'merge')`)
-			.all() as IssueRow[]
-		for (const issue of waiting) {
+		const withPr = db.query(`select * from issues where state = 'open' and pr_url is not null`).all() as IssueRow[]
+		for (const issue of withPr) {
 			let pr: PrState
 			try {
 				pr = storeSnapshot(issue, await readPr(issue.pr_url!), 'service')
@@ -1521,12 +1591,13 @@ export function startServer(options: ServerOptions) {
 	}
 
 	function wakeReasons(issue: IssueRow, pr: PrState) {
+		if (pr.state !== 'open') return [`the PR was ${pr.state}`]
+		if (!issue.waiting_on) return []
 		const reasons: string[] = []
-		if (pr.state !== 'open') reasons.push(`the PR was ${pr.state}`)
 		const acting = loadItems(issue.id).filter(({ item, handling }) => needsAction(item, handling))
 		if (acting.length) reasons.push(`${acting.length} review item(s) need action`)
 		if (pr.checks.state === 'failing') reasons.push(`checks failed: ${pr.checks.failing.join(', ')}`)
-		if (issue.waiting_on === 'checks' && pr.checks.state === 'passing') reasons.push('the checks pass')
+		if (issue.waiting_on === 'checks' && checksDone(pr)) reasons.push(pr.checks.state === 'absent' ? 'the repository runs no checks' : 'the checks pass')
 		if (issue.waiting_on === 'bots' && pr.bots.every((b) => b.reviewedHead)) reasons.push('the bots reviewed the head')
 		if (pr.state === 'open' && gateOf(issue).ready) reasons.push('the merge gate is ready')
 		return reasons

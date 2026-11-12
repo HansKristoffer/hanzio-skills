@@ -38,6 +38,7 @@ factory start --title "<title>" --body-file /tmp/<file> --source "<the item's UR
 - `configError`: the project's `factory.config.yaml` is broken and was left out. Ask a `blocked` decision that quotes the error (step 3); when the user says it is fixed, run `factory start` again.
 - With a tracker named in the starting message, claim the item there now (move it to in progress, comment that the factory took it).
 - A starting message that says never to merge, or to ask before merging: `factory update --merge never` (or `ask`). It can only tighten the project's setting.
+- `sources.merge` is `default`, so nobody chose who merges in this project, and the repository's `AGENTS.md` asks for authorization before a merge or a deploy: `factory update --merge ask`.
 
 **Done when** `factory start` answered with an issue id, and you have its page `url`.
 
@@ -49,7 +50,9 @@ Read `settings` from the answer. When this thread runs on another provider, mode
 
 ## 3. Every turn starts with `factory status`
 
-It prints the stage, the runs with their results, every decision with its answer, the findings, the PR's last synced state with its `gate`, what the issue waits on, and the settings this issue started with. It is the truth when your memory and it disagree, after a summary or a restart. A message listing decision ids you already acted on changes nothing.
+It prints the stage, the runs with their results, every decision with its answer, the findings, the PR's last synced state with its `gate`, what the issue waits on, and the settings this issue started with. It is the truth when your memory and it disagree, after a summary or a restart. A message listing decision ids you already acted on changes nothing. Its top-level `merge` is who merges this issue (the project's setting, tightened by this issue's own), and `waiting` is what the issue waits on.
+
+Each message to the user says what changed since your last one, in a few lines, with the page's `url`; the page holds the rest. A wake that changes nothing gets one line.
 
 Ask the user only through `factory ask`, never in a plain message or the question tool. Read [references/decisions.md](references/decisions.md) before your first ask: most questions are provisional, and you keep working.
 
@@ -57,10 +60,10 @@ Ask the user only through `factory ask`, never in a plain message or the questio
 
 For research, plan, implement and review:
 
-1. `factory run --stage <stage>` (add `--on plan` for a review of a plan). It answers `{ run, target, task, briefFile }`. The service writes into the brief what the stage needs from stored results: research's result, the latest plan, the review findings with their ids and outcomes, the PR and the head to review. Add `--context-file /tmp/<file>` (outside the repository) only for what it cannot know: for research, the `earlier` attempts, and that the user typed the request in this thread themselves, so it is wanted; the user's feedback for a plan; reviewers' comments for an implement run; the answer to a stage's `needs-decision` when you run that stage again. A review takes no context file, so the implementer's claims never reach it; run a review of the PR from this worktree on the PR's head, or pass `--head <sha>`.
-2. `delegate_task` with `task` set to the `task` line exactly as given (it names `briefFile`, which the child reads; the brief itself stays out of your messages), `target` set to `{ providerInstanceId: target.provider, model: target.model, options: target.options }`, `role` to match, and `isolation: 'worktree'` for a review, `'shared'` for the rest. When the child's provider, model or options differ from the target, `factory report` that line.
+1. `factory run --stage <stage>` (add `--on plan` for a review of a plan). It answers `{ run, target, task, briefFile }`. The service writes into the brief what the stage needs from stored results: research's result, the latest plan, the review findings with their ids and outcomes, the PR and the head to review, every question asked of the user with its answer (plan and implement), and the progress lines of an earlier run of the stage that ended early. Add `--context-file /tmp/<file>` (outside the repository) only for what it cannot know: for research, the `earlier` attempts, and that the user typed the request in this thread themselves, so it is wanted; the user's feedback for a plan; reviewers' comments for an implement run; the answer to a stage's `needs-decision` when you run that stage again. A review takes no context file, so the implementer's claims never reach it; run a review of the PR from this worktree on the PR's head, or pass `--head <sha>`.
+2. `delegate_task` with `task` set to the `task` line exactly as given (it names `briefFile`, which the child reads; the brief itself stays out of your messages), `target` set to `{ providerInstanceId: target.provider, model: target.model, options: target.options }`, `role` to match, and `isolation: 'worktree'` for a review, `'shared'` for the rest. Leave `mode` out, so the child runs while your turn ends on one line saying which stage runs; its result wakes you. When the child's provider, model or options differ from the target, `factory report` that line.
 3. The child ends its run with its result, which the service checks against the stage's shape and keeps. Read it from `factory status` (each run's `result`), not from the child's last message.
-4. A child that ended without `--done`: end its run with `factory report --run <run> --failed -` (the reason on stdin). When the child named a wall a second try would meet too (its provider's usage limit, a sign-in, a model that is gone), ask a `blocked` decision now, with the model and the provider's words. Otherwise run the stage once more; a second silent end is a `blocked` decision.
+4. A child that ended without `--done`: end its run with `factory report --run <run> --failed -` (the reason on stdin). When the child named a wall a second try would meet too (its provider's usage limit, a sign-in, a model that is gone): with `settings.stages.<stage>.fallback` set, run the stage again with `factory run --stage <stage> --fallback` and `factory report` which model stood in and the provider's words; with none, ask a `blocked` decision now, with the model and the provider's words. Otherwise run the stage once more; a second silent end is a `blocked` decision.
 
 What a result asks of the user:
 

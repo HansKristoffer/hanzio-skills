@@ -147,3 +147,32 @@ test('the issue warns when review and implement run on one provider', async () =
 	await as('/api/issue/start', {})
 	expect((await as('/api/issue/status')).body.warnings[0]).toContain('both run on claudeAgent')
 })
+
+test('a stage runs on its fallback only when asked and when the settings name one', async () => {
+	const refused = await as('/api/issue/run', { stage: 'review', fallback: true })
+	expect(refused.status).toBe(400)
+	expect(refused.body.error).toContain('the settings name no fallback for review')
+	await h.call('PUT', '/api/settings/global', { stages: { review: { fallback: { provider: 'claudeAgent', model: 'claude-opus-5-5' } } } })
+	await as('/api/issue/start', {})
+	expect((await as('/api/issue/run', { stage: 'review' })).body.target.model).toBe('gpt-6-astra')
+	const second = await as('/api/issue/run', { stage: 'review', fallback: true })
+	expect(second.body.target).toEqual({ provider: 'claudeAgent', model: 'claude-opus-5-5' })
+	const status = (await as('/api/issue/status', {})).body
+	expect(status.runs.at(-1)).toMatchObject({ stage: 'review', provider: 'claudeAgent', model: 'claude-opus-5-5', state: 'running' })
+})
+
+test("a run that ended early leaves its progress lines to the next run of the stage, and an implement brief has the user's answers", async () => {
+	const first = (await as('/api/issue/run', { stage: 'review' })).body.run as string
+	await h.as('child')('POST', `/api/runs/${first}/report`, { text: 'Finding (important) src/export.ts:12: the stream is never closed' })
+	await as(`/api/runs/${first}/report`, { text: 'The provider refused the run', failed: true })
+	const again = (await as('/api/issue/run', { stage: 'review' })).body.brief as string
+	expect(again).toContain('An earlier run of this stage ended without a result')
+	expect(again).toContain('src/export.ts:12: the stream is never closed')
+
+	const open = (await as('/api/issue/ask', { kind: 'question', provisional: true, question: 'Web only, or the app too?', recommend: 'Web only' })).body.decision
+	expect((await as('/api/issue/run', { stage: 'implement' })).body.brief).toContain('Not answered yet. Build on the recommendation: Web only')
+	await as('/api/issue/answer', { decision: open, text: 'Both' })
+	const brief = (await as('/api/issue/run', { stage: 'implement' })).body.brief as string
+	expect(brief).toContain('Answered: Both')
+	expect((await as('/api/issue/run', { stage: 'review' })).body.brief).not.toContain('Questions asked of the user')
+})

@@ -7,7 +7,8 @@ export type Target = {
 	options?: Record<string, string | boolean>
 }
 
-export type StageSettings = Target & { note?: string }
+/** `fallback` is the target a stage runs on when its own provider refuses the run (a usage limit, a sign-in). */
+export type StageSettings = Target & { note?: string; fallback?: Target }
 
 export const STAGES = ['research', 'plan', 'implement', 'review', 'land'] as const
 export type Stage = (typeof STAGES)[number]
@@ -120,7 +121,12 @@ export function validate(value: unknown, where = 'settings'): PartialSettings {
 			const path = `stages.${stage}`
 			if (!isObject(settings)) throw new Error(`${path}: must be a mapping`)
 			if (stage === 'land') checkKeys(settings, ['note'], `${path}.`)
-			else checkTarget(settings, path, ['note'])
+			else checkTarget(settings, path, ['note', 'fallback'])
+			if (settings.fallback !== undefined) {
+				if (!isObject(settings.fallback)) throw new Error(`${path}.fallback: must be a mapping`)
+				checkTarget(settings.fallback, `${path}.fallback`)
+				if (settings.fallback.model === undefined) throw new Error(`${path}.fallback: needs provider and model`)
+			}
 			if (settings.note !== undefined) checkString(settings.note, `${path}.note`)
 		}
 	}
@@ -172,6 +178,7 @@ export function resolve(layers: Layers): Resolved {
 	mark('orchestrator', 'default')
 	for (const stage of STAGES) {
 		if (stage !== 'land') mark(`stages.${stage}`, 'default')
+		if (stage !== 'land') mark(`stages.${stage}.fallback`, 'default')
 		mark(`stages.${stage}.note`, 'default')
 	}
 	for (const key of [...SCALARS, ...LISTS]) mark(key, 'default')
@@ -191,9 +198,13 @@ export function resolve(layers: Layers): Resolved {
 			const given = layer.stages?.[stage]
 			if (!given) continue
 			if (stage !== 'land' && 'model' in given && given.model) {
-				const note = settings.stages[stage].note
-				settings.stages[stage] = { ...targetOf(given), ...(note !== undefined && { note }) }
+				const { note, fallback } = settings.stages[stage]
+				settings.stages[stage] = { ...targetOf(given), ...(fallback && { fallback }), ...(note !== undefined && { note }) }
 				mark(`stages.${stage}`, source)
+			}
+			if (stage !== 'land' && 'fallback' in given && given.fallback?.model) {
+				settings.stages[stage].fallback = targetOf(given.fallback)
+				mark(`stages.${stage}.fallback`, source)
 			}
 			if (given.note !== undefined) {
 				settings.stages[stage].note = given.note
@@ -211,15 +222,17 @@ export function resolve(layers: Layers): Resolved {
 	// A stage with no target of its own runs on the orchestrator's model.
 	for (const stage of DELEGATED) {
 		if (!settings.stages[stage].model) {
-			const note = settings.stages[stage].note
-			settings.stages[stage] = { ...targetOf(settings.orchestrator), ...(note !== undefined && { note }) }
+			const { note, fallback } = settings.stages[stage]
+			settings.stages[stage] = { ...targetOf(settings.orchestrator), ...(fallback && { fallback }), ...(note !== undefined && { note }) }
 			sources[`stages.${stage}`] = sources.orchestrator as Source
 		}
 	}
 	return { settings, sources }
 }
 
-/** The target a delegated stage runs on, without its note. */
-export function stageTarget(settings: Settings, stage: DelegatedStage): Target {
-	return targetOf(settings.stages[stage])
+/** The target a delegated stage runs on, without its note: its own, or its fallback when asked and set. */
+export function stageTarget(settings: Settings, stage: DelegatedStage, fallback = false): Target | null {
+	if (!fallback) return targetOf(settings.stages[stage])
+	const other = settings.stages[stage].fallback
+	return other ? targetOf(other) : null
 }

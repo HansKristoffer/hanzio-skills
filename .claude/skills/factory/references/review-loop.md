@@ -9,10 +9,12 @@ After the internal review, the PR goes to the people and bots on GitHub. This fi
 When the last internal review of the head is clean (step 7 of `SKILL.md`):
 
 1. `factory run --stage land`. The land run lasts until the merge. Read its `note`.
-2. Bring the PR body up to date with the `land-pr` skill's **Write the PR body** (the implementer wrote it for the first commit): its **Evidence** is the implementer's claims with their evidence and anything you proved yourself, its **Merge Danger** the last review's `risk`.
+2. Bring the PR body up to date in place (the implementer wrote it for the first commit, under the repository's PR template when it has one): keep its headings, and make sure it shows the evidence (the implementer's claims with their evidence, and anything you proved yourself) and the merge danger (the last review's `risk`), as the `land-pr` skill's **Write the PR body** describes them.
 3. Check the leave-open rules in the `dispatched-run` skill's step 7 against the diff (a flow change, money, a migration or data change, new access, a new outbound call, over about 400 lines, something unverified, a second fix for an item that came back), and record the verdict for the head: `factory risk --head <sha> --none`, or `--rule "<the rule that holds>"`.
 4. `factory pr ready`. It marks the PR ready, which starts the workflows and bots that skip drafts, and adds the reviewer notes (the decisions left open, what was not checked, where to look first) to the body.
 5. `factory wait --on checks`, watch the PR (`watch_pull_request`), and end the turn.
+
+A repository that runs no checks on GitHub shows `checks: absent` in `factory pr sync`, and the gate does not wait for any. The only proof is then a local run: before step 4, make sure every command the repository's `AGENTS.md` asks for before a push ran on this head (the implementer's claims say which did; run the rest), `factory report` each with its result, and say in the merge decision and the closing overview that no CI ran. After step 4, watch the PR and go to **6. The gate, or wait**: there are no checks to wait on.
 
 **Done when** the PR is ready, the risk verdict is recorded for its head, and the PR is watched.
 
@@ -24,7 +26,7 @@ A wake from the PR watcher, or a message from the service that starts with `Fact
 factory pr sync
 ```
 
-It prints the PR's state, `needsAction` (each item with its id and the trusted comments in it), the open `round`, and the `gate`. Act in this order: failing checks and conflicts, then bot items, then people's items. A wake with nothing in `needsAction`, passing checks and no gate change needs nothing: wait again (step 6).
+It prints the PR's state, `needsAction` (each item with its id and the trusted comments in it), the open `round`, and the `gate`. Act in this order: failing checks and conflicts, then bot items, then people's items. A wake with nothing in `needsAction`, passing checks and no gate change needs nothing: wait again (step 6). A sync that shows what you waited for (the checks pass, the bots reviewed the head) ends that wait by itself. A PR that a person merged or closed, at any stage, goes to `land.md`.
 
 **Done when** you synced and know what, if anything, to act on.
 
@@ -89,7 +91,7 @@ It syncs, then prints `ready` or the blockers, each in words.
 
 - `ready`: go to `land.md`.
 - Blocked by `checks`, `bots`, `approval`, `changes-requested`, `threads` or `merge-setting` with merge `never`: wait. `factory wait --on checks|bots|review|merge --note "<who or what>"`, keep the PR watched, and end the turn. The issue shows under Waiting on others, is never nudged as stuck, and the service reads the PR every ten minutes and messages you when something needs you.
-- Blocked by `risk`, by `merge-setting` with merge `ask`, or by `internal-review` after the user answered to go on without one: once nothing else blocks, ask a `merge` decision about this head, with what holds and your recommendation, and end the turn:
+- Blocked by `risk`, by `merge-setting` with merge `ask`, or by `internal-review` after the user answered to go on without one: once nothing else blocks but `decisions` for provisional questions, ask a `merge` decision about this head, with what holds and your recommendation, and end the turn. The answer Merge accepts the recommendation of every provisional question still open, since the head was built on them, and the page says so under the question:
 
   ```bash
   factory ask --kind merge --head <sha> --question "<what holds, for which PR>" --recommend "<Merge, or what to change first>"

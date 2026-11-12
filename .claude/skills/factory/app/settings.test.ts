@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { join } from 'node:path'
 import { git, scratchRepo, setup, type Harness } from './fixtures/harness.ts'
-import { defaults, resolve, validate } from './settings.ts'
+import { defaults, resolve, stageTarget, validate } from './settings.ts'
 
 describe('resolve', () => {
 	test('a layer that sets a stage target replaces its options and leaves other stages alone', () => {
@@ -121,4 +121,16 @@ test('the review keys validate, resolve by layer with a list replacing the list 
 	expect(() => validate({ merge: 'sometimes' })).toThrow('merge: must be one of auto, ask, never')
 	expect(() => validate({ reviewOverdueHours: 0 })).toThrow('reviewOverdueHours: must be a whole number from 1 to 720')
 	expect(resolve({}).settings).toMatchObject({ reviewers: [], bots: [], approval: 'auto', merge: 'auto', trust: [], ignore: [], reviewOverdueHours: 24 })
+})
+
+test('a stage can name a fallback target, which a layer sets with or without the stage target', () => {
+	const fallback = { provider: 'claudeAgent', model: 'claude-opus-5-5', options: { effort: 'high' } }
+	const { settings, sources } = resolve({ global: { stages: { review: { fallback } } }, repo: { stages: { review: { provider: 'codex', model: 'gpt-6-luna' } } } })
+	expect(settings.stages.review).toMatchObject({ provider: 'codex', model: 'gpt-6-luna', fallback })
+	expect(sources['stages.review.fallback']).toBe('global')
+	expect(stageTarget(settings, 'review', true)).toEqual(fallback)
+	expect(stageTarget(settings, 'review')).toEqual({ provider: 'codex', model: 'gpt-6-luna' })
+	expect(stageTarget(resolve({}).settings, 'review', true)).toBeNull()
+	expect(() => validate({ stages: { review: { fallback: { provider: 'codex' } } } })).toThrow('stages.review.fallback: provider and model must be given together')
+	expect(() => validate({ stages: { land: { fallback } } })).toThrow('stages.land.fallback: unknown key')
 })

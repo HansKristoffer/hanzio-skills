@@ -164,3 +164,15 @@ test('the reviewer notes are added once to the PR body, and replaced on a second
 	expect(once).toBe(`Fixes #4\n\n${notes('first')}\n`)
 	expect(withSections(once, notes('second'))).toBe(`Fixes #4\n\n${notes('second')}\n`)
 })
+
+test('a repository that runs no workflow is not held by checks; a head whose checks have not started is', () => {
+	const none = { required: [], view: { statusCheckRollup: [] } }
+	const absent = gate(rawPr({ ...none, workflows: 0 }))
+	expect(normalize(rawPr({ ...none, workflows: 0 }), settings(), new Set()).pr.checks.state).toBe('absent')
+	expect(absent.ready).toBe(true)
+	for (const workflows of [3, null]) {
+		const waiting = gate(rawPr({ ...none, workflows }))
+		expect(codes(waiting)).toEqual(['checks'])
+		expect(waiting.blockers[0]!.text).toBe('no checks reported for the head')
+	}
+})
