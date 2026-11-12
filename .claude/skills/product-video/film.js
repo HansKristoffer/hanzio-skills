@@ -32,20 +32,27 @@
 	const Film = {
 		/**
 		 * Starts the film. `duration` in seconds; a narrated film can leave it out and use
-		 * `Film.scenes()`. `music` is a path relative to the HTML file, `musicGain` in dB.
+		 * `Film.scenes()`. `music` is a path relative to the HTML file, `musicGain` in dB;
+		 * `effectsGain` moves every sound effect at once against the music.
 		 * Build the timeline inside `build(film)`; it runs after fonts and images load.
 		 */
-		create({ duration, music, musicGain = -6, narrationGain = 0, build }) {
+		create({ duration, music, musicGain = -6, narrationGain = 0, effectsGain = 0, build }) {
 			const tl = gsap.timeline({ paused: true })
 			const film = {
 				tl,
 				cues: [],
-				audio: { music, musicGain, narrationGain, dips: [] },
+				audio: { music, musicGain, narrationGain, effectsGain, dips: [] },
 				duration: duration ?? Film.scenes().total,
 				ready: false,
-				/** A sound effect at time `t`: a file name in `sfx/` without extension, gain in dB. */
-				cue(t, sound, gain = 0) {
-					film.cues.push({ t, sound, gain })
+				/**
+				 * A sound effect on the visual event at `t`: a file name in `sfx/` without extension.
+				 * The mix puts the sound's loudest moment on `t`, so a click lands on the press and a
+				 * whoosh peaks on the cut; `at: 'start'` starts the sound there instead. `gain` in dB
+				 * (0 sits in the mix), `pitch` in semitones (step it up over a run of the same sound),
+				 * `pan` from -1 (left) to 1 (right), for an event at the side of the frame.
+				 */
+				cue(t, sound, gain = 0, { pitch = 0, pan = 0, at = 'peak' } = {}) {
+					film.cues.push({ t, sound, gain, pitch, pan, at })
 				},
 				/**
 				 * Pulls the music down by `gain` dB between `from` and `to`: a dead stop before a
@@ -54,7 +61,8 @@
 				dip(from, to, gain = -24) {
 					film.audio.dips.push({ from, to, gain })
 				},
-				async seek(t) {
+				/** `clips: false` leaves the videos where they are, for a pass that only reads the layout. */
+				async seek(t, { clips = true } = {}) {
 					// A hair past the requested time, so a set placed exactly there (or at 0) applies.
 					tl.time(Math.min(t, film.duration) + 1e-6, false)
 					// Stray CSS animations follow the same clock; prefer GSAP for anything that matters.
@@ -65,7 +73,7 @@
 					// <video data-start="3.2" data-from="1.5" data-rate="2" data-until="9">: starts at
 					// 3.2 s on the film clock, playing the clip from 1.5 s in at double speed, and
 					// holds its 9 s frame from then on (a beat that ends on its payoff).
-					const videos = [...document.querySelectorAll('video[data-start]')]
+					const videos = clips ? [...document.querySelectorAll('video[data-start]')] : []
 					await Promise.all(
 						videos.map((video) => {
 							const { start, from = 0, rate = 1, until = Infinity } = video.dataset
@@ -319,14 +327,15 @@
 			cards.forEach((card, index) => {
 				const t = at + index * gap
 				// One filter list throughout (blur, then brightness): GSAP interpolates mismatched lists
-				// number by number, which flashed a receding card nearly black.
-				tl.fromTo(card, { y: 260, autoAlpha: 0, scale: 0.94, filter: 'blur(8px) brightness(1)' }, { y: 0, autoAlpha: 1, scale: 1, filter: 'blur(0px) brightness(1)', duration: 0.7, ease: 'land', immediateRender: index > 0 }, t)
+				// number by number, which flashed a receding card nearly black. The arrival ends before
+				// the next card pushes this one back: two tweens on one card cancel.
+				tl.fromTo(card, { y: 260, autoAlpha: 0, scale: 0.94, filter: 'blur(8px) brightness(1)' }, { y: 0, autoAlpha: 1, scale: 1, filter: 'blur(0px) brightness(1)', duration: Math.min(0.7, gap), ease: 'land', immediateRender: index > 0 }, t)
 				cards.slice(0, index).forEach((earlier, back) => {
 					const depth = index - back
 					tl.to(earlier, { y: -offset * depth, scale: 1 - 0.05 * depth, filter: `blur(0px) brightness(${1 - 0.12 * depth})`, duration: 0.6, ease: 'land' }, t)
 					// A covered card keeps its edge but not its text, which would read through: it goes
-					// just before the new card arrives, so two titles never cross.
-					if (depth === 1) tl.to(earlier.children, { autoAlpha: 0, duration: 0.12 }, t - 0.12)
+					// as the new card lands on it, so two titles never cross and no card stands empty.
+					if (depth === 1) tl.to(earlier.children, { autoAlpha: 0, duration: 0.12 }, t)
 				})
 			})
 		},

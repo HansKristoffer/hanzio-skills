@@ -4,7 +4,7 @@ Clean, smooth, error-free cuts still get rejected for being basic, empty or slow
 
 ## While building
 
-Use `bun $SKILL/video.ts stills <build>/film.html --every 0.5` (or `--at 2.3,2.5,2.7` around a transition) after every meaningful change, and look at the contact sheet. It renders in seconds. Render the full film only when the stills look right.
+Follow "See what you made" in `SKILL.md`: `stills` after every change, `lint` findings looked at one by one, a draft render for motion and sound. Render the film whole at full quality only when the stills, the lint and the draft's `check` are right.
 
 ## Quality bar
 
@@ -13,10 +13,13 @@ Measured by `check`:
 | Check | Target |
 | --- | --- |
 | Frozen time | In graphics beats, under about 1 s per 30 s and no hold over 0.6 s except the end card. Product footage may read as frozen while only the pointer or a value moves; nothing at all moving for over 1.5 s is a defect |
-| Sharpness | `render` and `stills` print no "turns soft" warning; `live` prints no "enlarged" warning |
+| Lint | `lint` reports nothing, or only findings you looked at and can defend (a deliberate hold, a callout over a row) |
+| Sharpness | `render` and `stills` print no "turns soft" warning; `live` prints no "enlarged" warning; `render` reports twice the film's pixels (3840x2160 for 1080p) |
+| Final | `check` does not say NOT FINAL: the delivered render was drawn whole, from one version of the composition |
 | Judder | `check` reports none: every moving stretch changes on every frame (a 30 fps clip shows as half-rate footage, which is expected) |
 | Loudness | About -14 LUFS music-led, -16 narrated; true peak at or below -1 dBFS |
 | Loudness range | About 3 LU or more for energetic films |
+| Effects | In the table `render` prints, no cue is "buried" or "stands far out"; in `sound.png` every cue line sits on its sound |
 
 Judged on frames:
 
@@ -47,9 +50,10 @@ Benchmark: premium SaaS launch films on X and YouTube.
 Quality bar: <paste the quality bar above>.
 <For a verification round: the previous report is at <path>. For each item, give FIXED / PARTLY / STILL PRESENT.>
 
-Method: extract frames with ffmpeg: a contact sheet every 0.25 s, plus every frame (1/60 s)
-in a window of ±0.3 s around each transition (<times>). Look at them. Run
-`bun <SKILL>/video.ts check <video>` for frozen time and loudness.
+Method: `bun <SKILL>/video.ts stills <video> --every 0.25` writes labelled contact sheets of the
+whole film; `stills <video> --around <time>` steps through one transition (<times>), 13 frames
+0.05 s apart. Read every sheet, and a full-size frame where text is small. Run
+`bun <SKILL>/video.ts check <video>` for frozen time, judder and loudness.
 
 Report in under 600 words, also written to <path>:
 1. Per beat: time range, what is on screen, what is weak.

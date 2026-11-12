@@ -31,22 +31,23 @@
 * { box-sizing: border-box; }
 body { background: var(--bg); color: var(--text); font-family: var(--font); -webkit-font-smoothing: antialiased; }
 .bg { position: absolute; inset: 0; overflow: hidden; }
-.glow { position: absolute; width: 1300px; height: 1000px; border-radius: 50%; filter: blur(120px); opacity: 0.5; }
-.glow.a { background: var(--accent); left: -420px; top: -560px; }
-.glow.b { background: var(--good); right: -520px; bottom: -700px; opacity: 0.25; }
+/* Radial gradients, not blurred shapes: a large blur makes every frame several times slower to render. */
+.glow { position: absolute; width: 1900px; height: 1500px; border-radius: 50%; opacity: 0.55; }
+.glow.a { background: radial-gradient(closest-side, var(--accent) 20%, transparent); left: -720px; top: -810px; }
+.glow.b { background: radial-gradient(closest-side, var(--good) 20%, transparent); right: -820px; bottom: -950px; opacity: 0.28; }
 
 .scene { position: absolute; inset: 0; padding: 110px 140px; display: flex; flex-direction: column; justify-content: center; }
 .inner { display: flex; flex-direction: column; gap: 40px; }
-.eyebrow { font-size: 26px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); font-weight: 600; }
+.eyebrow { font-size: 28px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); font-weight: 600; }
 h1 { font-size: 88px; line-height: 1.04; margin: 0; font-weight: 700; letter-spacing: -0.03em; }
 h2 { font-size: 64px; line-height: 1.08; margin: 0; font-weight: 700; letter-spacing: -0.02em; }
 p.lead { font-size: 34px; color: var(--muted); margin: 0; line-height: 1.4; max-width: 1400px; }
-.small { font-size: 22px; color: var(--muted); }
-.mono { font-family: var(--mono); font-size: 22px; color: var(--muted); }
+.small { font-size: 28px; color: var(--muted); }
+.mono { font-family: var(--mono); font-size: 28px; color: var(--muted); }
 .row { display: flex; gap: 28px; align-items: stretch; }
 .col { display: flex; flex-direction: column; gap: 18px; }
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: 24px; padding: 32px 36px; box-shadow: 0 24px 60px rgba(20, 20, 40, 0.08); }
-.pill { display: inline-flex; align-items: center; font-size: 22px; font-weight: 600; padding: 8px 18px; border-radius: 999px; white-space: nowrap; align-self: flex-start; }
+.pill { display: inline-flex; align-items: center; font-size: 28px; font-weight: 600; padding: 8px 18px; border-radius: 999px; white-space: nowrap; align-self: flex-start; }
 .pill.accent { background: var(--accent-soft); color: var(--accent); }
 .pill.good { background: var(--good-soft); color: var(--good); }
 .pill.warn { background: var(--warn-soft); color: var(--warn); }
