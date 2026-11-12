@@ -30,6 +30,8 @@ const key =
 								? 'user'
 								: args.some((a) => a.includes('/rules/branches/'))
 									? 'rules'
+									: args.some((a) => a.includes('/actions/workflows'))
+										? 'workflows'
 									: args.some((a) => a.includes('/compare/'))
 										? 'compare'
 										: args.some((a) => a.endsWith('/requested_reviewers'))
@@ -49,6 +51,7 @@ const fromPr: Record<string, () => unknown> = pr
 			view: () => (args.includes('body') ? { body: pr.body ?? '' } : pr.view),
 			checks: () => pr.required,
 			rules: () => pr.rules,
+			workflows: () => String(pr.workflows ?? 3),
 			threads: () => pages(pr.threads, 50, 'reviewThreads'),
 			reviews: () => pages(pr.reviews, 100, 'reviews'),
 			comments: () => pages(pr.comments, 100, 'comments')

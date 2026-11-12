@@ -33,7 +33,7 @@ Oldest first, up to the cap. For each item, in a checkout of its repository (the
 factory new --title "<title>" --body-file /tmp/<item> --source "<the item's URL or stable id>"
 ```
 
-The body file holds the item's text, copied as it is.
+The body file holds the item's text, copied as it is. When the prompt says a person merges, or to ask before merging, add `--merge never` or `--merge ask`: it holds the merge of that item, whatever the project's setting.
 
 - `duplicateOf`: the factory has an open issue for it. Skip it as known.
 - `closed`: the factory finished it. Skip it, unless the item came back after the close (reopened, or new events since `closedAt`); then run the same command with `--again`.

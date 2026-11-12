@@ -7,7 +7,9 @@ The PR reaches this file when `factory gate` says `ready` (see `review-loop.md`)
 3. **Check the deploy** with `land-pr`'s **Check the deploy**, as the land run's note says. Ship a release-please release only when the note says so.
 4. **End the run:** `factory report --run <land run> --done -` with the merge commit and the deploy result on stdin.
 
-With the project's `merge` set to `never`, people merge: the gate says `merge-setting`, and you wait on the merge (`factory wait --on merge`). When the PR is merged, check the deploy (step 3) and end the run (step 4). When it is closed without a merge, close the issue as `dropped`.
+With the project's `merge` set to `never`, people merge: the gate says `merge-setting`, and you wait on the merge (`factory wait --on merge`).
+
+A person can merge or close the PR at any stage, whatever the setting; the service tells you when it sees it. Merged: check the deploy (step 3), end the run that is open, and close the issue as `shipped`, with everything the merge skipped under **Be aware of** in the closing overview: a review that never finished, findings still open, questions never answered. File each open `important` finding as an issue (step 9 of `SKILL.md`). Closed without a merge: close the issue as `dropped`.
 
 **Questions** go through `factory ask`, never the question tool: where `land-pr` would stop and ask, ask a `blocked` decision and end the turn.
 

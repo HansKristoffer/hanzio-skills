@@ -673,7 +673,7 @@ async function drawIssue(id) {
 function prPanel(data) {
 	const pr = data.pr
 	const gate = data.gate
-	const checks = pr.checks.state === 'passing' ? chip('checks pass', 'ok') : pr.checks.state === 'failing' ? chip(`failing: ${pr.checks.failing.join(', ')}`, 'bad') : chip(`checks ${pr.checks.state}`)
+	const checks = pr.checks.state === 'passing' ? chip('checks pass', 'ok') : pr.checks.state === 'failing' ? chip(`failing: ${pr.checks.failing.join(', ')}`, 'bad') : pr.checks.state === 'absent' ? chip('no CI checks', 'warn') : chip(`checks ${pr.checks.state}`)
 	return h('div', { class: 'panel body' },
 		h('div', {},
 			h('div', { class: `gate${gate.ready ? ' ok' : ''}` }, gate.ready ? 'Merge gate ready' : 'Merge gate blocked'),
@@ -753,6 +753,22 @@ function parseOptions(text) {
 		options[pair[1]] = pair[2] === 'true' ? true : pair[2] === 'false' ? false : pair[2]
 	}
 	return options
+}
+
+/** A fallback target as one line: "codex/gpt-6-astra, reasoningEffort: high". */
+function fallbackText(target) {
+	if (!target?.model) return ''
+	const options = optionsText(target.options)
+	return `${target.provider}/${target.model}${options ? `, ${options}` : ''}`
+}
+
+function parseFallback(text) {
+	const [first, ...rest] = text.split(',')
+	const slash = first.indexOf('/')
+	if (slash < 1 || slash === first.trim().length - 1) throw new Error(`Fallback: write it as "provider/model", not "${first.trim()}"`)
+	const target = { provider: first.slice(0, slash).trim(), model: first.slice(slash + 1).trim() }
+	if (rest.join(',').trim()) target.options = parseOptions(rest.join(',').trim())
+	return target
 }
 
 let settingsDirty = false
@@ -870,21 +886,26 @@ function settingsEditor(scope, layer, resolved, locked) {
 			const provider = h('input', { value: current.provider || '', placeholder: shown?.provider || '', 'aria-label': `${name} provider`, list: 'seen-provider', disabled: off })
 			const model = h('input', { value: current.model || '', placeholder: shown?.model || '', 'aria-label': `${name} model`, list: 'seen-model', disabled: off })
 			const opts = h('input', { value: optionsText(current.options), placeholder: optionsText(shown?.options), 'aria-label': `${name} options`, disabled: off })
+			// Where the stage runs when its own provider refuses the run, written as "provider/model, effort: high".
+			const fallback = name === 'orchestrator' ? null : h('input', { value: fallbackText(current.fallback), placeholder: fallbackText(shown?.fallback) || 'Fallback when the provider refuses the run, as provider/model, effort: high', 'aria-label': `${name} fallback`, disabled: off })
 			fields.push(() => {
 				const parent = name === 'orchestrator' ? draft : (draft.stages = draft.stages || {})
 				const note = parent[name]?.note
-				if (!provider.value.trim() && !model.value.trim()) {
-					if (note !== undefined) parent[name] = { note }
-					else delete parent[name]
-					return
+				const next = {}
+				if (provider.value.trim() || model.value.trim()) {
+					next.provider = provider.value.trim()
+					next.model = model.value.trim()
+					if (opts.value.trim()) next.options = parseOptions(opts.value.trim())
 				}
-				const next = { provider: provider.value.trim(), model: model.value.trim() }
-				if (opts.value.trim()) next.options = parseOptions(opts.value.trim())
+				if (fallback?.value.trim()) next.fallback = parseFallback(fallback.value.trim())
 				if (note !== undefined) next.note = note
-				parent[name] = next
+				if (Object.keys(next).length) parent[name] = next
+				else delete parent[name]
 			})
 			const cell = (label, input) => h('div', {}, h('span', { class: 'flabel' }, label), input)
 			cells.push(cell('Provider', provider), cell('Model', model), cell('Options', opts))
+			// Its own row, like the note: the three columns above are the stage's own target.
+			if (fallback) cells.push(h('div', { class: 'note' }, h('span', { class: 'flabel' }, 'Fallback'), fallback))
 		}
 		if (name !== 'orchestrator') {
 			const inherited = resolved.settings.stages[name].note

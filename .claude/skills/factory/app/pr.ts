@@ -17,7 +17,9 @@ export type PrState = {
 	head: string
 	base: string
 	author: string
-	checks: { state: 'none' | 'pending' | 'passing' | 'failing'; failing: string[] }
+	/** `absent`: the head reports no check and the repository runs no workflow, so none will come.
+	 * `none`: no check reported yet. */
+	checks: { state: 'absent' | 'none' | 'pending' | 'passing' | 'failing'; failing: string[] }
 	bots: { login: string; reviewedHead: boolean }[]
 	mergeable: 'mergeable' | 'conflicting' | 'unknown'
 	mergeState: string
@@ -111,7 +113,7 @@ function checksOf(raw: RawPr): PrState['checks'] {
 		}
 	} else {
 		const rollup = (raw.view.statusCheckRollup ?? []) as Record<string, any>[]
-		if (!rollup.length) return { state: 'none', failing }
+		if (!rollup.length) return { state: raw.workflows === 0 ? 'absent' : 'none', failing }
 		for (const check of rollup) {
 			const name = String(check.name ?? check.context ?? 'check')
 			if (check.__typename === 'StatusContext') {
@@ -323,12 +325,15 @@ export type GateInput = {
 	roundBudget: string | null
 }
 
+/** Nothing more to wait for from checks: they pass, or the repository runs none. */
+export const checksDone = (pr: PrState) => pr.checks.state === 'passing' || pr.checks.state === 'absent'
+
 /** Decision 10: approval is needed when GitHub or the project says so. */
 export function approvalNeeded(pr: PrState, settings: Settings) {
 	if (settings.approval === 'required') return true
 	if (settings.approval === 'off') return false
 	if ((pr.rules?.approvals ?? 0) > 0 || pr.reviewDecision === 'REVIEW_REQUIRED' || settings.reviewers.length) return true
-	return pr.rules === null && pr.mergeState === 'BLOCKED' && pr.checks.state === 'passing' && pr.mergeable !== 'conflicting' && !pr.draft
+	return pr.rules === null && pr.mergeState === 'BLOCKED' && checksDone(pr) && pr.mergeable !== 'conflicting' && !pr.draft
 }
 
 export function computeGate(input: GateInput): Gate {
@@ -339,7 +344,7 @@ export function computeGate(input: GateInput): Gate {
 	if (pr.state !== 'open') add('no-pr', `the PR is ${pr.state}`)
 	if (pr.draft) add('draft', 'the PR is a draft: run factory pr ready')
 	if (pr.mergeable === 'conflicting') add('conflict', `the PR conflicts with ${pr.base}`)
-	if (pr.checks.state !== 'passing') {
+	if (!checksDone(pr)) {
 		add(
 			'checks',
 			pr.checks.state === 'failing'

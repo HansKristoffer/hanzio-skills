@@ -125,3 +125,10 @@ test('the id t3 thread start prints is read from JSON or plain text', () => {
 	expect(parseStarted('Started 3063e8e9-5379-4269-b087-fcf14f4e1d66').threadId).toBe('3063e8e9-5379-4269-b087-fcf14f4e1d66')
 	expect(() => parseStarted('oops')).toThrow(/no thread id/)
 })
+
+test('new can hold the merge of the item it starts', async () => {
+	const started = await newThread({ source: 'gh:1', merge: 'ask' })
+	const issue = await h.call('GET', `/api/issues/${started.body.issue}`)
+	expect(issue.body.merge).toBe('ask')
+	expect((await newThread({ title: 'Other', merge: 'auto' })).status).toBe(400)
+})

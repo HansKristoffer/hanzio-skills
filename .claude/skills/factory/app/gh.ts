@@ -64,6 +64,8 @@ export const QUERIES = {
 export type RawPr = {
 	view: Record<string, any>
 	required: { name: string; bucket: string }[] | null
+	/** How many workflows the repository has, read only when the head reports no check. null: not read. */
+	workflows?: number | null
 	rules: { type: string; parameters?: Record<string, unknown> }[] | null
 	threads: Record<string, any>[]
 	reviews: Record<string, any>[]
@@ -103,9 +105,18 @@ export async function readPr(url: string): Promise<RawPr> {
 		paged(ref, 'reviews'),
 		paged(ref, 'comments')
 	])
+	const required = parseList<{ name: string; bucket: string }>(checks.out)
+	// A head with no check at all is either still starting its workflows, or in a repository that runs none
+	// (GitHub Actions off, or no workflow file). Only the second can never turn green, so tell them apart.
+	let workflows: number | null = null
+	if (!required?.length && !(view.statusCheckRollup ?? []).length) {
+		const counted = await gh(['api', `repos/${repo}/actions/workflows?per_page=1`, '--jq', '.total_count'])
+		if (counted.ok && /^\d+$/.test(counted.out)) workflows = Number(counted.out)
+	}
 	return {
 		view,
-		required: parseList(checks.out),
+		required,
+		workflows,
 		rules: rules.ok ? parseList(rules.out) : null,
 		threads,
 		reviews,

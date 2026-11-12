@@ -34,6 +34,10 @@ stages:
     provider: codex
     model: gpt-6-astra
     options: { reasoningEffort: high }
+    fallback:
+      provider: claudeAgent
+      model: claude-opus-5-5
+      options: { effort: high }
   land:
     note: |
       Merging to main deploys on Railway. Check /health and the worker's logs.
@@ -52,6 +56,7 @@ ignore: [copilot-pull-request-reviewer]
 
 - `orchestrator` is the model of the issue's own thread. `stages.research`, `plan`, `implement` and `review` each run on their own target; a stage without one runs on the orchestrator's. The review target also reviews plans.
 - A target is `provider` and `model` together, as T3 Code's `orchestrator_capabilities` lists them, with optional `options` (Claude's `effort`, Codex's `reasoningEffort`). A layer that sets a target replaces the whole target below it.
+- `fallback` is the target a stage runs on when its own provider refuses the run (a usage limit, a sign-in, a model that is gone). Without one, such a run stops the issue at a `blocked` decision until the user answers. A layer can set it with or without the stage's own target. For review, pick a provider other than the implementer's when one is offered.
 - `note` is added to that stage's brief under "For this project". `land.note` says how the project deploys, how to check it, and whether to ship its release.
 - `planApproval`: `auto` (the default) asks the user to approve the plan of a feature, a large change or a one-way door; `always` and `never` do what they say.
 - `reviewRounds`: review rounds on a PR before the merge becomes a decision, 0 to 5, default 2; 0 skips the review.
@@ -62,7 +67,7 @@ The review on GitHub (see `review-loop.md`):
 - `reviewers`: logins or `org/team` to request once the PR is ready, its checks pass and the bots are done. The PR's author is left out.
 - `bots`: bot logins whose review of the current head the merge waits for, such as `greptile-apps[bot]`. Default none.
 - `approval`: `auto` (the default) waits for an approval when the branch rules require one, GitHub says one is required, `reviewers` is set, or the rules cannot be read and GitHub blocks the merge with green checks. `required` always waits for one; `off` never does, though requested changes and open conversations still hold the merge.
-- `merge`: who merges. `auto` (the default) merges when the gate is ready; `ask` makes every merge a decision on the page; `never` leaves the merge to people, and the factory checks the deploy after.
+- `merge`: who merges. `auto` (the default) merges when the gate is ready; `ask` makes every merge a decision on the page; `never` leaves the merge to people, and the factory checks the deploy after. Set in a project's own store, `auto` is the maintainer's standing authorization for the factory to merge and so deploy there. Left at the default in a repository whose `AGENTS.md` asks for authorization before a merge or a deploy, an issue runs on `ask`.
 - `trust`: logins outside the repository whose comments count. Members, collaborators, the owner and bots count already; anyone else is stored but hidden from the factory.
 - `ignore`: logins never acted on, such as a noisy bot.
 - `reviewOverdueHours`: hours a wait for a review lasts before the page marks it overdue, 1 to 720, default 24. Nobody is pinged.

@@ -104,3 +104,27 @@ test('the t3 binary is the running server version, else the one on PATH', () => 
 		else process.env.T3CODE_HOME = saved.home
 	}
 })
+
+test('the answer Merge accepts the open provisional questions the head was built on, and the decision says so', async () => {
+	const how = (await ask({ question: 'Keep the alias?', recommend: 'Keep it for one release', provisional: true })).body.decision
+	const merge = (await ask({ kind: 'merge', question: 'Merge PR 7?', recommend: 'Merge', options: [], head: 'abc1234' })).body.decision
+	const asked = (await h.as('t1')('POST', '/api/issue/status', {})).body.decisions.find((d: { id: string }) => d.id === merge)
+	expect(asked.body).toContain('Answering Merge also accepts')
+	expect(asked.body).toContain('Keep it for one release')
+	await answer(merge, 'Merge')
+	const status = (await h.as('t1')('POST', '/api/issue/status', {})).body
+	expect(status.mergeHeld).toBe(false)
+	expect(status.decisions.find((d: { id: string }) => d.id === how).answer).toBe('Keep it for one release')
+	const sent = sends().at(-1)!.stdin
+	expect(sent).toContain(`${merge} ("Merge PR 7?"): Merge`)
+	expect(sent).toContain(`${how} ("Keep the alias?"): Keep it for one release`)
+})
+
+test('the answer Do not merge leaves the open questions open', async () => {
+	const how = (await ask({ question: 'Keep the alias?', provisional: true })).body.decision
+	const merge = (await ask({ kind: 'merge', question: 'Merge PR 7?', recommend: 'Merge', options: [], head: 'abc1234' })).body.decision
+	await answer(merge, 'Do not merge')
+	const status = (await h.as('t1')('POST', '/api/issue/status', {})).body
+	expect(status.decisions.find((d: { id: string }) => d.id === how).answer).toBeNull()
+	expect(status.mergeHeld).toBe(true)
+})

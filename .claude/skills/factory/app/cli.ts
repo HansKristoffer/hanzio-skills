@@ -15,9 +15,10 @@ const HELP = `factory: report to the machine's factory service. Every command pr
 Issue commands (inside a T3 Code thread; the thread is the issue):
   start --title <t> [--body-file <path>] [--source <id>]
   status
-  run --stage research|plan|implement|review|land [--on plan|pr] [--context-file <path>] [--head <sha>]
+  run --stage research|plan|implement|review|land [--on plan|pr] [--context-file <path>] [--head <sha>] [--fallback]
       Prints the run, its target, and the task to hand the child, which names the file the brief is in.
       The service adds what the stage needs from stored results; a review takes no --context-file.
+      --fallback runs the stage on the fallback target its settings name, after its own provider refused.
   report [--run <id>] [--done [--result-file <path>] | --failed] <text | ->
       - reads the text from stdin. A stage's --done needs its result, checked against the brief's shape.
   finding <id> --fixed <commit> | --declined - | --filed <url>
@@ -42,7 +43,7 @@ The review on GitHub (gh runs here, as this thread's login):
 
 Anywhere:
   settings                       the settings an issue started here would get
-  new --title <t> [--body-file <path>] [--source <id>] [--again]
+  new --title <t> [--body-file <path>] [--source <id>] [--merge ask|never] [--again]
   drop <issue> [<reason | ->]   close an open issue as dropped, from outside its thread
   board
   history [--days <n>]
@@ -308,7 +309,8 @@ async function main(argv: string[]) {
 				stage: { type: 'string' },
 				on: { type: 'string' },
 				'context-file': { type: 'string' },
-				head: { type: 'string' }
+				head: { type: 'string' },
+				fallback: { type: 'boolean' }
 			})
 			if (!values.stage) throw new UsageError('run: --stage is required')
 			const context = readFile(str(values['context-file']), '--context-file')
@@ -316,7 +318,7 @@ async function main(argv: string[]) {
 			const head =
 				values.head ?? (values.stage === 'review' && values.on !== 'plan' ? sh(['git', 'rev-parse', 'HEAD']).out || undefined : undefined)
 			await ensureServer()
-			return print(withBriefFile(await call('POST', '/api/issue/run', { stage: values.stage, on: values.on, context, head })))
+			return print(withBriefFile(await call('POST', '/api/issue/run', { stage: values.stage, on: values.on, context, head, fallback: values.fallback })))
 		}
 		case 'update': {
 			const { values } = args(rest, { kind: { type: 'string' }, title: { type: 'string' }, pr: { type: 'string' }, merge: { type: 'string' } })
@@ -379,6 +381,7 @@ async function main(argv: string[]) {
 				title: { type: 'string' },
 				'body-file': { type: 'string' },
 				source: { type: 'string' },
+				merge: { type: 'string' },
 				again: { type: 'boolean' }
 			})
 			const body = readFile(str(values['body-file']), '--body-file')
@@ -389,6 +392,7 @@ async function main(argv: string[]) {
 					title: values.title,
 					body,
 					source: values.source,
+					merge: values.merge,
 					again: values.again
 				})
 			)

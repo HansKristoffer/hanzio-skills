@@ -12,6 +12,7 @@ Look in: <each system, how to reach it, and what counts as an item, for example 
 Source: <the stable id for an item, for example "the issue's URL">.
 Repository: <the checkout to run factory new in, for example "/home/me/code/api">.
 Caps: <only when they differ: "start at most 2", "none while 3 wait for the user">.
+Merge: <only to hold it: "ask before merging" or "a person merges every PR">.
 Also drop: <drop rules beyond the skill's, or delete the line>.
 
 End with the skill's overview.

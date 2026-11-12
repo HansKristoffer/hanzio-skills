@@ -310,3 +310,33 @@ test('a merge decision clears ask only when answered Merge on the current head; 
 	expect((await as('/api/issue/update', { merge: 'ask' })).status).toBe(400)
 	expect((await await cli(['gate'])).json.blockers.map((b: { code: string }) => b.code)).toEqual(['merge-setting'])
 })
+
+test('a sync by the thread ends a wait for checks that have passed, so the service wakes it for them no more', async () => {
+	h.gh.pr(rawPr())
+	await as('/api/issue/wait', { on: 'checks' })
+	await cli(['pr', 'sync'])
+	expect((await as('/api/issue/status', {})).body.waiting).toBeNull()
+	h.replies({ showByThread: { t1: idle } })
+	await h.server.reconcile()
+	expect(sends()).toHaveLength(0)
+})
+
+test('a pull request in a repository with no workflow reads as checks absent, and reviewers can be requested', async () => {
+	h.gh.pr(rawPr({ required: [], workflows: 0, view: { statusCheckRollup: [] } }))
+	const synced = (await cli(['pr', 'sync'])).json
+	expect(synced.pr.checks.state).toBe('absent')
+	expect(synced.gate.blockers.map((b: { code: string }) => b.code)).not.toContain('checks')
+	expect((await cli(['pr', 'ready', '--request'])).code).toBe(0)
+})
+
+test('a PR a person merged while the issue waited on a decision, not on GitHub, is told to the thread', async () => {
+	await as('/api/issue/ask', { kind: 'blocked', question: 'The review model refused the run. How to go on?', recommend: 'Wait' })
+	h.gh.pr(rawPr({ required: [{ name: 'tests', bucket: 'fail' }] }))
+	h.replies({ showByThread: { t1: idle } })
+	await h.server.reconcile()
+	expect(sends()).toHaveLength(0)
+	h.gh.pr(rawPr({ view: { state: 'MERGED', mergedBy: { login: 'anna' } } }))
+	await h.server.reconcile()
+	expect(sends()).toHaveLength(1)
+	expect(sends()[0]!.stdin).toContain('the PR was merged')
+})
