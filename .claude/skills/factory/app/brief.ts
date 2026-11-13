@@ -17,10 +17,10 @@ export const RULES = [
 ]
 
 /** A fence longer than any run of backticks in the text, so the text cannot close it. */
-export function fenced(text: string) {
+export function fenced(text: string, lang = 'untrusted') {
 	const longest = Math.max(0, ...[...text.matchAll(/`+/g)].map((match) => match[0].length))
 	const fence = '`'.repeat(Math.max(3, longest + 1))
-	return `${fence}untrusted\n${text}\n${fence}`
+	return `${fence}${lang}\n${text}\n${fence}`
 }
 
 export type BriefInput = {

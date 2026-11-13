@@ -244,6 +244,11 @@
 	.claim { border-top: 1px solid var(--line); overflow-wrap: anywhere; }
 	.proof { font: 12px/18px var(--mono); color: var(--ink2); white-space: pre-wrap; }
 	.claims + .body { border-top: 1px solid var(--line); }
+	.measures-head, .measure { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 1fr) minmax(0, 1fr); gap: 4px 24px; padding: 12px 20px; }
+	.measures-head { padding-bottom: 8px; font-size: 12px; line-height: 16px; color: var(--muted); }
+	.measure { border-top: 1px solid var(--line); overflow-wrap: anywhere; }
+	.measures-head span + span, .measure .num { text-align: right; font-variant-numeric: tabular-nums; }
+	.measures + .body { border-top: 1px solid var(--line); }
 	@container (max-width: 640px) {
 		.claims-head { display: none; }
 		.claim { grid-template-columns: minmax(0, 1fr); }
@@ -708,6 +713,7 @@ async function drawIssue(id) {
 			h('div', {},
 				data.report ? section('Closing report', null, h('pre', {}, data.report)) : null,
 				shots.length || built?.media ? section('What it looks like', shots.length, gallery(shots, built?.media, data.pr?.head)) : null,
+				built?.measured?.rows?.length ? section('Measured', null, measuredPanel(built.measured, data.pr?.head)) : null,
 				(i.state === 'open' && (built || data.preview)) || data.preview?.state === 'up' ? section('Try it', null, previewPanel(i, data.preview, built?.tryIt, data.pr?.head)) : null,
 				built ? section('What was built', null, builtPanel(built, result('review', 'pr'))) : null,
 				data.pr ? section('Pull request', `#${data.pr.number}`, prPanel(data)) : null,
@@ -852,6 +858,18 @@ function previewPanel(i, preview, tryIt, prHead) {
 	return h('div', { class: 'panel body' }, ...parts, error, tryIt ? h('p', { class: 'tryit' }, tryIt) : null)
 }
 
+/** The numbers of a change made to move one: the same run on the base commit and on the head. */
+function measuredPanel(m, prHead) {
+	const stale = prHead && m.head && !sameCommit(m.head, prHead) ? ", before the PR's last commit" : ''
+	return h('div', { class: 'panel' },
+		h('div', { class: 'measures' },
+			h('div', { class: 'measures-head' }, h('span', {}, 'What'), h('span', {}, `Before, at ${short(m.base)}`), h('span', {}, `After, at ${short(m.head)}${stale}`)),
+			...m.rows.map((r) => h('div', { class: 'measure' }, h('div', {}, r.what), h('div', { class: 'num' }, r.before), h('div', { class: 'num' }, r.after)))
+		),
+		h('div', { class: 'body' }, h('p', { class: 'tryit' }, m.how), m.same ? h('p', { class: 'tryit' }, m.same) : null)
+	)
+}
+
 /** What the implementer says it proved, and what the reviewer model says to look at. */
 function builtPanel(built, reviewed) {
 	const list = (title, rows) => rows && rows.length ? h('div', {}, h('h3', { class: 'sub' }, title), h('ul', { class: 'plain' }, ...rows.map((r) => h('li', {}, r)))) : null
@@ -862,6 +880,7 @@ function builtPanel(built, reviewed) {
 		risk ? h('div', { class: 'row' }, chip(`${risk.door} door`, risk.door === 'one-way' ? 'warn' : ''), chip(`reaches the ${risk.reach}`, risk.reach === 'data' || risk.reach === 'app' ? 'warn' : '')) : null,
 		list('Where to look first', risk?.focus),
 		list('Not checked', built.notChecked),
+		list('Not in this change', built.leftOut),
 		list('Decided without you, least sure first', open),
 		list('Changed beyond what was asked', risk?.unrelated)
 	].filter(Boolean)

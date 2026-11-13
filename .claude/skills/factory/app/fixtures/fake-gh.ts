@@ -36,7 +36,9 @@ const key =
 										? 'compare'
 										: args.some((a) => a.endsWith('/requested_reviewers'))
 											? 'rerequest'
-											: 'other'
+											: args[0] === 'api' && /^repos\/[^/]+\/[^/]+$/.test(args[1] ?? '')
+												? 'repo'
+												: 'other'
 
 function pages(nodes: unknown[], size: number, connection: string) {
 	const out = []
@@ -59,6 +61,8 @@ const fromPr: Record<string, () => unknown> = pr
 	: {}
 const defaults: Record<string, unknown> = {
 	user: 'factory-user',
+	// `--jq .private` of a public repository.
+	repo: 'false',
 	compare: 'ahead',
 	reply: { data: { addPullRequestReviewThreadReply: { comment: { id: `PRRC_${Date.now()}`, url: 'https://github.com/acme/api/pull/1#r' } } } }
 }

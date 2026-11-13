@@ -83,8 +83,16 @@ export function grouped<T extends { title: string }>(items: T[]) {
 /** Text that stays one line and cannot open a table cell, a link or a tag in GitHub's Markdown. */
 const inline = (text: string) => text.replace(/\s+/g, ' ').replace(/[|[\]<>`]/g, (c) => `\\${c}`).trim()
 
+/** A commit as a reader can follow it: a link when the repository's address is known, its short name otherwise. */
+export function commitRef(sha: string, repo: string | null = null) {
+	const name = sha.replace(/[^\w./-]/g, '')
+	const hex = /^[0-9a-f]{7,64}$/i.test(name)
+	const short = hex ? name.slice(0, 10) : name.slice(0, 60)
+	return repo && hex ? `[\`${short}\`](${repo}/commit/${name})` : `\`${short}\``
+}
+
 /** The evidence as GitHub shows it in a PR body or a comment. Empty when there is nothing to show. */
-export function evidenceMarkdown(items: PublicEvidence[]) {
+export function evidenceMarkdown(items: PublicEvidence[], repo: string | null = null) {
 	const parts: string[] = []
 	for (const group of grouped(items)) {
 		const title = inline(group.title)
@@ -93,7 +101,11 @@ export function evidenceMarkdown(items: PublicEvidence[]) {
 		const pair = before && after ? [before, after] : []
 		const lines = [`**${title}**`]
 		if (pair.length) {
-			lines.push(`| Before | After |\n| --- | --- |\n| ![Before: ${title}](${before!.github!.url}) | ![After: ${title}](${after!.github!.url}) |`)
+			// Each side names the commit it shows, so a reader can tell a stale pair from a current one.
+			const commits = before!.head && after!.head ? `| ${commitRef(before!.head, repo)} | ${commitRef(after!.head, repo)} |\n` : ''
+			lines.push(
+				`| Before | After |\n| --- | --- |\n${commits}| ![Before: ${title}](${before!.github!.url}) | ![After: ${title}](${after!.github!.url}) |`
+			)
 		}
 		for (const item of group.items.filter((i) => !pair.includes(i))) {
 			const name = item.label ? `${item.label === 'before' ? 'Before' : 'After'}: ${title}` : title
@@ -114,6 +126,26 @@ export function evidenceMarkdown(items: PublicEvidence[]) {
 		parts.push(lines.join('\n\n'))
 	}
 	return parts.join('\n\n')
+}
+
+/** What the implementer measured: the same run on the base commit and on the head. */
+export type Measured = {
+	how: string
+	base: string
+	head: string
+	rows: { what: string; before: string; after: string }[]
+	same?: string
+}
+
+/** The measurements as a table with each side's commit. Empty when there are no rows. */
+export function measuredMarkdown(measured: Measured | null | undefined, repo: string | null = null) {
+	if (!measured?.rows.length) return ''
+	const table = [
+		`| | Before, at ${commitRef(measured.base, repo)} | After, at ${commitRef(measured.head, repo)} |`,
+		'| --- | ---: | ---: |',
+		...measured.rows.map((row) => `| ${inline(row.what)} | ${inline(row.before)} | ${inline(row.after)} |`)
+	].join('\n')
+	return [measured.how.trim(), table, measured.same?.trim()].filter(Boolean).join('\n\n')
 }
 
 /** `name  https://…` lines, as `buncargo url` prints them. A name can hold spaces. */

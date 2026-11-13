@@ -44,10 +44,11 @@ The review on GitHub (gh runs here, as this thread's login):
   wait --on checks|bots|review|merge|deploy [--note <text>] | wait --clear
 
 What the reviewer looks at (git, ffmpeg and buncargo run here, in this checkout):
-  evidence add <file> --title <t> [--label before|after] [<note> | -]
+  evidence add <file> --title <t> [--label before|after] [--commit <sha>] [<note> | -]
       A screenshot (png, jpg, webp, gif) or a video (mp4, webm, mov) of the change, shown on the issue's
       page. Two captures under one title, labelled before and after, show side by side. The same title
-      and label again replaces the capture.
+      and label again replaces the capture. --commit names the commit a capture shows when that is not
+      this checkout's HEAD, such as a before taken in a checkout of the base.
   evidence list | evidence remove <id>
   evidence publish [--to <issue or PR url>]
       Push the captures to a ref on GitHub and show them in the PR's body; --to also posts them as one
@@ -479,10 +480,22 @@ async function main(argv: string[]) {
 
 /** Reads the PR as this thread's login and hands it to the service, which answers with the sync result. */
 async function sync() {
-	const status = await call('POST', '/api/issue/status', {})
-	const url = (status.issue as { prUrl?: string }).prUrl
+	return call('POST', '/api/issue/pr/snapshot', { raw: await gh.readPr(await prUrl()) })
+}
+
+const prUrlOrNone = async () => ((await call('POST', '/api/issue/status', {})).issue as { prUrl?: string }).prUrl
+
+async function prUrl() {
+	const url = await prUrlOrNone()
 	if (!url) throw new UsageError('this issue has no PR yet: run factory update --pr <url>')
-	return call('POST', '/api/issue/pr/snapshot', { raw: await gh.readPr(url) })
+	return url
+}
+
+/** Brings the reviewer notes in the PR's body up to date. The service links the factory page from them only
+ * when told the repository is private. */
+async function writeNotes(url: string) {
+	const plan = await call('POST', '/api/issue/pr/plan', { action: 'notes', repoPrivate: await gh.isPrivate(gh.parsePrUrl(url)) })
+	await gh.setBody(url, withSections(await gh.prBody(url), String(plan.sections)))
 }
 
 async function prCommand(argv: string[]) {
@@ -499,10 +512,9 @@ async function prCommand(argv: string[]) {
 		}
 		// The captures go up first, so the body that goes ready already shows them.
 		const evidence = await publishEvidence()
-		const plan = await call('POST', '/api/issue/pr/plan', { action: 'ready' })
-		const url = String(plan.url)
+		const url = await prUrl()
 		await gh.markReady(url)
-		await gh.setBody(url, withSections(await gh.prBody(url), String(plan.sections)))
+		await writeNotes(url)
 		await call('POST', '/api/issue/pr/written', { action: 'ready' })
 		return { ...(await sync()), evidence }
 	}
@@ -577,7 +589,7 @@ async function evidenceCommand(argv: string[]) {
 	const [action, ...rest] = argv
 	if (action === 'list') return call('POST', '/api/issue/evidence', { action: 'list' })
 	if (action === 'add') {
-		const { values, positionals } = args(rest, { title: { type: 'string' }, label: { type: 'string' } })
+		const { values, positionals } = args(rest, { title: { type: 'string' }, label: { type: 'string' }, commit: { type: 'string' } })
 		const [file, ...words] = positionals
 		if (!file || !values.title) throw new UsageError('evidence add: give the file and --title <what it shows>')
 		const path = resolve(file)
@@ -598,7 +610,8 @@ async function evidenceCommand(argv: string[]) {
 				title: values.title,
 				label: values.label,
 				note: note || undefined,
-				head: head()
+				// A capture of another checkout, such as a before taken on the base, names the commit it shows.
+				head: values.commit ?? head()
 			})
 			return { ...added, ...(prepared.warning && { warning: prepared.warning }) }
 		} finally {
@@ -613,13 +626,9 @@ async function evidenceCommand(argv: string[]) {
 	if (action === 'publish') {
 		const { values } = args(rest, { to: { type: 'string' } })
 		const pushed = await publishEvidence()
-		const status = await call('POST', '/api/issue/status', {})
-		const pr = (status.issue as { prUrl?: string }).prUrl
+		const pr = await prUrlOrNone()
 		// The body holds what the reviewer reads first, so it is brought up to date even when nothing new was pushed.
-		if (pr) {
-			const plan = await call('POST', '/api/issue/pr/plan', { action: 'notes' })
-			await gh.setBody(pr, withSections(await gh.prBody(pr), String(plan.sections)))
-		}
+		if (pr) await writeNotes(pr)
 		let commented: string | undefined
 		if (values.to) {
 			const plan = await call('POST', '/api/issue/evidence', { action: 'comment', to: values.to, login: await gh.login() })

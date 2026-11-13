@@ -38,7 +38,8 @@ export const RESULT_SHAPES = {
 			kind: oneOf('bug', 'feature'),
 			size: oneOf('S', 'M', 'L'),
 			route: oneOf('implement', 'plan'),
-			reproduction: either(obj({ command: str }), obj({ notPossible: str })),
+			/** The command that shows the problem, the commit it ran on, and what it printed there. */
+			reproduction: either(obj({ command: str, base: str, observed: str }), obj({ notPossible: str })),
 			checks: list(obj({ command: str, baseline: str })),
 			undecided,
 			notes: str
@@ -59,14 +60,21 @@ export const RESULT_SHAPES = {
 			commit: str,
 			claims: list(obj({ claim: str, evidence: str })),
 			notChecked: list(str),
+			/** What you saw beside the change and left alone, each with why. */
+			leftOut: list(str),
 			decisions: list(obj({ decision: str, confidence: oneOf('low', 'medium', 'high') })),
 			findings: list(obj({ id: str, outcome: oneOf('fixed', 'declined'), commit: str, reason: str }, ['commit', 'reason'])),
 			/** What was captured for the reviewer and why, or why nothing was. */
 			media: str,
 			/** How a person tries the change in the running app. */
-			tryIt: str
+			tryIt: str,
+			/** The numbers of a change made to move one: the same run on the base commit and on the head. */
+			measured: obj(
+				{ how: str, base: str, head: str, rows: list(obj({ what: str, before: str, after: str })), same: str },
+				['same']
+			)
 		},
-		['findings', 'media', 'tryIt']
+		['findings', 'media', 'tryIt', 'measured']
 	),
 	review: obj(
 		{

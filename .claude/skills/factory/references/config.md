@@ -76,7 +76,7 @@ A list replaces the list of the layer below it.
 
 ## Who can change settings
 
-Anyone who can reach the factory page (this machine, and the tailnet when the page listens there) can change the settings and rulings that go into every brief, start threads, answer decisions, and ask an issue's thread to start or stop its dev environment. There is no sign-in: keep the tailnet to people you trust.
+Anyone who can reach the factory page (this machine, and the tailnet when the page listens there) can change the settings and rulings that go into every brief, start threads, answer decisions, and ask an issue's thread to start or stop its dev environment. There is no sign-in: keep the tailnet to people you trust. A PR in a private repository links its issue's page, so everyone who can read that repository sees the page's address.
 
 ## When it is broken
 

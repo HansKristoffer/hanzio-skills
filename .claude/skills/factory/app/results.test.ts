@@ -23,12 +23,13 @@ async function runWith(stage: string, result: unknown, extra: Record<string, unk
 	return { run, res }
 }
 
-const research = { kind: 'bug', size: 'S', route: 'implement', reproduction: { command: 'bun test x' }, checks: [] }
+const research = { kind: 'bug', size: 'S', route: 'implement', reproduction: { command: 'bun test x', base: 'ba5e123', observed: '1 fail' }, checks: [] }
 const implement = (findings?: unknown[]) => ({
 	prUrl: 'https://github.com/acme/api/pull/7',
 	commit: 'abc1234',
 	claims: [{ claim: 'Exports stream', evidence: 'IMPLEMENTER-CLAIM-TEXT' }],
 	notChecked: [],
+	leftOut: [],
 	decisions: [],
 	...(findings && { findings })
 })

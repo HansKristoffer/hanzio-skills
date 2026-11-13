@@ -9,9 +9,9 @@ After the internal review, the PR goes to the people and bots on GitHub. This fi
 When the last internal review of the head is clean (step 7 of `SKILL.md`):
 
 1. `factory run --stage land`. The land run lasts until the merge. Read its `note`.
-2. Bring the PR body up to date in place (the implementer wrote it for the first commit, under the repository's PR template when it has one): keep its headings, and make sure it shows the evidence (the implementer's claims with their evidence, and anything you proved yourself) and the merge danger (the last review's `risk`), as the `land-pr` skill's **Write the PR body** describes them.
+2. Bring the PR's title and body up to date in place (the implementer wrote them for the first commit, under the repository's PR template when it has one). The title says what the final diff does for its user, with the headline number of a measured change. The body keeps its headings and shows the evidence (the implementer's claims with their evidence, and anything you proved yourself) and the merge danger (the last review's `risk`), as the `land-pr` skill's **Write the PR body** describes them.
 3. Check the leave-open rules in the `dispatched-run` skill's step 7 against the diff (a flow change, money, a migration or data change, new access, a new outbound call, over about 400 lines, something unverified, a second fix for an item that came back), and record the verdict for the head: `factory risk --head <sha> --none`, or `--rule "<the rule that holds>"`.
-4. `factory pr ready`. It pushes the captures to GitHub, marks the PR ready, which starts the workflows and bots that skip drafts, and adds the reviewer notes (the captures, how to try the change, the decisions left open, what was not checked, where to look first) to the body. Captures live on the ref `refs/factory/evidence/<issue>`, outside the branches, so no clone fetches them. When its answer has `evidence.error`, the push was refused: the captures show on the page only, and the body says so.
+4. `factory pr ready`. It pushes the captures to GitHub, marks the PR ready, which starts the workflows and bots that skip drafts, and adds the reviewer notes to the body from the stored results: how research reproduced the problem on the base, the captures, the measurements, how to try the change, the decisions left open, what was not checked, what was left out of the change, where to look first, and which model did each stage. In a private repository the notes open with a link to this issue's page. The page has no sign-in, so a public repository's PR goes without the link: give the page's address to the user in this thread only. Captures live on the ref `refs/factory/evidence/<issue>`, outside the branches, so no clone fetches them. When its answer has `evidence.error`, the push was refused: the captures show on the page only, and the body says so.
 5. `factory wait --on checks`, watch the PR (`watch_pull_request`), and end the turn.
 
 A repository that runs no checks on GitHub shows `checks: absent` in `factory pr sync`, and the gate does not wait for any. The only proof is then a local run: before step 4, make sure every command the repository's `AGENTS.md` asks for before a push ran on this head (the implementer's claims say which did; run the rest), `factory report` each with its result, and say in the merge decision and the closing overview that no CI ran. After step 4, watch the PR and go to **6. The gate, or wait**: there are no checks to wait on.
@@ -43,7 +43,9 @@ It prints the PR's state, `needsAction` (each item with its id and the trusted c
 Each item ends recorded, with the reply on GitHub:
 
 ```bash
-factory pr reply <item> --fixed <commit>      # "Fixed in <commit>", and the conversation is resolved
+factory pr reply <item> --fixed <commit> - <<'EOF'
+<what changed, and the test that fails without it>
+EOF
 factory pr reply <item> --declined - <<'EOF'
 <why, citing the code>
 EOF
@@ -55,7 +57,7 @@ factory pr ignore <item> - <<'EOF'
 EOF
 ```
 
-`--fixed` is refused when the commit is not in the PR's head yet: push first. A declined bot conversation is resolved; a person's stays open for them, and keeps blocking the merge until they resolve it or approve. Every reply starts with the note that a model wrote it on the user's behalf, and carries a hidden marker so the service never mistakes it for work.
+A reply gives its verdict first, then a reason the reader can check in the code. `--fixed` writes "Fixed in <commit>" for you and resolves the conversation: add what changed and the test that now covers it. A decline says what the code does today, with the file, or that the base already behaves this way. A finding taken in part says which part. `--fixed` is refused when the commit is not in the PR's head yet: push first. A declined bot conversation is resolved; a person's stays open for them, and keeps blocking the merge until they resolve it or approve. Every reply starts with the note that a model wrote it on the user's behalf, and carries a hidden marker so the service never mistakes it for work.
 
 When a person's item was among them, close the round with one summary, which also asks again everyone whose review requested changes:
 
