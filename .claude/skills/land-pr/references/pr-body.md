@@ -121,7 +121,10 @@ Concrete proof that the change works, as a before and after. Only include what y
 
 - **Screenshots** are best when the change is visual and the environment can produce them. `gh` cannot upload images into a PR body, so reuse an image the author already attached, or link a CI artifact; otherwise fall back to output.
 - **Execution** is next best: the exact test that failed before and passes now (as pseudocode or its name), console output, or the failing and passing CI runs for the same check, linked.
+- **Measurements** for a change made to move a number: a table of the same run on the base and on the head, one row per thing measured, under one line that says what ran (the data, the machine, n and the statistic). Say how both sides were shown to return the same result.
 - No evidence available (a docs-only or config-only change): say what was checked, in one line.
+
+End with what was not checked, one line each, when there is any: the other entry point, the client that would not start, the path nobody forced.
 
 ## Merge Danger
 

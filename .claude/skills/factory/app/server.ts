@@ -23,7 +23,20 @@ import {
 	type RunRow
 } from './db.ts'
 import { APP_DIR, appVersion, sh } from './env.ts'
-import { MAX_PUSH_BYTES, MIME, evidenceMarkdown, extOf, kindOf, publicEvidence, repoWebBase, type Preview, type PreviewUrl } from './evidence.ts'
+import {
+	MAX_PUSH_BYTES,
+	MIME,
+	commitRef,
+	evidenceMarkdown,
+	extOf,
+	kindOf,
+	measuredMarkdown,
+	publicEvidence,
+	repoWebBase,
+	type Measured,
+	type Preview,
+	type PreviewUrl
+} from './evidence.ts'
 import { defaultRef, fetchDefault, freeBranch, readConfig, repoInfo, slugify, type ConfigRead } from './git.ts'
 import {
 	STAGES,
@@ -1453,39 +1466,91 @@ export function startServer(options: ServerOptions) {
 	const noteFor = (issue: IssueRow, who: string) =>
 		`> [!NOTE]\n> 🤖 **${parseResolved(issue).settings.orchestrator.model ?? 'The factory'} responding on behalf of ${who}**`
 
-	function reviewSections(issue: IssueRow) {
-		const implement = latestResult(issue.id, 'implement')?.result as
-			| { decisions?: { decision: string; confidence: string }[]; notChecked?: string[] }
+	/** Which model did each stage, from the runs that finished. A stage that fell back to another model names both. */
+	function whoDidTheWork(issue: IssueRow) {
+		const done = runsOf(issue.id).filter((r) => r.state === 'done' && r.model)
+		const by = (stage: Stage, subject: 'plan' | 'pr' | null = null) => {
+			const runs = done.filter((r) => r.stage === stage && r.subject === subject)
+			const names = [...new Set(runs.map((r) => `\`${r.model}\`${r.provider ? ` (${r.provider})` : ''}`))]
+			return { names: names.join(' and '), runs: runs.length }
+		}
+		const review = by('review', 'pr')
+		const orchestrator = parseResolved(issue).settings.orchestrator.model
+		const lines = [
+			...(['research', 'plan', 'implement'] as const).flatMap((stage) => {
+				const { names } = by(stage)
+				return names ? [`${{ research: 'Researched', plan: 'Planned', implement: 'Written' }[stage]} by ${names}`] : []
+			}),
+			review.names
+				? `Reviewed by ${review.names}, in a checkout of its own, over ${review.runs} round${review.runs === 1 ? '' : 's'}`
+				: 'No internal review ran',
+			`Run by the factory skill in T3 Code${orchestrator ? `, orchestrated by \`${orchestrator}\`` : ''}`
+		]
+		return lines.map((line) => `- ${line}`).join('\n')
+	}
+
+	/** Where the reviewer follows the issue, answers what waits and starts the app. The address is this machine's. */
+	const pageLine = (issue: IssueRow) =>
+		`[The factory page for this issue](${pageUrl(issue.id)}) shows the whole run and the questions that wait for an answer, and can start the app on this change. It opens ${tailnet ? "on the factory's tailnet" : 'on the machine the factory runs on'}.`
+
+	/** The reviewer notes for the PR's body. `repoPrivate` says only the repository's members read them: the page
+	 * has no sign-in, so its address goes into no body the public can read. */
+	function reviewSections(issue: IssueRow, repoPrivate = false) {
+		const repo = repoWebBase(issue.pr_url)
+		const seen = latestResult(issue.id, 'research')?.result.reproduction as { command?: string; base?: string; observed?: string } | undefined
+		const later = (latestResult(issue.id, 'plan')?.result.later ?? []) as { title: string }[]
+		const built = latestResult(issue.id, 'implement')?.result as
+			| {
+					decisions?: { decision: string; confidence: string }[]
+					notChecked?: string[]
+					leftOut?: string[]
+					media?: string
+					tryIt?: string
+					measured?: Measured
+			  }
 			| undefined
-		const built = latestResult(issue.id, 'implement')?.result as { media?: string; tryIt?: string } | undefined
 		const review = latestResult(issue.id, 'review', 'pr')?.result as { risk?: { focus?: string[] } } | undefined
-		const shown = evidenceMarkdown(evidenceOf(issue.id)) || built?.media?.trim()
+		const shown = evidenceMarkdown(evidenceOf(issue.id), repo) || built?.media?.trim()
+		const measured = measuredMarkdown(built?.measured, repo)
 		const order = ['low', 'medium', 'high']
-		const decisions = [...(implement?.decisions ?? [])].sort((a, b) => order.indexOf(a.confidence) - order.indexOf(b.confidence))
+		const decisions = [...(built?.decisions ?? [])].sort((a, b) => order.indexOf(a.confidence) - order.indexOf(b.confidence))
 		const list = (rows: string[]) => (rows.length ? rows.map((r) => `- ${r}`).join('\n') : '- Nothing')
 		return [
 			'<!-- factory:review-notes -->',
 			'## For the reviewer',
+			...(repoPrivate ? [pageLine(issue)] : []),
+			...(seen?.command
+				? [
+						`### Reproduced on ${seen.base ? commitRef(seen.base, repo) : 'the base'}`,
+						fenced(seen.command.trim(), 'bash'),
+						...(seen.observed?.trim() ? [seen.observed.trim()] : [])
+					]
+				: []),
 			...(shown ? ['### What it looks like', shown] : []),
+			...(measured ? ['### Measured', measured] : []),
 			...(built?.tryIt?.trim() ? ['### Try it', built.tryIt.trim()] : []),
 			'### Decisions the issue left open, least confident first',
 			list(decisions.map((d) => `(${d.confidence}) ${d.decision}`)),
 			'### Not checked',
-			list(implement?.notChecked ?? []),
+			list(built?.notChecked ?? []),
+			'### Not in this change',
+			list([...(built?.leftOut ?? []), ...later.map((slice) => `${slice.title} (a later slice of the plan)`)]),
 			'### Where to look first',
 			list(review?.risk?.focus ?? []),
+			'### Who did the work',
+			whoDidTheWork(issue),
 			'<!-- /factory:review-notes -->'
 		].join('\n\n')
 	}
 
 	/** Tells the CLI what to write on GitHub. The CLI writes it in the thread, then reports with `written`. */
 	function prPlan(issue: IssueRow, body: Record<string, unknown>) {
-		const action = oneOf(body.action, ['ready', 'notes', 'request', 'reply', 'round'] as const, 'action')
+		const action = oneOf(body.action, ['notes', 'request', 'reply', 'round'] as const, 'action')
 		const url = issue.pr_url ?? fail(409, 'this issue has no PR yet: run factory update --pr <url>')
 		const pr = issue.pr_state ? (JSON.parse(issue.pr_state) as PrState) : null
 		const who = text(body.login, 'login', { max: 100 }) ?? 'the maintainer'
 		const marker = MARKER(issue.id)
-		if (action === 'ready' || action === 'notes') return { url, sections: reviewSections(issue) }
+		if (action === 'notes') return { url, sections: reviewSections(issue, body.repoPrivate === true) }
 		if (!pr) return fail(409, 'the PR was never synced: run factory pr sync')
 		if (action === 'request') {
 			const settings = parseResolved(issue).settings
@@ -1755,7 +1820,7 @@ export function startServer(options: ServerOptions) {
 		if (!onGithub.length) fail(409, 'no capture is on GitHub yet: run factory evidence publish first')
 		const who = text(body.login, 'login', { max: 100 }) ?? 'the maintainer'
 		const intro = `What was built for this${issue.pr_url ? `, in ${issue.pr_url}` : ''}:`
-		return { to, body: [noteFor(issue, who), intro, evidenceMarkdown(onGithub), MARKER(issue.id)].join('\n\n') }
+		return { to, body: [noteFor(issue, who), intro, evidenceMarkdown(onGithub, repoWebBase(issue.pr_url)), MARKER(issue.id)].join('\n\n') }
 	}
 
 	function setPreview(issueId: string, preview: Preview | null) {

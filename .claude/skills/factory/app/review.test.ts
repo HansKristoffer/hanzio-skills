@@ -59,6 +59,7 @@ async function storeResults() {
 				commit: HEAD,
 				claims: [],
 				notChecked: ['Accounts over 1M rows'],
+				leftOut: [],
 				decisions: [
 					{ decision: 'Kept CSV', confidence: 'high' },
 					{ decision: 'Batch size 500', confidence: 'low' }
@@ -114,6 +115,16 @@ test('pr ready marks the PR ready without waiting for checks, and adds the revie
 	expect(body.indexOf('(low) Batch size 500')).toBeLessThan(body.indexOf('(high) Kept CSV'))
 	expect(body).toContain('- Accounts over 1M rows')
 	expect(body).toContain('- src/export.ts:40')
+	expect(body).not.toContain('/#/issue/')
+})
+
+test('pr ready links the factory page from the body of a private repository', async () => {
+	await storeResults()
+	h.gh.pr({ ...rawPr({ view: { isDraft: true } }), body: 'Fixes #4' })
+	h.gh.replies({ repo: { out: 'true' } })
+	expect((await cli(['pr', 'ready'])).code).toBe(0)
+	expect(ghCalls('repos/acme/api --jq .private')).toHaveLength(1)
+	expect(ghCalls('pr edit')[0]!.stdin!).toContain(`(http://127.0.0.1:${h.port}/#/issue/t1)`)
 })
 
 test('pr ready --request waits for green checks, the bots and their items, and leaves the author out', async () => {

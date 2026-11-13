@@ -134,6 +134,10 @@ test('evidence add keeps a capture with its note and commit, and publish pushes 
 	expect(JSON.parse(cli(['evidence', 'publish'], { FACTORY_VERSION: 'v2' }).out).pushed).toBe(0)
 	const listed = JSON.parse(cli(['evidence', 'list'], { FACTORY_VERSION: 'v2' }).out).evidence
 	expect(listed[0].pushed).toBe(true)
+	// A before taken in a checkout of the base names that commit, not this checkout's HEAD.
+	const before = cli(['evidence', 'add', png, '--title', 'Orders page', '--label', 'before', '--commit', 'ba5e1234'], { FACTORY_VERSION: 'v2' })
+	expect(before.err).toBe('')
+	expect(JSON.parse(before.out).evidence).toMatchObject({ label: 'before', head: 'ba5e1234' })
 }, 20_000)
 
 test('preview up starts the detached buncargo run in the checkout and puts its addresses on the page', async () => {

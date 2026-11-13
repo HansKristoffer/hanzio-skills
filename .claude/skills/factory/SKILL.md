@@ -98,9 +98,9 @@ Read [references/plan-flow.md](references/plan-flow.md) and follow it: a plan ru
 2. With `reviewRounds` above 0, pull the PR branch here and run a review of its head.
 3. An `important` finding starts a new implement run. The service lists every open finding with its id, nits included, and the implementer reports each as `fixed` or `declined`. The next review covers only the new commits, sees every earlier finding with its outcome, and can uphold a decline. Stop after `reviewRounds` rounds.
 4. A review with only `nit` findings needs no run: fix them yourself, in this worktree, on the PR branch, and record each with `factory finding <id> --fixed <commit>`. Keep `pre-existing` findings for step 9.
-5. Check the captures: the screenshots and videos the reviewer sees on the page and in the PR. `factory status` lists them under `evidence`, each with the commit it shows, and the implement result's `media` says what was captured and why. A feature a person can see with nothing captured, or a capture older than a commit that changed what it shows, is one more implement run with that in `--context-file`. A bug fix needs none.
+5. Check the proof: what the reviewer sees on the page and in the PR in place of the diff. The table in [references/evidence.md](references/evidence.md) names the proof each kind of change needs. `factory status` lists the captures under `evidence`, each with the commit it shows, and the implement result holds `measured` (the numbers of a change made to move one) and `media` (what was captured and why). Proof the change's row names and the result lacks, or proof older than a commit that changed what it shows, is one more implement run with that in `--context-file`.
 
-**Done when** the last review of the PR's current head has no `important` finding, or the rounds are used up (then the gate holds the merge until a `merge` decision on that head is answered Merge), and the captures show the head's behavior.
+**Done when** the last review of the PR's current head has no `important` finding, or the rounds are used up (then the gate holds the merge until a `merge` decision on that head is answered Merge), and the proof shows the head's behavior.
 
 ## 8. The review on GitHub, then land
 

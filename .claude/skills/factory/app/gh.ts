@@ -133,6 +133,12 @@ function parseList<T>(out: string): T[] | null {
 	}
 }
 
+/** Whether only the repository's members can read it (private or internal). False when GitHub does not say. */
+export async function isPrivate(ref: PrRef) {
+	const repo = await gh(['api', `repos/${ref.owner}/${ref.name}`, '--jq', '.private'])
+	return repo.ok && repo.out === 'true'
+}
+
 // ---- writes, made by the CLI in the thread ----
 
 export const login = async () => must(['api', 'user', '--jq', '.login'])

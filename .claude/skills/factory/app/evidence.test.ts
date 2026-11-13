@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { existsSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { evidenceMarkdown, parseUrlFlags, parseUrlLines, repoWebBase, type PublicEvidence } from './evidence.ts'
+import { commitRef, evidenceMarkdown, measuredMarkdown, parseUrlFlags, parseUrlLines, repoWebBase, type PublicEvidence } from './evidence.ts'
 import { git, scratchRepo, setup, type Harness } from './fixtures/harness.ts'
 import { prepare, pushEvidence } from './media.ts'
 
@@ -80,7 +80,7 @@ describe('captures', () => {
 })
 
 describe('on GitHub', () => {
-	const implement = { prUrl: 'https://github.com/acme/api/pull/7', commit: 'abc1234', claims: [], notChecked: ['Safari'], decisions: [] }
+	const implement = { prUrl: 'https://github.com/acme/api/pull/7', commit: 'abc1234', claims: [], notChecked: ['Safari'], leftOut: [], decisions: [] }
 	async function built(extra: Record<string, unknown> = {}) {
 		const run = (await as('/api/issue/run', { stage: 'implement' })).body.run
 		const res = await h.as('child')('POST', `/api/runs/${run}/report`, { text: 'done', done: true, result: { outcome: 'done', result: { ...implement, ...extra } } })
@@ -110,6 +110,75 @@ describe('on GitHub', () => {
 		expect(body).toContain(`](https://github.com/acme/api/raw/c0ffee1234/${names[0]})`)
 		expect(body).toContain('### Try it\n\nSign in as demo@acme.test and open /orders.')
 		expect(body.indexOf('### What it looks like')).toBeLessThan(body.indexOf('### Decisions'))
+	})
+
+	test('each side of a pair names the commit it shows, as a link into the PR\'s repository', async () => {
+		await built()
+		await evidence({ action: 'add', path: shot('b.png'), title: 'Orders page', label: 'before', head: 'ba5e1234567890' })
+		await evidence({ action: 'add', path: shot('a.png'), title: 'Orders page', label: 'after', head: 'abc1234' })
+		const names = ((await evidence({ action: 'plan' })).body.files as { name: string }[]).map((f) => f.name)
+		await evidence({ action: 'published', commit: 'c0ffee1234', files: names })
+		expect(await sections()).toContain(
+			'| Before | After |\n| --- | --- |\n| [`ba5e123456`](https://github.com/acme/api/commit/ba5e1234567890) | [`abc1234`](https://github.com/acme/api/commit/abc1234) |\n| ![Before: Orders page]('
+		)
+	})
+
+	test('the body shows how the problem was reproduced, what was measured, what was left out and which model did each stage', async () => {
+		const research = (await as('/api/issue/run', { stage: 'research' })).body.run
+		const reproduction = { command: 'bun test src/export.test.ts', base: 'ba5e1234567890', observed: '1 fail: the export times out after 30 s.' }
+		const researched = { kind: 'bug', size: 'S', route: 'implement', reproduction, checks: [] }
+		expect((await h.as('child')('POST', `/api/runs/${research}/report`, { text: 'x', done: true, result: { outcome: 'done', result: researched } })).status).toBe(200)
+		const measured = {
+			how: 'A copy of the demo database, 5 runs each, the median.',
+			base: 'ba5e1234567890',
+			head: 'abc1234',
+			rows: [{ what: 'Export of 10,000 orders', before: '31 s', after: '2.4 s' }],
+			same: 'Both sides wrote the same 10,000 rows.'
+		}
+		await built({ measured, leftOut: ['The PDF export has the same loop; left for its own issue.'] })
+		const body = await sections()
+		expect(body).toContain(
+			'### Reproduced on [`ba5e123456`](https://github.com/acme/api/commit/ba5e1234567890)\n\n```bash\nbun test src/export.test.ts\n```\n\n1 fail: the export times out after 30 s.'
+		)
+		expect(body).toContain(
+			'### Measured\n\nA copy of the demo database, 5 runs each, the median.\n\n| | Before, at [`ba5e123456`](https://github.com/acme/api/commit/ba5e1234567890) | After, at [`abc1234`](https://github.com/acme/api/commit/abc1234) |\n| --- | ---: | ---: |\n| Export of 10,000 orders | 31 s | 2.4 s |\n\nBoth sides wrote the same 10,000 rows.'
+		)
+		expect(body).toContain('### Not in this change\n\n- The PDF export has the same loop; left for its own issue.')
+		expect(body).toContain('### Who did the work\n\n- Researched by `')
+		expect(body).toContain('- Written by `')
+		expect(body).toContain('- No internal review ran\n- Run by the factory skill in T3 Code')
+		expect(body.indexOf('### Reproduced on')).toBeLessThan(body.indexOf('### Measured'))
+		expect(body.indexOf('### Not checked')).toBeLessThan(body.indexOf('### Not in this change'))
+	})
+
+	test('a feature shows no reproduction, and no measurements when nothing was measured', async () => {
+		await built()
+		const body = await sections()
+		expect(body).not.toContain('### Reproduced on')
+		expect(body).not.toContain('### Measured')
+		expect(body).toContain('### Not in this change\n\n- Nothing')
+	})
+
+	test('the body links the factory page in a private repository, and nowhere the public reads', async () => {
+		await built()
+		const notes = async (repoPrivate: boolean) => (await as('/api/issue/pr/plan', { action: 'notes', repoPrivate })).body.sections as string
+		expect(await notes(true)).toContain(
+			`## For the reviewer\n\n[The factory page for this issue](http://127.0.0.1:${h.port}/#/issue/t1) shows the whole run`
+		)
+		expect(await notes(true)).toContain('It opens on the machine the factory runs on.')
+		expect(await notes(false)).not.toContain('/#/issue/')
+		expect(await sections()).not.toContain('/#/issue/')
+	})
+
+	test('on a tailnet the link is the address the reviewer can open from another machine', async () => {
+		h.close()
+		h = setup({ tailnet: { ip: '127.0.0.2', name: 'worker.tail1234.ts.net' } })
+		repo = scratchRepo(h.dir)
+		await as('/api/issue/start', { cwd: repo.work, title: 'Bulk actions on orders' })
+		await built()
+		const body = (await as('/api/issue/pr/plan', { action: 'notes', repoPrivate: true })).body.sections as string
+		expect(body).toContain(`(http://worker.tail1234.ts.net:${h.port}/#/issue/t1)`)
+		expect(body).toContain("It opens on the factory's tailnet.")
 	})
 
 	test('with nothing captured, the body gives the reason the implementer gave, or leaves the part out', async () => {
@@ -306,5 +375,20 @@ describe('the dev environment', () => {
 		expect(parseUrlFlags(['web=http://localhost:3000/?a=b'])).toEqual([{ name: 'web', url: 'http://localhost:3000/?a=b' }])
 		expect(() => parseUrlFlags(['http://localhost:3000'])).toThrow('<name>=<http url>')
 		expect(() => parseUrlFlags(['web=localhost:3000'])).toThrow('<name>=<http url>')
+	})
+})
+
+describe('commits and measurements in Markdown', () => {
+	test('a commit links only when it is a commit and the repository is known', () => {
+		expect(commitRef('abc1234def5678', 'https://github.com/acme/api')).toBe('[`abc1234def`](https://github.com/acme/api/commit/abc1234def5678)')
+		expect(commitRef('abc1234')).toBe('`abc1234`')
+		expect(commitRef('origin/main`](x)', 'https://github.com/acme/api')).toBe('`origin/mainx`')
+	})
+
+	test('a cell cannot open a column, and no rows means no table', () => {
+		const measured = { how: 'Three runs.', base: 'ba5e123', head: 'abc1234', rows: [{ what: 'Cold | warm', before: '3 s', after: '1 s' }] }
+		expect(measuredMarkdown(measured)).toContain('| Cold \\| warm | 3 s | 1 s |')
+		expect(measuredMarkdown({ ...measured, rows: [] })).toBe('')
+		expect(measuredMarkdown(undefined)).toBe('')
 	})
 })
