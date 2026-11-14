@@ -4,10 +4,11 @@
 import { existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { parseArgs, type ParseArgsOptionsConfig } from 'node:util'
-import { APP_DIR, DEFAULT_PORT, appVersion, factoryHome, factoryPort, sh } from './env.ts'
-import { parseUrlFlags, repoWebBase } from './evidence.ts'
+import { APP_DIR, DEFAULT_PORT, appVersion, factoryHome, factoryPort, hasSystemd, sh } from './env.ts'
+import { onHost, parseUrlFlags, repoWebBase, type PreviewUrl } from './evidence.ts'
 import * as gh from './gh.ts'
-import { buncargoDown, buncargoUp, prepare, pushEvidence, usesBuncargo } from './media.ts'
+import { prepare, pushEvidence } from './media.ts'
+import { answers, buncargoDown, buncargoUp, ownAlive, ownLog, ownStart, ownStop, usesBuncargo } from './preview.ts'
 import { withSections } from './pr.ts'
 import { detectTailnet, startServer } from './server.ts'
 import { UNIT, install, uninstall, unitInstalled } from './service.ts'
@@ -53,10 +54,13 @@ What the reviewer looks at (git, ffmpeg and buncargo run here, in this checkout)
   evidence publish [--to <issue or PR url>]
       Push the captures to a ref on GitHub and show them in the PR's body; --to also posts them as one
       comment there. pr ready publishes too.
-  preview up [--apps <a,b>] [--url <name>=<url>]...
-      Start this checkout's dev environment (buncargo's detached run) and put its URLs on the page.
-      With --url nothing is started: the URLs of an app you started yourself are registered.
-  preview down                   stop it
+  preview up [--apps <a,b>]
+      With a dev.config.ts: start this checkout's buncargo run, detached, and put its URLs on the page.
+  preview up --url <name>=<url>... [--timeout <seconds>] -- <command>
+      Without one: run the project's start command outside this session, with this environment, wait
+      until every URL answers (180 seconds), and put them on the page. A localhost URL goes on the page
+      under the host the page is read at. Without a command, the URLs of an app you started are registered.
+  preview down                   stop what preview up started
   preview failed <reason | ->    say on the page why it did not start
 
 Anywhere:
@@ -106,9 +110,6 @@ async function waitFor(check: () => Promise<boolean>, ms: number) {
 }
 
 const usesUnit = () => port === DEFAULT_PORT && !process.env.FACTORY_HOME && unitInstalled()
-const hasSystemd = () =>
-	process.platform === 'linux' &&
-	sh(['systemctl', '--user', 'show-environment']).ok
 const transientUnit = () => `factory-${port}`
 
 function serverEnv() {
@@ -645,35 +646,54 @@ async function previewCommand(argv: string[]) {
 	const [action, ...rest] = argv
 	const top = checkoutTop()
 	if (action === 'up') {
-		const { values } = args(rest, { apps: { type: 'string' }, url: { type: 'string', multiple: true } })
-		let urls: { name: string; url: string }[]
+		const { values, positionals: command } = args(rest, {
+			apps: { type: 'string' },
+			url: { type: 'string', multiple: true },
+			timeout: { type: 'string' }
+		})
+		let urls: PreviewUrl[]
 		try {
 			urls = parseUrlFlags(values.url ?? [])
 		} catch (error) {
 			throw new UsageError((error as Error).message)
 		}
-		let warning = ''
-		if (!urls.length) {
-			if (!usesBuncargo(top)) {
-				throw new UsageError(
-					`preview up: ${top} has no dev.config.ts, so there is no buncargo run to start. Start the app as the repository's AGENTS.md says, then give each address: --url <name>=<url>`
-				)
-			}
-			const started = buncargoUp(top, str(values.apps))
-			urls = started.urls
-			warning = started.output
-			if (!urls.length) {
-				await call('POST', '/api/issue/preview', { state: 'failed', error: (warning || 'buncargo printed no URL').slice(0, 1900) })
-				throw new Error(`the dev environment did not start, and the page says so.\n${warning}`)
-			}
+		if (urls.length) return previewOwn(top, urls, command, str(values.timeout))
+		if (command.length) {
+			throw new UsageError('preview up: say where the command serves the app: --url <name>=http://localhost:<port> -- <command>')
 		}
-		const result = await call('POST', '/api/issue/preview', { state: 'up', urls, head: head(), error: warning ? warning.slice(0, 1900) : undefined })
-		return { ...result, urls, ...(warning && { warning }) }
+		if (!usesBuncargo(top)) {
+			throw new UsageError(
+				`preview up: ${top} has no dev.config.ts, so there is no buncargo run to start. Give the start command the repository's AGENTS.md names and each address it serves: --url <name>=http://localhost:<port> -- <command>`
+			)
+		}
+		const started = buncargoUp(top, str(values.apps))
+		const warning = started.output
+		if (!started.urls.length) {
+			await call('POST', '/api/issue/preview', { state: 'failed', error: (warning || 'buncargo printed no URL').slice(-MAX_PREVIEW_ERROR) })
+			throw new Error(`the dev environment did not start, and the page says so.\n${warning}`)
+		}
+		const result = await call('POST', '/api/issue/preview', {
+			state: 'up',
+			urls: started.urls,
+			head: head(),
+			stopsAt: started.stopsAt ?? undefined,
+			error: warning ? warning.slice(-MAX_PREVIEW_ERROR) : undefined
+		})
+		return { ...result, urls: started.urls, ...(started.stopsAt && { stopsAt: new Date(started.stopsAt).toISOString() }), ...(warning && { warning }) }
 	}
 	if (action === 'down') {
-		const stopped = usesBuncargo(top) ? buncargoDown(top) : { ok: true, output: '' }
+		const before = (await call('POST', '/api/issue/status', {})).preview as { state?: string } | null
+		const own = ownStop(threadId!)
+		const cargo = usesBuncargo(top) ? buncargoDown(top) : null
 		const result = await call('POST', '/api/issue/preview', { state: 'down' })
-		return { ...result, ...(!stopped.ok && { warning: stopped.output }) }
+		const warning = [
+			own && !own.ok ? own.output : '',
+			cargo && !cargo.ok ? cargo.output : '',
+			!own && !cargo && before?.state === 'up' ? 'factory did not start this app, so it still runs: stop it the way you started it.' : ''
+		]
+			.filter(Boolean)
+			.join('\n')
+		return { ...result, ...(warning && { warning }) }
 	}
 	if (action === 'failed') {
 		const reason = await textOf(rest)
@@ -681,6 +701,64 @@ async function previewCommand(argv: string[]) {
 		return call('POST', '/api/issue/preview', { state: 'failed', error: reason })
 	}
 	throw new UsageError('preview: up, down or failed')
+}
+
+/** The service keeps 2000 characters of an error. The cause is at the end of a start's output, so the end is kept. */
+const MAX_PREVIEW_ERROR = 1900
+
+/**
+ * A project without buncargo. With a command, starts it outside this session and waits until every address
+ * answers; without one, registers an app the thread started itself. Either way each loopback address goes on
+ * the page under the host the page is read at, when the app answers there.
+ */
+async function previewOwn(top: string, given: PreviewUrl[], command: string[], timeout: string | undefined) {
+	const seconds = timeout === undefined ? (command.length ? 180 : 10) : Number(timeout)
+	if (!Number.isFinite(seconds) || seconds < 0) throw new UsageError(`--timeout: ${timeout} is not a number of seconds`)
+	// Asked before anything starts, so a thread without an issue starts nothing.
+	const pageHost = new URL(String((await call('POST', '/api/issue/status', {})).url)).hostname
+	const own = command.length ? ownStart(threadId!, top, command) : null
+	const until = Date.now() + seconds * 1000
+	let pending = given
+	let exited = false
+	for (;;) {
+		const live = await Promise.all(pending.map((entry) => answers(entry.url)))
+		pending = pending.filter((_, n) => !live[n])
+		exited = !!own && !ownAlive(own)
+		if (!pending.length || exited || Date.now() >= until) break
+		await Bun.sleep(500)
+	}
+	if (pending.length) {
+		const silent = pending.map((entry) => `${entry.name} (${entry.url})`).join(', ')
+		if (!own) {
+			throw new UsageError(
+				`preview up: nothing answers at ${silent}. Start the app first, or let factory start it: --url <name>=<url> -- <command>`
+			)
+		}
+		const what = `${exited ? 'The command exited before' : `After ${seconds} seconds the command was stopped:`} ${silent} ${exited ? 'answered' : 'did not answer (a slower start takes --timeout <seconds>)'}.\n$ ${command.join(' ')}`
+		const reason = `${what}\n${ownLog(own)}`
+		ownStop(threadId!)
+		// The page keeps what failed and the end of the log, where a command says why it stopped.
+		const shown = reason.length > MAX_PREVIEW_ERROR ? `${what}\n${reason.slice(what.length - MAX_PREVIEW_ERROR + 1)}` : reason
+		await call('POST', '/api/issue/preview', { state: 'failed', error: shown.slice(0, MAX_PREVIEW_ERROR) })
+		throw new Error(`the dev environment did not start, and the page says so.\n${reason}`)
+	}
+	const notes: string[] = []
+	const urls: PreviewUrl[] = []
+	for (const entry of given) {
+		const there = onHost(entry.url, pageHost)
+		if (there && (await answers(there))) urls.push({ name: entry.name, url: there })
+		else {
+			urls.push(entry)
+			if (there) {
+				notes.push(
+					`${entry.name} answers at ${entry.url} on this machine only: ${there} does not answer, so a reviewer on another machine cannot open it. Start it listening on 0.0.0.0.`
+				)
+			}
+		}
+	}
+	const warning = notes.join('\n')
+	const result = await call('POST', '/api/issue/preview', { state: 'up', urls, head: head(), error: warning || undefined })
+	return { ...result, urls, ...(own && { log: own.log }), ...(warning && { warning }) }
 }
 
 /** A brief runs to a thousand words, and an orchestrator that retypes it into `delegate_task` can change it.

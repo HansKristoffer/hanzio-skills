@@ -105,7 +105,7 @@ const MAX_PREVIEW_URLS = 12
 const PROBE_MS = 2500
 const REASK_MS = 10 * 60 * 1000
 const PREVIEW_START =
-	"Factory: the reviewer asked on the factory page for this issue's dev environment, to try the change. Run `factory preview up` in this worktree, with a 10-minute timeout, as the factory skill's **The reviewer's dev environment** says, and answer in one line. Change no code for it."
+	"Factory: the reviewer asked on the factory page for this issue's dev environment, to try the change. Start it in this worktree as the factory skill's **The reviewer's dev environment** says (`factory preview up`, with a 10-minute timeout), and answer in one line. Change no code for it."
 const PREVIEW_STOP =
 	"Factory: the reviewer asked on the factory page to stop this issue's dev environment. Run `factory preview down`, and answer in one line."
 const ROUND_OPTIONS = ['Go on', 'Stop'] as const
@@ -1846,7 +1846,8 @@ export function startServer(options: ServerOptions) {
 				return { name: text(given.name, `urls[${n}].name`, { required: true, max: 60 })!, url }
 			})
 		}
-		setPreview(issue.id, { state, urls, head: text(body.head, 'head', { max: 64 }) ?? null, error, at: Date.now() })
+		const stopsAt = state === 'up' && typeof body.stopsAt === 'number' && Number.isFinite(body.stopsAt) ? body.stopsAt : null
+		setPreview(issue.id, { state, urls, head: text(body.head, 'head', { max: 64 }) ?? null, error, at: Date.now(), stopsAt })
 		const said =
 			state === 'up'
 				? `Dev environment up: ${urls.map((u) => u.name).join(', ')}${error ? ' (not every app came up)' : ''}`

@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 // A stand-in for `bunx buncargo` in tests. It records each call as a JSON line in FAKE_BUNCARGO_LOG.
-// `url` prints two addresses the way buncargo does; FAKE_BUNCARGO_FAIL makes `dev` exit 1 with no URL.
+// `url` prints two addresses the way buncargo does, and `status --json` names the second as the primary app
+// of a detached run that stops after two idle hours; FAKE_BUNCARGO_FAIL makes `dev` exit 1 with no URL.
 import { appendFileSync } from 'node:fs'
 
 const args = process.argv.slice(2)
@@ -17,4 +18,7 @@ if (args[0] === 'url') {
 	}
 	console.log('web            http://localhost:5173')
 	console.log('shopify admin  https://admin.example.test/store')
+}
+if (args[0] === 'status') {
+	console.log(JSON.stringify({ runs: [{ detached: true, idleLimitMs: 7_200_000, primaryApp: 'shopify admin', apps: [] }] }))
 }

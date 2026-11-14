@@ -1,11 +1,11 @@
-// What the CLI does with a capture before the service keeps it, and with the dev environment. It all runs
-// in the thread, with the thread's own git login and environment: ffmpeg makes a video small enough to
-// review, git pushes the files to a ref on GitHub, and buncargo starts and stops the dev environment.
+// What the CLI does with a capture before the service keeps it. It runs in the thread, with the thread's
+// own git login and environment: ffmpeg makes a video small enough to review, and git pushes the files to
+// a ref on GitHub.
 import { existsSync, mkdtempSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { sh } from './env.ts'
-import { extOf, kindOf, parseUrlLines } from './evidence.ts'
+import { extOf, kindOf } from './evidence.ts'
 
 const CLIP_BUDGET = 8 * 1024 * 1024
 const CLIP_SECONDS = 20
@@ -87,27 +87,4 @@ export function pushEvidence(cwd: string, ref: string, files: { name: string; pa
 	const commit = git(cwd, [...identity, 'commit-tree', tree, ...(parent ? ['-p', parent] : []), '-m', message])
 	git(cwd, ['push', '--quiet', 'origin', `${commit}:${ref}`])
 	return { commit, pushed: true }
-}
-
-// ---- the dev environment ----
-
-/** FACTORY_BUNCARGO points at another binary, which is what the tests use. */
-const buncargo = () => (process.env.FACTORY_BUNCARGO ? [process.env.FACTORY_BUNCARGO] : ['bunx', 'buncargo'])
-
-export const usesBuncargo = (top: string) => existsSync(join(top, 'dev.config.ts'))
-
-const tail = (text: string, lines = 12) => text.trim().split('\n').slice(-lines).join('\n')
-
-/** Starts this checkout's buncargo run in the background and returns its URLs, as the reader's machine reaches them. */
-export function buncargoUp(top: string, apps?: string) {
-	const started = sh([...buncargo(), 'dev', '--detach', ...(apps ? [`--apps=${apps}`] : [])], { cwd: top })
-	const listed = sh([...buncargo(), 'url'], { cwd: top })
-	const urls = listed.ok ? parseUrlLines(listed.out) : []
-	const output = tail(`${started.out}\n${started.err}`)
-	return { urls, ok: started.ok, output: started.ok ? '' : output || tail(listed.err) }
-}
-
-export function buncargoDown(top: string) {
-	const stopped = sh([...buncargo(), 'stop', '--all'], { cwd: top })
-	return { ok: stopped.ok, output: stopped.ok ? '' : tail(`${stopped.out}\n${stopped.err}`) }
 }
