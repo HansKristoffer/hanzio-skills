@@ -37,7 +37,8 @@ export const RESULT_SHAPES = {
 		{
 			kind: oneOf('bug', 'feature'),
 			size: oneOf('S', 'M', 'L'),
-			route: oneOf('implement', 'plan'),
+			/** `review` only for an issue that took in a PR and asks nothing built on it. */
+			route: oneOf('implement', 'plan', 'review'),
 			/** The command that shows the problem, the commit it ran on, and what it printed there. */
 			reproduction: either(obj({ command: str, base: str, observed: str }), obj({ notPossible: str })),
 			checks: list(obj({ command: str, baseline: str })),

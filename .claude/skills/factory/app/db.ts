@@ -175,7 +175,9 @@ export const MIGRATIONS = [
 		published text,
 		created_at integer not null
 	);
-	create index evidence_issue on evidence (issue_id);`
+	create index evidence_issue on evidence (issue_id);`,
+	// An issue can start from a PR that already exists, which it reviews or builds on.
+	`alter table issues add column pr_taken text;`
 ]
 
 export const MAX_EVENT = 2000
@@ -217,6 +219,8 @@ export type IssueRow = {
 	merge_cap: 'ask' | 'never' | null
 	/** The dev environment a reviewer tries the change in, as JSON (`Preview` in evidence.ts). */
 	preview: string | null
+	/** The PR the issue started from, as JSON (`TakenPr` in takein.ts); null when the factory opens the PR. */
+	pr_taken: string | null
 }
 
 /** One screenshot or video of the change. `file`, `poster` and `clip` are names in the issue's evidence folder. */

@@ -10,6 +10,7 @@ import * as gh from './gh.ts'
 import { prepare, pushEvidence } from './media.ts'
 import { answers, buncargoDown, buncargoUp, ownAlive, ownLog, ownStart, ownStop, usesBuncargo } from './preview.ts'
 import { withSections } from './pr.ts'
+import { pushTaken, takeIn, type TakenPr } from './takein.ts'
 import { detectTailnet, startServer } from './server.ts'
 import { UNIT, install, uninstall, unitInstalled } from './service.ts'
 
@@ -17,6 +18,9 @@ const HELP = `factory: report to the machine's factory service. Every command pr
 
 Issue commands (inside a T3 Code thread; the thread is the issue):
   start --title <t> [--body-file <path>] [--source <id>]
+  start --pr <url> [--title <t>] [--body-file <path>] [--source <id>]
+      Takes in an open PR: puts this worktree's branch on its head, with the PR's branch as its upstream.
+      The title defaults to the PR's, the source to its URL, and the body is what to do with it.
   status
   run --stage research|plan|implement|review|land [--on plan|pr] [--context-file <path>] [--head <sha>] [--fallback]
       Prints the run, its target, and the task to hand the child, which names the file the brief is in.
@@ -31,12 +35,14 @@ Issue commands (inside a T3 Code thread; the thread is the issue):
       A merge decision needs --head and has the options Merge and Do not merge. --round asks about
       going on past the review round budget.
   answer <decision> <text | ->
-  close --outcome shipped|not-a-bug|duplicate|already-fixed|dropped [--deploy verified|unverified|none]
+  close --outcome shipped|reviewed|not-a-bug|duplicate|already-fixed|dropped [--deploy verified|unverified|none]
         [--report-file <path>] <summary | ->
 
 The review on GitHub (gh runs here, as this thread's login):
   pr sync                        read the PR, store it, print what needs action and the gate
   pr ready [--request]           mark it ready with the reviewer notes; --request asks settings.reviewers
+  pr push                        push HEAD to the branch of a PR the issue took in (start --pr)
+  pr review                      post the last internal review's findings on the PR as one review comment
   pr reply <item> --fixed <commit> [-] | --declined - | --answered -
   pr ignore <item> [<reason | ->]
   pr round -                     post the round's summary, ask again who requested changes, close the round
@@ -65,7 +71,7 @@ What the reviewer looks at (git, ffmpeg and buncargo run here, in this checkout)
 
 Anywhere:
   settings                       the settings an issue started here would get
-  new --title <t> [--body-file <path>] [--source <id>] [--merge ask|never] [--again]
+  new --title <t> | --pr <url> [--body-file <path>] [--source <id>] [--merge ask|never] [--again]
   drop <issue> [<reason | ->]   close an open issue as dropped, from outside its thread
   board
   history [--days <n>]
@@ -312,10 +318,31 @@ async function main(argv: string[]) {
 
 	switch (command) {
 		case 'start': {
-			const { values } = args(rest, { title: { type: 'string' }, 'body-file': { type: 'string' }, source: { type: 'string' } })
+			const { values } = args(rest, {
+				title: { type: 'string' },
+				'body-file': { type: 'string' },
+				source: { type: 'string' },
+				pr: { type: 'string' }
+			})
 			const body = readFile(str(values['body-file']), '--body-file')
+			let taken: TakenPr | undefined
+			if (values.pr) {
+				try {
+					taken = await takeIn(values.pr, process.cwd())
+				} catch (error) {
+					throw new UsageError(`start --pr: ${(error as Error).message}`)
+				}
+			}
 			await ensureServer()
-			return print(await call('POST', '/api/issue/start', { cwd: process.cwd(), title: values.title, body, source: values.source }))
+			return print(
+				await call('POST', '/api/issue/start', {
+					cwd: process.cwd(),
+					title: values.title ?? taken?.title,
+					body,
+					source: values.source ?? taken?.url,
+					taken
+				})
+			)
 		}
 		case 'status':
 			await ensureServer()
@@ -400,7 +427,8 @@ async function main(argv: string[]) {
 				'body-file': { type: 'string' },
 				source: { type: 'string' },
 				merge: { type: 'string' },
-				again: { type: 'boolean' }
+				again: { type: 'boolean' },
+				pr: { type: 'string' }
 			})
 			const body = readFile(str(values['body-file']), '--body-file')
 			await ensureServer()
@@ -411,7 +439,8 @@ async function main(argv: string[]) {
 					body,
 					source: values.source,
 					merge: values.merge,
-					again: values.again
+					again: values.again,
+					pr: values.pr
 				})
 			)
 		}
@@ -502,6 +531,22 @@ async function writeNotes(url: string) {
 async function prCommand(argv: string[]) {
 	const [action, ...rest] = argv
 	if (action === 'sync') return sync()
+	if (action === 'push') {
+		let pushed: ReturnType<typeof pushTaken>
+		try {
+			pushed = pushTaken(process.cwd())
+		} catch (error) {
+			throw new UsageError(`pr push: ${(error as Error).message}`)
+		}
+		// A stage's child pushes from its own thread, which is no issue: the push stands, the line is skipped.
+		await call('POST', '/api/issue/report', { text: `Pushed ${pushed.pushed.slice(0, 7)} to ${pushed.to}` }).catch(() => {})
+		return pushed
+	}
+	if (action === 'review') {
+		const plan = await call('POST', '/api/issue/pr/plan', { action: 'review', login: await gh.login() })
+		await gh.review(String(plan.url), String(plan.body))
+		return call('POST', '/api/issue/pr/written', { action: 'reviewed', findings: plan.findings })
+	}
 	if (action === 'ready') {
 		const { values } = args(rest, { request: { type: 'boolean' } })
 		if (values.request) {
@@ -562,7 +607,7 @@ async function prCommand(argv: string[]) {
 		for (const reviewer of again) await gh.requestAgain(gh.parsePrUrl(url), reviewer)
 		return call('POST', '/api/issue/pr/written', { action: 'round', reviewers: again })
 	}
-	throw new UsageError('pr: sync, ready, reply, ignore or round')
+	throw new UsageError('pr: sync, ready, push, review, reply, ignore or round')
 }
 
 const head = () => sh(['git', 'rev-parse', 'HEAD']).out || undefined

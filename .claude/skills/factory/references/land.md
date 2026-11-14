@@ -22,7 +22,7 @@ A person can merge or close the PR at any stage, whatever the setting; the servi
 The report file for `factory close`, readable in a minute:
 
 ```markdown
-**<title>** (new / came back): Shipped / Waiting for your merge / Stopped, needs an answer / Not ours to fix
+**<title>** (new / came back / a PR taken in): Shipped / Reviewed / Waiting for your merge / Stopped, needs an answer / Not ours to fix
 **What happened:** what failed or what was asked, for whom and how often, in one or two sentences.
 **Cause:** the root cause in plain words. "None" for a feature.
 **Fix:** what changed, in behavior terms, not file names. "None" if you stopped.
