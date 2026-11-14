@@ -415,6 +415,7 @@ const span = (ms) => {
 	if (m < 1440) return `${Math.floor(m / 60)}h ${m % 60}m`
 	return `${Math.round(m / 1440)}d`
 }
+const hour = (ms) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 const clock = (ms) => new Date(ms).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 /** Times that count up are kept current by the ticker at the end of this script. */
 const when = (ms) => h('time', { 'data-at': ms, title: clock(ms) }, ago(ms))
@@ -836,15 +837,16 @@ function previewPanel(i, preview, tryIt, prHead) {
 	if (state === 'up') {
 		const dead = !!seen && links.length > 0 && links.every((u) => seen.get(u.url) === false)
 		const moved = prHead && preview.head && !sameCommit(preview.head, prHead)
+		const idled = !!preview.stopsAt && Date.now() > preview.stopsAt
 		parts = [
 			h('div', { class: 'row' },
 				...links.map((u, n) => h('a', { class: `btn env${n === 0 && !dead ? ' primary' : ''}${seen?.get(u.url) === true ? ' ok' : seen?.get(u.url) === false ? ' dead' : ''}`, href: u.url, target: '_blank', rel: 'noreferrer', title: seen?.get(u.url) === false ? 'Nothing answers here' : u.url }, h('i'), `Open ${u.name}`)),
 				dead ? start('Start it again') : live ? h('button', { class: 'btn quiet', onclick: ask('stop') }, 'Stop') : null
 			),
 			h('p', { class: 'meta' }, dead
-				? 'Nothing answers at these addresses any more. It was probably stopped.'
-				: dotted('Running', preview.head ? `on ${short(preview.head)}` : null, moved ? `the PR has moved to ${short(prHead)} since` : null, h('span', {}, 'started ', when(preview.at)))),
-			preview.error ? fold(`preview:${i.id}`, 'Not every app came up', h('pre', {}, preview.error)) : null
+				? (idled ? 'It stopped by itself after standing idle.' : 'Nothing answers at these addresses any more. It was probably stopped.')
+				: dotted('Running', preview.head ? `on ${short(preview.head)}` : null, moved ? `the PR has moved to ${short(prHead)} since` : null, h('span', {}, 'started ', when(preview.at)), preview.stopsAt && !idled ? `stops by itself around ${hour(preview.stopsAt)}` : null)),
+			preview.error ? fold(`preview:${i.id}`, 'What the start reported', h('pre', {}, preview.error)) : null
 		]
 	} else if (state === 'requested') {
 		parts = [h('div', { class: 'row' }, h('button', { class: 'btn primary', disabled: true }, 'Starting'), thread), h('p', { class: 'meta' }, 'The thread was asked to start it ', when(preview.at), '. The links show here when it is up.')]

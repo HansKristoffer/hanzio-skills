@@ -48,7 +48,7 @@ beforeAll(() => {
 
 afterAll(async () => {
 	await fetch(`http://127.0.0.1:${port}/api/shutdown`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }).catch(() => {})
-	if (linuxSystemd) Bun.spawnSync(['systemctl', '--user', 'stop', `factory-${port}`])
+	if (linuxSystemd) Bun.spawnSync(['systemctl', '--user', 'stop', `factory-${port}`, `factory-${port}-preview-cli-thread`], { stderr: 'ignore' })
 	rmSync(dir, { recursive: true, force: true })
 })
 
@@ -150,25 +150,27 @@ test('preview up starts the detached buncargo run in the checkout and puts its a
 	const without = cli(['preview', 'up'], env)
 	expect(without.code).toBe(1)
 	expect(without.err).toContain('has no dev.config.ts')
-	expect(without.err).toContain('--url <name>=<url>')
-	expect(JSON.parse(cli(['preview', 'up', '--url', 'web=http://localhost:9'], env).out).urls).toEqual([{ name: 'web', url: 'http://localhost:9' }])
+	expect(without.err).toContain('--url <name>=http://localhost:<port> -- <command>')
 	expect(calls()).toEqual([])
 
 	writeFileSync(join(work, 'dev.config.ts'), 'export default {}\n')
+	const before = Date.now()
 	const up = cli(['preview', 'up', '--apps', 'web'], env)
 	expect(up.err).toBe('')
+	// The primary app leads, since the page makes the first address its main button.
 	expect(JSON.parse(up.out).urls).toEqual([
-		{ name: 'web', url: 'http://localhost:5173' },
-		{ name: 'shopify admin', url: 'https://admin.example.test/store' }
+		{ name: 'shopify admin', url: 'https://admin.example.test/store' },
+		{ name: 'web', url: 'http://localhost:5173' }
 	])
-	expect(calls().map((c) => c.args)).toEqual([['dev', '--detach', '--apps=web'], ['url']])
+	expect(calls().map((c) => c.args)).toEqual([['dev', '--detach', '--apps=web'], ['url'], ['status', '--json']])
 	expect(calls()[0]!.cwd).toBe(work)
 	expect(status()).toMatchObject({ state: 'up', head: git(work, 'rev-parse', 'HEAD') })
+	expect(status().stopsAt).toBeGreaterThanOrEqual(before + 7_200_000)
 
 	const failed = cli(['preview', 'up'], { ...env, FAKE_BUNCARGO_FAIL: '1' })
 	expect(failed.code).toBe(1)
 	expect(failed.err).toContain('did not start')
-	expect(status()).toMatchObject({ state: 'failed' })
+	expect(status()).toMatchObject({ state: 'failed', stopsAt: null })
 	expect(status().error).toContain('port 3000 is held by another checkout')
 
 	expect(cli(['preview', 'down'], env).code).toBe(0)
@@ -176,3 +178,66 @@ test('preview up starts the detached buncargo run in the checkout and puts its a
 	expect(status().state).toBe('down')
 	rmSync(join(work, 'dev.config.ts'))
 }, 30_000)
+
+test('preview up runs a project\'s own start command outside the session, and preview down stops it', async () => {
+	const env = { FACTORY_VERSION: 'v2' }
+	const status = () => JSON.parse(cli(['status'], env).out).preview
+	const appPort = freePort()
+	const url = `http://127.0.0.1:${appPort}`
+	const listening = async () => !!(await fetch(url).catch(() => null))
+	writeFileSync(join(dir, 'app.ts'), 'Bun.serve({ port: Number(process.env.APP_PORT), hostname: "127.0.0.1", fetch: () => new Response("app") })\nconsole.log("app is listening")\n')
+
+	const bare = cli(['preview', 'up', '--', 'bun', join(dir, 'app.ts')], env)
+	expect(bare.code).toBe(1)
+	expect(bare.err).toContain('--url <name>=http://localhost:<port> -- <command>')
+
+	// An address nothing answers at is refused, so the page never gets a link that was dead from the start.
+	const nothing = cli(['preview', 'up', '--timeout', '0', '--url', `web=${url}`], env)
+	expect(nothing.code).toBe(1)
+	expect(nothing.err).toContain(`nothing answers at web (${url})`)
+
+	const up = cli(['preview', 'up', '--url', `web=${url}`, '--', 'bun', join(dir, 'app.ts')], { ...env, APP_PORT: String(appPort) })
+	expect(up.err).toBe('')
+	const started = JSON.parse(up.out) as { urls: unknown; log: string }
+	expect(started.urls).toEqual([{ name: 'web', url }])
+	expect(readFileSync(started.log, 'utf8')).toContain('app is listening')
+	expect(status()).toMatchObject({ state: 'up', urls: [{ name: 'web', url }], head: git(work, 'rev-parse', 'HEAD') })
+	// The CLI that started it has exited, and the app still answers.
+	expect(await listening()).toBe(true)
+	if (linuxSystemd) {
+		const cgroup = Bun.spawnSync(['systemctl', '--user', 'show', `factory-${port}-preview-cli-thread`, '-p', 'ControlGroup'], { stdout: 'pipe' })
+		expect(cgroup.stdout.toString()).toContain(`factory-${port}-preview-cli-thread.service`)
+		// The environment reached the command through a private file, not the unit's command line.
+		const exec = Bun.spawnSync(['systemctl', '--user', 'show', `factory-${port}-preview-cli-thread`, '-p', 'ExecStart'], { stdout: 'pipe' })
+		expect(exec.stdout.toString()).toContain('app.ts')
+		expect(exec.stdout.toString()).not.toContain(String(appPort))
+	}
+
+	const down = cli(['preview', 'down'], env)
+	expect(down.code).toBe(0)
+	expect(JSON.parse(down.out).warning).toBeUndefined()
+	expect(await listening()).toBe(false)
+	expect(status().state).toBe('down')
+
+	// A command that exits, or never serves the address, fails with what it printed.
+	const crashed = cli(['preview', 'up', '--url', `web=${url}`, '--', 'sh', '-c', 'echo "DATABASE_URL is not set"; exit 1'], env)
+	expect(crashed.code).toBe(1)
+	expect(crashed.err).toContain('The command exited before web')
+	expect(crashed.err).toContain('DATABASE_URL is not set')
+	expect(status()).toMatchObject({ state: 'failed' })
+	expect(status().error).toContain('DATABASE_URL is not set')
+	const slow = cli(['preview', 'up', '--timeout', '1', '--url', `web=${url}`, '--', 'sleep', '30'], env)
+	expect(slow.code).toBe(1)
+	expect(slow.err).toContain('After 1 seconds the command was stopped')
+
+	// An app the thread started itself is registered as it is, and `preview down` says it still runs.
+	const mine = Bun.spawn(['bun', join(dir, 'app.ts')], { env: { ...process.env, APP_PORT: String(appPort) }, stdout: 'ignore', stderr: 'ignore' })
+	try {
+		while (!(await listening())) await Bun.sleep(50)
+		expect(JSON.parse(cli(['preview', 'up', '--url', `web=${url}`], env).out).urls).toEqual([{ name: 'web', url }])
+		expect(JSON.parse(cli(['preview', 'down'], env).out).warning).toContain('factory did not start this app')
+		expect(await listening()).toBe(true)
+	} finally {
+		mine.kill()
+	}
+}, 60_000)

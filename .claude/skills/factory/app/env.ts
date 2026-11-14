@@ -34,6 +34,9 @@ export function sh(args: string[], options: { cwd?: string } = {}) {
 	}
 }
 
+/** Whether this user has a systemd manager to run a unit that outlives the caller's session. */
+export const hasSystemd = () => process.platform === 'linux' && sh(['systemctl', '--user', 'show-environment']).ok
+
 /** The SHA-256 of the app's source, so a synced skill update is noticed. FACTORY_VERSION overrides it, for tests. */
 export function appVersion() {
 	if (process.env.FACTORY_VERSION) return process.env.FACTORY_VERSION

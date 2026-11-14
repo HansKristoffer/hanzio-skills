@@ -123,10 +123,13 @@ Read [references/review-loop.md](references/review-loop.md) and follow it: the P
 
 The issue's page has a button that asks this thread to start the app, so the reviewer can try the change. The ask arrives as a message that starts with `Factory: the reviewer asked`, at any stage, and needs no `factory status` first.
 
-- **Start:** make sure this worktree is on the PR's head, then `factory preview up`, with a 10-minute timeout. In a checkout with a `dev.config.ts` it runs buncargo's detached run, which outlives your turn, and puts every address `bunx buncargo url` prints on the page. Anywhere else, start the app as the repository's `AGENTS.md` says, in a way that outlives your turn, and register it: `factory preview up --url <name>=<url>`, with an address the reviewer's own machine can open.
+- **Start:** put this worktree on the PR's head (`git pull --ff-only` when its branch on origin is ahead), then run one of these with a 10-minute timeout:
+  - In a checkout with a `dev.config.ts`: `factory preview up`. It starts buncargo's detached run and puts every address `bunx buncargo url` prints on the page, the primary app first. Add `--apps <a,b>` when the change needs only those apps.
+  - In any other checkout: `factory preview up --url <name>=http://localhost:<port> -- <command>`, with the start command and the port the repository's `AGENTS.md` names, and one `--url` per app the reviewer opens, named as they know it (`web`, `api`). The command gets this shell's environment, so a variable set in front of `factory` reaches it (`PORT=3100 factory preview up ...`); take a port nothing listens on. The call returns once every address answers, and puts each on the page under the host the reviewer reads the page at.
+- **A `warning` in the answer:** an app that answers "on this machine only" is started again listening on `0.0.0.0`, with the dev server's own flag (Vite's `--host`). An app that did not come up counts as not started when the reviewer needs it for this change.
 - **It did not start:** fix what the output names when that is setup (dependencies not installed, a missing local file the repository documents) and run it once more. Otherwise `factory preview failed -` with the reason on stdin. Change no code for it.
-- **Stop:** `factory preview down`.
+- **Stop:** `factory preview down`. It stops what `factory preview up` started.
 
-It stays up between your turns until the reviewer stops it or the issue closes (step 9), so it is the one thing you started that you leave running. After a push, an environment that does not reload by itself is started again with `factory preview up`.
+It runs outside this session, so it is the one thing you started that you leave running: until the reviewer stops it, the issue closes (step 9), or buncargo stops a run that stood idle, which the page shows with a button to start it again. After a push, an environment that does not reload by itself is started again with the same `factory preview up`.
 
 **Done when** the page shows the addresses, or the reason it did not start.

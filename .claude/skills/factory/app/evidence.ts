@@ -37,6 +37,8 @@ export type Preview = {
 	head: string | null
 	error: string | null
 	at: number
+	/** When a run that idles stops by itself (buncargo's detached run), in ms; absent when it has no such limit. */
+	stopsAt?: number | null
 }
 
 /** `https://host/owner/name` from a pull request URL or a git remote, or null for a remote that is not a host. */
@@ -166,4 +168,31 @@ export function parseUrlFlags(flags: string[]): PreviewUrl[] {
 		if (at < 1 || !/^https?:\/\/\S+$/.test(url)) throw new Error(`--url: write it as <name>=<http url>, not "${flag}"`)
 		return { name, url }
 	})
+}
+
+/** What `buncargo status --json` says of this checkout's run: the app `buncargo open` opens, and how long a
+ * detached run idles before buncargo stops it. Empty when the output is not that JSON. */
+export function parseRun(out: string): { primary?: string; idleMs?: number } {
+	try {
+		const run = JSON.parse(out)?.runs?.[0]
+		return {
+			...(typeof run?.primaryApp === 'string' && { primary: run.primaryApp }),
+			...(run?.detached === true && typeof run.idleLimitMs === 'number' && run.idleLimitMs > 0 && { idleMs: run.idleLimitMs })
+		}
+	} catch {
+		return {}
+	}
+}
+
+/** The primary app's address first, since the page makes the first one its main button. */
+export const primaryFirst = (urls: PreviewUrl[], primary?: string) =>
+	primary ? [...urls.filter((u) => u.name === primary), ...urls.filter((u) => u.name !== primary)] : urls
+
+const LOOPBACK = new Set(['localhost', '127.0.0.1', '0.0.0.0', '[::1]'])
+
+/** A loopback address as another machine opens it: the same URL on `host`. Null for any other address. */
+export function onHost(url: string, host: string | null | undefined) {
+	const match = url.match(/^(https?:\/\/)(\[[^\]]+\]|[^/:?#]+)(.*)$/)
+	if (!host || !match || !LOOPBACK.has(match[2]!.toLowerCase()) || LOOPBACK.has(host.toLowerCase())) return null
+	return `${match[1]}${host}${match[3]}`
 }

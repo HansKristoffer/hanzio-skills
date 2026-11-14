@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { existsSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { commitRef, evidenceMarkdown, measuredMarkdown, parseUrlFlags, parseUrlLines, repoWebBase, type PublicEvidence } from './evidence.ts'
+import { commitRef, evidenceMarkdown, measuredMarkdown, onHost, parseRun, parseUrlFlags, parseUrlLines, primaryFirst, repoWebBase, type PublicEvidence } from './evidence.ts'
 import { git, scratchRepo, setup, type Harness } from './fixtures/harness.ts'
 import { prepare, pushEvidence } from './media.ts'
 
@@ -375,6 +375,32 @@ describe('the dev environment', () => {
 		expect(parseUrlFlags(['web=http://localhost:3000/?a=b'])).toEqual([{ name: 'web', url: 'http://localhost:3000/?a=b' }])
 		expect(() => parseUrlFlags(['http://localhost:3000'])).toThrow('<name>=<http url>')
 		expect(() => parseUrlFlags(['web=localhost:3000'])).toThrow('<name>=<http url>')
+	})
+
+	test("buncargo's status names the primary app and the idle limit of a detached run", () => {
+		const run = { detached: true, idleLimitMs: 7_200_000, primaryApp: 'web' }
+		expect(parseRun(JSON.stringify({ runs: [run] }))).toEqual({ primary: 'web', idleMs: 7_200_000 })
+		// A run in someone's terminal, and one started with --keep, have no idle limit.
+		expect(parseRun(JSON.stringify({ runs: [{ ...run, detached: false }] }))).toEqual({ primary: 'web' })
+		expect(parseRun(JSON.stringify({ runs: [{ detached: true, primaryApp: 'web' }] }))).toEqual({ primary: 'web' })
+		expect(parseRun(JSON.stringify({ runs: [] }))).toEqual({})
+		expect(parseRun('error: unknown option --json')).toEqual({})
+		const urls = [{ name: 'api', url: 'http://localhost:3000' }, { name: 'web', url: 'http://localhost:5173' }]
+		expect(primaryFirst(urls, 'web').map((u) => u.name)).toEqual(['web', 'api'])
+		expect(primaryFirst(urls, 'expoApp')).toEqual(urls)
+		expect(primaryFirst(urls)).toEqual(urls)
+	})
+
+	test('a loopback address moves to the host the page is read at, and no other address does', () => {
+		const host = 'worker.tail1234.ts.net'
+		expect(onHost('http://localhost:3000', host)).toBe('http://worker.tail1234.ts.net:3000')
+		expect(onHost('http://127.0.0.1:5173/orders?tab=open', host)).toBe('http://worker.tail1234.ts.net:5173/orders?tab=open')
+		expect(onHost('https://[::1]:8443/', host)).toBe('https://worker.tail1234.ts.net:8443/')
+		expect(onHost('https://admin.example.test/store', host)).toBeNull()
+		expect(onHost('http://localhost.example.test:3000', host)).toBeNull()
+		// A page read on this machine keeps the address as given.
+		expect(onHost('http://localhost:3000', '127.0.0.1')).toBeNull()
+		expect(onHost('http://localhost:3000', null)).toBeNull()
 	})
 })
 
