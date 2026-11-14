@@ -5,7 +5,7 @@ description: Work one item a webhook, schedule or dispatcher pushed to an unatte
 
 # Dispatched run
 
-A dispatched run starts from an item, not from a person: an error the tracker saw for the first time, a feedback someone filed, a request a user pinned. Nobody answers questions, and nobody reads the thread until later. So the run decides for itself whether to act, acts only inside fixed rules, and leaves the item and its PR in a state a person can pick up in a minute.
+A dispatched run starts from an item, not from a person. Nobody answers questions, and nobody reads the thread until later. So the run decides for itself whether to act, acts only inside fixed rules, and leaves the item and its PR in a state a person can pick up in a minute.
 
 **The prompt wins.** The message that started the run names the item, the tracker, the project's stop rules and its merge rules. Where it and this skill disagree, the prompt wins; this skill fills in what the prompt leaves out. Read the repository's `AGENTS.md` / `CLAUDE.md` too; it wins over this skill as well.
 
@@ -42,7 +42,7 @@ Stop (go to step 8, and say which rule) when any of these holds, or any stop rul
 
 ## 5. Fix the cause
 
-Call the Skill tool with `debug`: a loop that goes red on the item's exact symptom, then the cause, then a regression test that failed before the fix. Fix the cause, never the symptom: an error swallowed, caught and ignored, or downgraded to a warning is not a fix. When our code should handle the case, handle it and return the right error to the caller.
+Write a test that goes red on the item's exact symptom, find the cause, and keep that test as the regression test. Fix the cause, never the symptom: an error swallowed, caught and ignored, or downgraded to a warning is not a fix. When our code should handle the case, handle it and return the right error to the caller.
 
 Run the repository's checks for what you touched. When the change shows on screen, look at it in the running app and keep a screenshot for the PR. When the dev stack will not start, do not retry it in a loop: verify what you can and say in the PR what you could not.
 
@@ -95,9 +95,10 @@ When asked to work a whole queue (all new feedback, every open error), you are t
 
 1. List the queue from the tracker, every page.
 2. For each item, `t3_thread_list` with `titleContains: "<id>"`. A match means a thread has it: skip it.
-3. Launch one thread per item with `t3_thread_launch`: title `<Kind> <id>: <item title>`, `workspaceStrategy: { type: "worktree", baseRef: <default>, branch: "<kind>/<id>", startFromOrigin: true }`, `clientRequestId: "<kind>-<id>"`, and a message that names the item and says to work it with the `dispatched-run` skill.
-4. Report one line per item: launched (with the thread's link), skipped, or failed with the error. Leave the items themselves to the threads.
+3. Check the precondition the tracker enforces on the claim, the first write a thread makes (Feedreply: `handedOver` in `get_feedback`). An item that fails it gets no thread.
+4. Launch one thread per remaining item with `t3_thread_launch`: title `<Kind> <id>: <item title>`, `workspaceStrategy: { type: "worktree", baseRef: <default>, branch: "<kind>/<id>", startFromOrigin: true }`, `clientRequestId: "<kind>-<id>"`, and a message that names the item and says to work it with the `dispatched-run` skill.
+5. Report one line per item: launched (with the thread's link), skipped, not ready (with the failed precondition), or failed with the error. Leave the items themselves to the threads.
 
 ## Writing the prompt
 
-A webhook or scheduled prompt that starts a dispatched run only needs what is particular to the project: the item, its tracker and tools, the stop and merge rules that differ from the defaults, and anything the project must check. [references/prompt-template.md](references/prompt-template.md) is the template. For the schedule or webhook itself, call the Skill tool with `scheduled-agents`.
+A webhook or scheduled prompt that starts a dispatched run needs only what is particular to the project; [references/prompt-template.md](references/prompt-template.md) is the template. For the schedule or webhook itself, call the Skill tool with `scheduled-agents`.

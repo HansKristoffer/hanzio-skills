@@ -148,6 +148,79 @@ TS
   expect_has "[suppression] src/types.ts:10"
   expect_lacks "README.md"
 
+  start "a moved suppression is not a new one"
+  git -C "$repo" switch -q main
+  cat > "$repo/src/keys.ts" << 'TS'
+type Keys<Cases> = {
+  // biome-ignore lint/complexity/noBannedTypes: empty-object assignability finds optional keys
+  [K in keyof Cases]-?: {} extends Pick<Cases, K> ? never : K
+}[keyof Cases]
+export const cast = (value: unknown) => value as any
+TS
+  commit_all
+  git -C "$repo" switch -qc feature-moved
+  cat > "$repo/src/keys.ts" << 'TS'
+type Keys<Cases, K = keyof Cases> = K extends keyof Cases
+  ? undefined extends Cases[K]
+    ? never
+    : // biome-ignore lint/complexity/noBannedTypes: empty-object assignability finds index keys
+      {} extends Record<K, 1>
+      ? never
+      : K
+  : never
+export function cast(value: unknown) {
+  return value as any
+}
+TS
+  commit_all
+  run --base main
+  expect_exit 0
+  cat >> "$repo/src/keys.ts" << 'TS'
+// biome-ignore lint/suspicious/noExplicitAny: another rule
+// biome-ignore lint/complexity/noBannedTypes: a second one
+TS
+  commit_all
+  run --base main
+  expect_exit 1
+  expect_lacks "[suppression] src/keys.ts:4"
+  expect_lacks "[suppression] src/keys.ts:10"
+  expect_has "[suppression] src/keys.ts:12"
+  expect_has "[suppression] src/keys.ts:13"
+
+  start "as any in a comment or a sentence is not a cast"
+  cat > "$repo/src/prose.ts" << 'TS'
+/** Sends the reply
+ * out on the same connection as any other call. */
+// treat it as any
+const label = "the same as any other"
+const a = (b as any).c
+const d = e as any as string
+const f = [g as any, h]
+TS
+  commit_all
+  run --base main
+  expect_exit 1
+  for n in 1 2 3 4; do expect_lacks "[suppression] src/prose.ts:$n"; done
+  for n in 5 6 7; do expect_has "[suppression] src/prose.ts:$n"; done
+
+  start "made-up tokens in tests and fixtures are not secrets"
+  mkdir -p "$repo/server/test/fixtures" "$repo/src/__fixtures__"
+  printf '{\n  "token": "1.%s"\n}\n' "$(printf 'e%.0s' $(seq 40))" > "$repo/server/test/fixtures/town-expected.json"
+  printf 'const secret = "test-secret-token-1"\nconst source = { apiKey: "secret:LINEAR_KEY", token: "at-never-expires-1" }\n' > "$repo/src/hooks.test.ts"
+  printf 'export const password = "correct-horse-battery-staple"\n' > "$repo/src/__fixtures__/user.ts"
+  commit_all
+  run --base main
+  expect_exit 0
+  printf 'const key = "%s"\n' "$aws_key" >> "$repo/src/hooks.test.ts"
+  printf 'const secret = "test-secret-token-1"\n' > "$repo/src/hooks.ts"
+  commit_all
+  run --base main
+  expect_exit 1
+  expect_has "[secret] src/hooks.test.ts:3"
+  expect_has "[secret] src/hooks.ts:1"
+  expect_lacks "[secret] src/hooks.test.ts:1"
+  expect_lacks "fixtures"
+
   start "skipped and focused tests"
   cat > "$repo/src/a.test.ts" << 'TS'
 it.skip('one', () => {})

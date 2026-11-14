@@ -5,7 +5,7 @@ description: Change data in production safely with a one-off script (a backfill,
 
 # Change production data
 
-A data change in production has no CI and often no undo. The method is the same every time: the change lives in a script in the repository, the script proves what it will do on a connection that cannot write, a person sees the numbers, and only then does it write, a little at a time, keeping a record that undoes it.
+A data change in production has no CI and often no undo. The method is the same every time: a script in the repository proves what it will do on a connection that cannot write, a person sees the numbers, and only then does it write, a little at a time, keeping a record that undoes it.
 
 Schema changes are migrations, not scripts: follow the repository's migration convention, and for lock-safe Postgres migrations call the Skill tool with `postgres-tuning`.
 
@@ -25,6 +25,7 @@ In the repository, on a branch, reviewed like any code. The script:
 - **dry-runs by default** and writes only with `--apply`; `--limit N` caps how many records it touches;
 - in a dry run, first tries a write (`create temp table _read_only_probe (a int)`) through its own database client and stops when it succeeds, so a client that ignored the read-only setting cannot pass;
 - prints counts per kind of change, and a sample of before → after values with record ids, keeping personal data to what the reader needs;
+- lists the side effects its writes will trigger (emails, webhooks, queued jobs), each with a count and one sample recipient;
 - is idempotent: a second `--apply` finds nothing left to do;
 - writes through the app's own update functions when their side effects must happen (a sync to HubSpot, events, an audit log), and with direct SQL only when they must not. Say which, and why;
 - writes in batches, one transaction each, resumable from the last id it finished;
@@ -51,7 +52,7 @@ When the URL cannot be reached, ask the user to run the dry run and paste the ou
 
 ## 3. Dry-run on production
 
-Run the script without `--apply` on the read-only URL. Read the output yourself before reporting: the counts against what you expected, and every sample. A sample that looks wrong is a bug in the script, found before it wrote anything: a format rule that does not fit some rows, a match that joins records that should stay apart. Fix it in a follow-up PR and dry-run again on the merged code.
+Run the script without `--apply` on the read-only URL. Read the output yourself before reporting: the counts against what you expected, and every sample. A sample that looks wrong is a bug in the script: a format rule that does not fit some rows, a match that joins records that should stay apart. Fix it in a follow-up PR and dry-run again on the merged code.
 
 Run it on staging first when staging has production's shape.
 
@@ -61,11 +62,11 @@ Before any write, name how each part is undone:
 
 - the undo file the script writes, and the command that replays it;
 - the database's point-in-time recovery or a fresh snapshot: confirm it exists and how far back it reaches;
-- what cannot be undone: data sent to another system (a HubSpot merge, an email, a payment), records merged or deleted without an undo file. Say so plainly.
+- what cannot be undone: every side effect that leaves the system (an email, a HubSpot merge, a payment), and records merged or deleted without an undo file.
 
 ## 5. Ask before the writes
 
-Ask once, with the dry run's counts, two or three samples, what cannot be undone, and the way back. An explicit request for this exact change ("add 1000 coins to every user in prod") is the yes when the dry run shows exactly that and every part can be undone. Ask anyway when the dry run shows more or other than was asked, or when any part cannot be undone. A "full send" covers code, never production data.
+Ask once, with the dry run's counts and side effects, two or three samples, what cannot be undone, and the way back. An explicit request for this exact change ("add 1000 coins to every user in prod") is the yes only when the dry run shows exactly that, with no side effect beyond it, and every part can be undone. A "full send" covers code, never production data.
 
 ## 6. Write in small steps
 
