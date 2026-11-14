@@ -245,9 +245,13 @@ async function videoSize(video: string) {
 	return { width, height }
 }
 
-/** How many browsers to draw frames with: a third of the cores, up to 16. */
+/**
+ * How many browsers to draw frames with: half the cores, up to 32. Measured on the starter
+ * film at 2x: 64 cores take 37 s with 32 browsers, 46 s with 16 and 38 s with 48; 8 cores
+ * take half as long with 4 browsers as with 2.
+ */
 function defaultWorkers() {
-	return Math.min(16, Math.max(1, Math.floor(availableParallelism() / 3)))
+	return Math.min(32, Math.max(1, Math.floor(availableParallelism() / 2)))
 }
 
 /**
@@ -401,7 +405,7 @@ async function render(htmlFile: string, ...rest: string[]) {
 				)
 				for (let frame = index * chunkFrames; frame < Math.min((index + 1) * chunkFrames, frames); frame++) {
 					await seekFrame(page, frame / fps)
-					const { data } = await cdp.send('Page.captureScreenshot', { format: 'jpeg', quality: 95, optimizeForSpeed: true, clip })
+					const { data } = await cdp.send('Page.captureScreenshot', { format: 'jpeg', quality: 95, optimizeForSpeed: true, ...(clip && { clip }) })
 					encoder.stdin.write(Buffer.from(data, 'base64'))
 					await encoder.stdin.flush()
 					if (++done % (fps * 5) === 0) console.log(`frame ${done}/${total}`)
@@ -428,15 +432,17 @@ async function render(htmlFile: string, ...rest: string[]) {
 }
 
 /**
- * The screenshot region that returns `scale` device pixels per CSS pixel. Chrome builds differ in
- * whether a clip counts in CSS or device pixels, so one test frame decides: without this, a 2x
+ * The screenshot region that returns `scale` device pixels per CSS pixel, or none when a plain
+ * screenshot already does (a browser drawing at that scale itself). Chrome builds differ in
+ * whether a clip counts in CSS or device pixels, so test frames decide: without this, a 2x
  * render can silently come out at 1x.
  */
 async function deviceClip(page: { context(): { newCDPSession(page: unknown): Promise<{ send(method: string, params: unknown): Promise<{ data: string }> }> } }, size: { width: number; height: number }, scale: number) {
 	const cdp = await page.context().newCDPSession(page)
+	const width = async (clip?: object) => jpegWidth(Buffer.from((await cdp.send('Page.captureScreenshot', { format: 'jpeg', quality: 50, ...(clip && { clip }) })).data, 'base64'))
+	if ((await width()) === size.width * scale) return undefined
 	const clip = { x: 0, y: 0, ...size, scale: 1 }
-	const { data } = await cdp.send('Page.captureScreenshot', { format: 'jpeg', quality: 50, clip })
-	const got = jpegWidth(Buffer.from(data, 'base64'))
+	const got = await width(clip)
 	return { ...clip, scale: got > 0 ? (size.width * scale) / got : scale }
 }
 
@@ -827,8 +833,12 @@ async function openComposition(htmlFile: string, scale = 1) {
 
 	const timingFile = join(source.replace(/\.html$/, ''), 'timing.json')
 	const timing: Timing = existsSync(timingFile) ? await Bun.file(timingFile).json() : []
-	const browser = await launchBrowser()
-	const page = await browser.newPage({ viewport: size, deviceScaleFactor: scale })
+	const browser = await launchBrowser(nativeScale(size, scale))
+	let page = await browser.newPage({ viewport: null })
+	if (!(await fills(page, size, scale))) {
+		await page.close()
+		page = await browser.newPage({ viewport: size, deviceScaleFactor: scale })
+	}
 
 	// Each <video src="x.mp4">, with an `x.marks.json` beside it (from `live` or `crop`), played from a
 	// copy that seeks fast when the clip needs one.
@@ -1204,21 +1214,24 @@ function hasDisplay() {
 /**
  * Starts the browser through `launch`: installed Google Chrome first, otherwise Playwright's
  * Chromium, downloaded on first use (Linux on ARM has no Google Chrome). As root, as on many
- * servers and containers, Chrome only starts without its sandbox.
+ * servers and containers, Chrome only starts without its sandbox. `own.args` are flags only
+ * Playwright's Chromium takes; `own.used` tells the caller it is the one that started.
  */
-async function startBrowser<T>(launch: (options: Record<string, unknown>) => Promise<T>, options: Record<string, unknown> = {}): Promise<T> {
-	const settings = { ...options, ...(process.getuid?.() === 0 && { chromiumSandbox: false }) }
+async function startBrowser<T>(launch: (options: Record<string, unknown>) => Promise<T>, options: Record<string, unknown> = {}, own: { args: string[]; used?: boolean } = { args: [] }): Promise<T> {
+	const chrome = { ...options, ...(process.getuid?.() === 0 && { chromiumSandbox: false }) }
 	try {
-		return await launch({ ...settings, channel: 'chrome' })
+		return await launch({ ...chrome, channel: 'chrome' })
 	} catch (error) {
 		if (/ProcessSingleton|in use/.test(String(error))) throw new Error('the video profile is already open in another window; close it first')
 	}
+	const settings = { ...chrome, args: [...((chrome as { args?: string[] }).args ?? []), ...own.args] }
+	own.used = true
 	try {
 		return await launch(settings)
 	} catch (error) {
 		const message = String(error)
 		// A container without user namespaces has no sandbox for Chrome to use.
-		if (/No usable sandbox|sandbox/i.test(message) && settings.chromiumSandbox !== false) return startBrowser(launch, { ...options, chromiumSandbox: false })
+		if (/No usable sandbox|sandbox/i.test(message) && chrome.chromiumSandbox !== false) return startBrowser(launch, { ...options, chromiumSandbox: false }, own)
 		if (/Executable doesn't exist|install/i.test(message) && !/install-deps|dependencies/i.test(message)) {
 			console.warn('Google Chrome is not installed; downloading Playwright Chromium once (about 150 MB)')
 			await $`bun ${join(SKILL_DIR, 'node_modules/playwright-core/cli.js')} install chromium`.cwd(SKILL_DIR)
@@ -1231,9 +1244,23 @@ async function startBrowser<T>(launch: (options: Record<string, unknown>) => Pro
 	}
 }
 
-async function launchBrowser() {
+async function launchBrowser(args: string[] = []) {
 	const browser = await chromium()
-	return startBrowser((options) => browser.launch(options))
+	return startBrowser((options) => browser.launch(options), { args })
+}
+
+/**
+ * The flags that make a headless browser itself draw at `scale`, in a window the size of the
+ * page. A page that only emulates its scale is drawn again for every screenshot, which costs
+ * about half again as much per frame.
+ */
+function nativeScale(size: { width: number; height: number }, scale: number) {
+	return [`--force-device-scale-factor=${scale}`, `--window-size=${size.width},${size.height}`]
+}
+
+/** Whether the page has the size and pixel density asked for without emulating them. */
+function fills(page: { evaluate<T, A>(fn: (arg: A) => T, arg: A): Promise<T> }, size: { width: number; height: number }, scale: number) {
+	return page.evaluate(([width, height, ratio]) => innerWidth === width && innerHeight === height && devicePixelRatio === ratio, [size.width, size.height, scale])
 }
 
 /**
@@ -1386,23 +1413,38 @@ function stateFile() {
 	return `${profileDir()}-state.json`
 }
 
-async function openProfile(options: { headless?: boolean; viewport?: { width: number; height: number } | null; scale?: number }) {
+/**
+ * Opens the video profile. `recording` is for a take: a headless browser then draws at the
+ * scale itself instead of emulating it. `stepped` are the flags for drawing a frame only when
+ * asked (`STEPPED_ARGS` in live.mjs); the result's `stepped` says whether the browser that
+ * started takes them, which Playwright's Chromium does and Google Chrome does not.
+ */
+async function openProfile(options: { headless?: boolean; viewport?: { width: number; height: number } | null; scale?: number; recording?: boolean; stepped?: string[] }) {
 	const profile = profileDir()
 	await mkdir(profile, { recursive: true })
+	// Headless where no window can open, as on a server.
+	const headless = options.headless ?? !hasDisplay()
+	const scale = options.scale ?? 1
+	// A window has its own frame and the screen's size, so only a headless browser can be given both.
+	const native = headless && options.recording && options.viewport
 	const launch = {
-		// Headless where no window can open, as on a server.
-		headless: options.headless ?? !hasDisplay(),
-		viewport: options.viewport ?? null,
-		...(options.viewport && { deviceScaleFactor: options.scale ?? 1 }),
+		headless,
+		viewport: native ? null : (options.viewport ?? null),
+		...(options.viewport && !native && { deviceScaleFactor: scale }),
 		// Without the automation banner and flag, sign-in pages treat it as the normal browser it is.
 		ignoreDefaultArgs: ['--enable-automation'],
-		args: ['--disable-blink-features=AutomationControlled']
+		args: ['--disable-blink-features=AutomationControlled', ...(native ? nativeScale(native, scale) : [])]
 	}
+	const own = { args: (native && options.stepped) || [], used: false }
 	const browser = await chromium()
-	const context = await startBrowser((settings) => browser.launchPersistentContext(profile, settings), launch)
-	await importSignIns(context)
+	const context = await startBrowser((settings) => browser.launchPersistentContext(profile, settings), launch, own)
 	const page = context.pages()[0] ?? (await context.newPage())
-	return { context, page }
+	if (native && !(await fills(page, native, scale))) {
+		await context.close()
+		return openProfile({ ...options, recording: false })
+	}
+	await importSignIns(context)
+	return { context, page, stepped: own.used && own.args.length > 0 }
 }
 
 /**
@@ -1455,30 +1497,49 @@ async function browse(url?: string) {
  * Runs a walkthrough script in the video profile's Chrome at 1920x1080. The script's default
  * export gets `{ page, context, record }`; `record()` starts recording `<part>` (from the file
  * name `<part>.walk.mjs`), and after a take the part is assembled with `live`.
- * `walk <part>.walk.mjs [--rehearse] [--scale 2] [--headless]`. Any other script name runs
- * without recording, for exploring the app or taking screenshots.
+ * `walk <part>.walk.mjs [--rehearse] [--scale 2] [--headless] [--realtime]`. Any other script
+ * name runs without recording, for exploring the app or taking screenshots.
+ *
+ * A headless take in Playwright's Chromium is recorded frame by frame (`frameDriver` in
+ * live.mjs); `--realtime`, a window or Google Chrome records the page as it runs.
  */
 async function walk(script: string, ...rest: string[]) {
-	if (!script) throw new Error('usage: walk <part>.walk.mjs [--rehearse] [--scale 2] [--headless]')
-	const { values } = parseArgs({ args: rest, options: { rehearse: { type: 'boolean' }, scale: { type: 'string' }, headless: { type: 'boolean' } } })
+	if (!script) throw new Error('usage: walk <part>.walk.mjs [--rehearse] [--scale 2] [--headless] [--realtime]')
+	const { values } = parseArgs({ args: rest, options: { rehearse: { type: 'boolean' }, scale: { type: 'string' }, headless: { type: 'boolean' }, realtime: { type: 'boolean' } } })
 	const part = script.endsWith('.walk.mjs') ? script.replace(/\.walk\.mjs$/, '.json') : null
-	const { record } = await import(join(SKILL_DIR, 'live.mjs'))
-	const { context, page } = await openProfile({ headless: values.headless, viewport: SIZE, scale: Number(values.scale ?? 2) })
+	const { record, frameDriver, STEPPED_ARGS } = await import(join(SKILL_DIR, 'live.mjs'))
+	// A take is stepped frame by frame where the browser can be; a rehearsal or an exploring
+	// script runs the page as it is.
+	const take = Boolean(part) && !values.rehearse
+	const { context, page, stepped } = await openProfile({
+		headless: values.headless,
+		viewport: SIZE,
+		scale: Number(values.scale ?? 2),
+		recording: take,
+		...(take && !values.realtime && { stepped: STEPPED_ARGS })
+	})
 
 	let recording: { stop(): Promise<unknown> } | undefined
+	let driver: { close(): Promise<void> } | null = null
 	try {
+		if (stepped) {
+			driver = await frameDriver(page)
+			if (!driver) throw new Error('the browser did not hand over its frames: record with --realtime')
+		}
 		const { default: run } = await import(resolve(script))
 		await run({
 			page,
 			context,
 			async record(options = {}) {
 				if (!part) throw new Error('name the script <part>.walk.mjs to record that part')
-				recording = await record(page, partDir(part), { rehearse: values.rehearse, ...options })
+				recording = await record(page, partDir(part), { rehearse: values.rehearse, driver, ...options })
+				if (take) console.log(driver ? 'recording frame by frame: the page moves at 60 fps in the video, however long a frame takes' : 'recording in real time: the page\'s own motion is captured as often as a screenshot allows')
 				return recording
 			}
 		})
 	} finally {
 		if (recording) console.log(await recording.stop())
+		await driver?.close()
 		await context.close()
 	}
 	if (recording && part && !values.rehearse) await live(part)

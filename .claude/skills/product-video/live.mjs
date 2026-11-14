@@ -5,8 +5,7 @@ import { existsSync } from 'node:fs'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
-const now = () => Date.now() / 1000
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 // Scrolls and pointer glides are captured one screenshot per frame at this rate, however
 // long each screenshot takes, so they play back smoothly instead of at the capture rate.
@@ -33,6 +32,7 @@ const OVERLAY_SCRIPT = `(() => {
 		return el
 	}
 	const mount = () => {
+		let point = JSON.parse(sessionStorage.getItem('__videoPointer') || 'null')
 		const dot = make('left:-40px;top:-40px;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;background:rgba(20,20,20,.35);border:2px solid #fff;box-shadow:0 2px 10px rgba(0,0,0,.35);transition:transform .15s')
 		const ring = make('border:3px solid #ffb020;border-radius:14px;box-shadow:0 0 0 9999px rgba(0,0,0,.28);opacity:0;transition:opacity .3s,left .3s,top .3s,width .3s,height .3s')
 		const caption = make('left:50%;bottom:48px;transform:translateX(-50%);max-width:1400px;padding:16px 28px;border-radius:16px;background:rgba(15,17,21,.88);color:#fff;font:600 28px/1.3 -apple-system,Helvetica,Arial,"Liberation Sans","DejaVu Sans",sans-serif;box-shadow:0 10px 40px rgba(0,0,0,.35);opacity:0;transition:opacity .3s')
@@ -40,12 +40,9 @@ const OVERLAY_SCRIPT = `(() => {
 			move(x, y) {
 				dot.style.left = x + 'px'
 				dot.style.top = y + 'px'
-				sessionStorage.setItem('__videoPointer', JSON.stringify([x, y]))
+				point = [x, y]
 			},
-			where() {
-				const saved = sessionStorage.getItem('__videoPointer')
-				return saved ? JSON.parse(saved) : null
-			},
+			where: () => point,
 			press(down) { dot.style.transform = down ? 'scale(.7)' : '' },
 			ring(box) {
 				if (!box) { ring.style.opacity = '0'; return }
@@ -58,12 +55,169 @@ const OVERLAY_SCRIPT = `(() => {
 				caption.style.opacity = text ? '1' : '0'
 			}
 		}
-		const pointer = window.__video.where()
-		if (pointer) window.__video.move(...pointer)
+		if (point) window.__video.move(...point)
+		// Kept for the next page when this one goes, not on every step of a glide.
+		addEventListener('pagehide', () => point && sessionStorage.setItem('__videoPointer', JSON.stringify(point)))
 		window.__video.caption(sessionStorage.getItem('__videoCaption'))
 	}
 	document.documentElement ? mount() : addEventListener('DOMContentLoaded', mount)
 })()`
+
+/**
+ * The flags for a headless Chromium that draws a frame only when `frameDriver` asks for one.
+ * Playwright's own headless Chromium takes them; Google Chrome does not.
+ */
+export const STEPPED_ARGS = [
+	'--enable-begin-frame-control',
+	'--run-all-compositor-stages-before-draw',
+	'--disable-new-content-rendering-timeout',
+	'--disable-threaded-animation',
+	'--disable-threaded-scrolling',
+	'--disable-checker-imaging',
+	'--disable-image-animation-resync'
+]
+
+/**
+ * Steps a page started with `STEPPED_ARGS` one frame of the video at a time: each tick moves
+ * the page's clock (timers, animations, transitions) on by 1/60 s and draws that frame, so the
+ * page's own motion is recorded at 60 fps however long a screenshot takes. A tick never runs
+ * faster than a real frame, so a hold lasts as long as it would for a viewer and the server
+ * never looks slower than it is. A frame is only captured when it changed the picture, which
+ * the browser reports, so a page holding still costs nothing.
+ *
+ * Runs from the moment the page opens to the moment it closes, since the page draws nothing
+ * without it. Returns null when the browser draws on its own.
+ */
+export async function frameDriver(page) {
+	const cdp = await page.context().newCDPSession(page)
+	const frameMs = 1000 / FPS
+	let base = 0 // where the page's clock started, in the browser's ticks; a new one after a move to another site
+	let at = 0 // the time of the frame being drawn, in those ticks
+	// Each tick draws at a later time than the last, or the browser never answers. Within a tick
+	// the frame can be drawn again at the same time, to keep it once it is known to have changed.
+	const draw = (shot) =>
+		cdp.send('HeadlessExperimental.beginFrame', {
+			frameTimeTicks: at,
+			interval: frameMs,
+			...(shot && { screenshot: { format: 'jpeg', quality: 95, optimizeForSpeed: true } })
+		})
+	try {
+		await Promise.race([draw(false), wait(5000).then(() => Promise.reject(new Error('no frame')))])
+	} catch {
+		return null
+	}
+
+	// The document's own clock, read after every step: some work in a page (a write to
+	// sessionStorage, a cookie read) moves its clock on by itself, and an animation started at
+	// a time the frames have not reached yet stands still until they do.
+	const pageClock = () =>
+		cdp.send('Runtime.evaluate', { expression: '[performance.timeOrigin, performance.now()]', returnByValue: true }).then(
+			(reply) => reply.result?.value ?? null,
+			() => null
+		)
+	let anchor = null // { origin, now, at }: a reading of a document's clock and the frame time it stood for
+	let expired
+	cdp.on('Emulation.virtualTimeBudgetExpired', () => expired?.())
+	async function advance() {
+		const done = new Promise((resolve) => {
+			expired = resolve
+		})
+		const { virtualTimeTicksBase } = await cdp.send('Emulation.setVirtualTimePolicy', { policy: 'advance', budget: frameMs })
+		// A page busy for seconds, or one replaced mid-frame, must not stop the recording.
+		await Promise.race([done, wait(3000)])
+		let next = at + frameMs
+		if (virtualTimeTicksBase !== base) {
+			base = virtualTimeTicksBase
+			next = Math.max(next, base + frameMs)
+			anchor = null
+		}
+		// The clock is rounded to 0.1 ms, so the frame is put 0.2 ms late rather than risk early.
+		const clock = await pageClock()
+		if (clock && anchor?.origin === clock[0]) next = Math.max(at + 0.01, anchor.at + clock[1] - anchor.now + 0.2)
+		else if (clock) anchor = { origin: clock[0], now: clock[1], at: next }
+		at = next
+	}
+
+	let frames = 0
+	let sink = null // gets (seconds, jpeg) for each captured frame
+	let fresh = false // capture the next frame whether or not it changed
+	const sleepers = []
+	async function tick() {
+		const started = performance.now()
+		await advance()
+		// Draw first, keep second: asking for the picture of a frame that was not drawn yet stops
+		// the page's animations from being served.
+		const { hasDamage } = await draw(false)
+		frames += 1
+		const keep = sink
+		if (keep && (hasDamage || fresh)) {
+			fresh = false
+			keep(frames / FPS, Buffer.from((await draw(true)).screenshotData, 'base64'))
+		}
+		for (let index = sleepers.length - 1; index >= 0; index--) {
+			if (sleepers[index].at <= frames) sleepers.splice(index, 1)[0].resolve()
+		}
+		const spare = frameMs - (performance.now() - started)
+		if (spare > 0) await wait(spare)
+	}
+
+	let running = true
+	// A frame lost to a page that is going away is skipped; a closed page ends the stepping.
+	const step = () =>
+		tick().catch(async () => {
+			if (page.isClosed()) running = false
+			else await wait(50)
+		})
+	let owner = null // a motion the recorder steps itself
+	let inFlight = Promise.resolve()
+	const loop = (async () => {
+		while (running) {
+			if (owner) {
+				await owner
+				continue
+			}
+			inFlight = step()
+			await inFlight
+		}
+		for (const sleeper of sleepers.splice(0)) sleeper.resolve()
+	})()
+
+	return {
+		/** Seconds of video since the page opened. */
+		now: () => frames / FPS,
+		/** Waits `ms` of video time. */
+		sleep(ms) {
+			if (ms <= 0 || !running) return Promise.resolve()
+			return new Promise((resolve) => sleepers.push({ at: frames + Math.max(1, Math.round(ms / frameMs)), resolve }))
+		},
+		/** Sends every frame that changes the picture to `store(seconds, jpeg)`, starting with the next; null stops. */
+		capture(store) {
+			sink = store
+			fresh = Boolean(store)
+		},
+		/** Runs `apply(index)` before each of the next `count` frames, for a motion the recorder drives. */
+		async steps(count, apply) {
+			let release
+			owner = new Promise((resolve) => {
+				release = resolve
+			})
+			await inFlight
+			try {
+				for (let index = 1; index <= count && running; index++) {
+					await apply(index)
+					await step()
+				}
+			} finally {
+				owner = null
+				release()
+			}
+		},
+		async close() {
+			running = false
+			await loop
+		}
+	}
+}
 
 /**
  * The element for a CSS selector, or for `text=Save as test` the smallest visible element
@@ -167,9 +321,13 @@ function stepScroll(fraction) {
 /**
  * `rehearse: true` runs the same walkthrough without recording or waiting for the
  * narration, to check selectors and flow quickly before a take. The page's device scale
- * (set where the browser is opened) is the recording's density.
+ * (set where the browser is opened) is the recording's density. With a `driver` (from
+ * `frameDriver`) the recording runs on the page's stepped clock instead of the wall clock.
  */
-export async function record(page, partDir, { cursor = true, rehearse = false } = {}) {
+export async function record(page, partDir, { cursor = true, rehearse = false, driver = null } = {}) {
+	const now = driver ? driver.now : () => Date.now() / 1000
+	const sleep = driver ? driver.sleep : wait
+
 	const timingFile = join(partDir, 'timing.json')
 	const timing = existsSync(timingFile) ? JSON.parse(await readFile(timingFile, 'utf8')) : []
 	if (!rehearse && timing.length === 0) throw new Error(`${timingFile} is missing: run narrate first`)
@@ -207,11 +365,12 @@ export async function record(page, partDir, { cursor = true, rehearse = false } 
 	const shoot = () => page.screenshot({ type: 'jpeg', quality: 95, scale: 'device', caret: 'initial' })
 
 	// The capture loop runs while the page acts on its own, at up to 30 fps; a stepped motion
-	// takes it over once the screenshot in flight has landed.
+	// takes it over once the screenshot in flight has landed. A driver captures on its own.
 	let owner = null
 	let inFlight = Promise.resolve()
+	if (driver && !rehearse) driver.capture(store)
 	const capture = (async () => {
-		while (running && !rehearse) {
+		while (running && !rehearse && !driver) {
 			if (owner) {
 				await owner
 				continue
@@ -230,6 +389,10 @@ export async function record(page, partDir, { cursor = true, rehearse = false } 
 	 */
 	async function stepped(seconds, apply, ease = easeInOut) {
 		if (rehearse) return apply(1)
+		if (driver) {
+			const frameCount = Math.max(1, Math.round(seconds * FPS))
+			return driver.steps(frameCount, (index) => apply(ease(index / frameCount)))
+		}
 		let release
 		owner = new Promise((resolve) => {
 			release = resolve
@@ -360,7 +523,12 @@ export async function record(page, partDir, { cursor = true, rehearse = false } 
 	 */
 	async function cut(act) {
 		const start = now()
-		await act()
+		driver?.capture(null) // nothing in here is shown, so nothing needs a screenshot
+		try {
+			await act()
+		} finally {
+			if (!rehearse) driver?.capture(store)
+		}
 		const end = now()
 		cuts.push({ start, end })
 		if (current) current.cut += end - start
@@ -409,14 +577,19 @@ export async function record(page, partDir, { cursor = true, rehearse = false } 
 		await page.evaluate(() => window.__video?.press(true))
 		marks.push({ name: `click ${selector}`, t: now(), box: found, point: { x, y } })
 		await page.mouse.click(x, y)
-		await page.evaluate(() => window.__video?.press(false))
+		// A click that leaves the page takes the pointer with it; the next page draws its own.
+		await page.evaluate(() => window.__video?.press(false)).catch(() => {})
 		await sleep(rehearse ? 0 : 250)
 	}
 
 	/** Clicks a field and types into it at a readable pace. */
 	async function type(selector, text, { delay = 45 } = {}) {
 		await click(selector)
-		await page.keyboard.type(text, { delay: rehearse ? 0 : delay })
+		// One key at a time on the recording's clock, so the pace holds when frames are slow to capture.
+		for (const key of text) {
+			await page.keyboard.type(key)
+			await sleep(rehearse ? 0 : delay)
+		}
 	}
 
 	/** Rings an element and dims the rest of the page for `ms`, or until cleared with `ms: 0`. */
@@ -434,6 +607,11 @@ export async function record(page, partDir, { cursor = true, rehearse = false } 
 		await page.evaluate((t) => window.__video?.caption(t), text ?? null)
 	}
 
+	/** Holds for `ms` of video, which a real-time wait is not while frames are slow to capture. */
+	async function pause(ms) {
+		await sleep(rehearse ? 0 : ms)
+	}
+
 	/** Smoothly scrolls an element to the middle of the screen, captured at 60 fps. */
 	async function scrollTo(selector) {
 		await box(selector, { center: true })
@@ -443,6 +621,7 @@ export async function record(page, partDir, { cursor = true, rehearse = false } 
 	async function stop() {
 		running = false
 		await capture
+		driver?.capture(null)
 		await page.evaluate(() => {
 			window.__video?.caption(null)
 			window.__video?.ring(null)
@@ -454,5 +633,5 @@ export async function record(page, partDir, { cursor = true, rehearse = false } 
 		return { frames: frames.length, scenes: scenes.length, cuts: cuts.length }
 	}
 
-	return { scene, cut, mark, pointAt, click, type, highlight, caption, scrollTo, stop }
+	return { scene, cut, mark, pointAt, click, type, highlight, caption, scrollTo, pause, stop }
 }
