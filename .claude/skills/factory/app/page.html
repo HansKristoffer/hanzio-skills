@@ -1228,13 +1228,14 @@ async function drawNew() {
 	const error = h('span', { class: 'error' })
 	const repo = h('select', {}, ...repos.map((r) => h('option', { value: r }, r)))
 	const title = h('input', { placeholder: 'What should be fixed or built' })
+	const pr = h('input', { placeholder: 'https://github.com/owner/repo/pull/34' })
 	const source = h('input', { placeholder: 'https://github.com/owner/repo/issues/12' })
 	const body = h('textarea', { style: 'min-height:136px' })
 	const start = async (e) => {
 		e.target.disabled = true
 		error.textContent = ''
 		try {
-			const result = await api('POST', '/api/threads', { repo: repo.value, title: title.value, body: body.value, source: source.value || undefined })
+			const result = await api('POST', '/api/threads', { repo: repo.value, title: title.value || undefined, body: body.value, source: source.value || undefined, pr: pr.value.trim() || undefined })
 			if (result.duplicateOf) error.textContent = `Already open: ${result.duplicateOf.title}`
 			else if (result.closed) error.textContent = 'The factory already closed this item. Start it from a thread with --again to reopen it.'
 			else location.hash = `#/issue/${encodeURIComponent(result.issue)}`
@@ -1245,7 +1246,9 @@ async function drawNew() {
 		h('h1', {}, 'New issue'),
 		repos.length
 			? h('section', { class: 'panel narrow', style: 'margin-top:24px' }, h('div', { class: 'part stack' },
-				field('Repository', repo), field('Title', title), field('Source', source, 'Optional: the issue, error or feedback item this comes from'), field('Details', body),
+				field('Repository', repo), field('Title', title, 'Optional with a pull request: it takes the PR\'s title'),
+				field('Pull request', pr, 'Optional: an open PR to review or build on. Details then say what to do with it; leave them empty for a review'),
+				field('Source', source, 'Optional: the issue, error or feedback item this comes from'), field('Details', body),
 				h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: start }, 'Start a thread'), error)
 			))
 			: h('p', { class: 'lede' }, 'The factory starts threads in repositories it has seen. Start one issue from a T3 Code thread in the repository first.')

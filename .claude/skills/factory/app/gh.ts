@@ -143,7 +143,15 @@ export async function isPrivate(ref: PrRef) {
 
 export const login = async () => must(['api', 'user', '--jq', '.login'])
 
-export const markReady = (url: string) => must(['pr', 'ready', url])
+/** Marks a draft ready; a PR that is ready already, such as one the issue took in, is left as it is. */
+export async function markReady(url: string) {
+	const view = JSON.parse(await must(['pr', 'view', url, '--json', 'isDraft'])) as { isDraft?: boolean }
+	if (view.isDraft === false) return ''
+	return must(['pr', 'ready', url])
+}
+
+/** One review that comments, neither approving nor requesting changes. */
+export const review = (url: string, body: string) => must(['pr', 'review', url, '--comment', '--body-file', '-'], body)
 
 export const prBody = async (url: string) => (JSON.parse(await must(['pr', 'view', url, '--json', 'body'])) as { body: string }).body
 
