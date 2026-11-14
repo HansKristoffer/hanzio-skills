@@ -4,10 +4,11 @@
 # background command and end the turn; the harness wakes the agent on exit.
 #
 # Usage: wait-for-checks.sh <pr> [--repo OWNER/REPO] [--sha HEAD_SHA]
-#          [--run RUN_ID --attempt N] [--timeout SECONDS]
+#          [--run RUN_ID --attempt N] [--timeout SECONDS] [--interval SECONDS]
 #
 # Pass --sha after a push: GitHub can report the previous head for a few
-# seconds, and without it the script would return that head's results.
+# seconds, and without it the script would return that head's results. The
+# full SHA or its first 7 or more characters both work.
 #
 # Pass --run and --attempt after `gh run rerun`: the head does not change, and
 # until the new attempt registers the PR still shows the old attempt's result,
@@ -21,7 +22,7 @@
 #   5  no checks appeared on the head within five minutes
 set -uo pipefail
 
-pr=${1:?usage: wait-for-checks.sh <pr> [--repo OWNER/REPO] [--sha HEAD_SHA] [--run RUN_ID --attempt N] [--timeout SECONDS]}
+pr=${1:?usage: wait-for-checks.sh <pr> [--repo OWNER/REPO] [--sha HEAD_SHA] [--run RUN_ID --attempt N] [--timeout SECONDS] [--interval SECONDS]}
 shift
 repo=""
 head=""
@@ -33,13 +34,25 @@ interval=30
 while [ $# -gt 0 ]; do
   case $1 in
     --repo) repo=$2; shift 2 ;;
-    --sha) head=$2; shift 2 ;;
+    --sha) head=$(printf '%s' "$2" | tr 'A-F' 'a-f'); shift 2 ;;
     --run) run=$2; shift 2 ;;
     --attempt) attempt=$2; shift 2 ;;
     --timeout) timeout=$2; shift 2 ;;
+    --interval) interval=$2; shift 2 ;;
     *) echo "unknown argument: $1" >&2; exit 64 ;;
   esac
 done
+
+case $head in
+  "") ;;
+  *[!0-9a-f]*) echo "--sha is not a commit SHA: $head" >&2; exit 64 ;;
+  *)
+    if [ "${#head}" -lt 7 ] || [ "${#head}" -gt 40 ]; then
+      echo "--sha needs 7 to 40 hex characters, got ${#head}" >&2
+      exit 64
+    fi
+    ;;
+esac
 
 if [ -n "$run" ] && [ "$attempt" -lt 1 ]; then
   echo "--run needs --attempt: the attempt number the rerun starts" >&2
@@ -70,7 +83,8 @@ while :; do
     failures=0
     read -r sha state total pending <<<"$line"
 
-    if [ -z "$head" ]; then
+    # Pin the full SHA: no --sha was given, or it was a prefix of this head.
+    if [ -z "$head" ] || [ "${sha#"$head"}" != "$sha" ]; then
       head=$sha
     fi
 

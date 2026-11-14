@@ -1,6 +1,6 @@
 # Split the build into task documents
 
-The agreed document becomes the **master document**: the single source of truth for the build. It is a plan written with the `plan` skill, or a `technical.md` from `scope-new-project`. This step splits the work into self-contained task documents. Each one is handed to a separate AI agent, so it must contain everything that agent needs. Assume the agent has never seen the master document, the source material or this conversation.
+The agreed document becomes the **master document**: the single source of truth for the build. It is a plan written with the `plan` skill, or a `technical.md` from `scope-new-project`. Each task document is handed to a separate AI agent, so it must contain everything that agent needs. Assume the agent has never seen the master document, the source material or this conversation.
 
 ## Where the tasks go
 
@@ -13,7 +13,7 @@ Run the split in the repository the work will be built in, so the file paths in 
 Name each document `<phase>.<track> – <short-name>.md`, for example `1.2 – auth-api.md`. These phases are execution order, not the commercial phases in a `scope.md`.
 
 - Same phase number → runs in parallel: 1.1, 1.2 and 1.3 run at the same time.
-- A phase starts only when every task in the previous phase is merged. All of 1.x finishes before 2.x starts.
+- A phase starts only when every task in the previous phase is merged.
 - Shared foundations go in the earliest phase, so later parallel tasks build on fixed interfaces instead of guessing them. Foundations are:
   - repo scaffolding and stripping the template;
   - the database schema and shared types;
@@ -34,7 +34,7 @@ Name each document `<phase>.<track> – <short-name>.md`, for example `1.2 – a
 3. **Depends on**: the task IDs that must be done first, and what each provides (types, endpoints, tables) that this task uses.
 4. **Scope**: exactly what to build.
 5. **Out of scope**: what to leave alone, especially work owned by parallel tasks, named by task ID.
-6. **Files owned**: the files and directories this task creates or modifies. No overlap with any other task in the same phase.
+6. **Files owned**: the files and directories this task creates or modifies.
 7. **Interfaces**: the exact contracts this task exposes or consumes:
    - function signatures and TypeScript types;
    - API routes, with request and response shapes;
@@ -54,29 +54,20 @@ Name each document `<phase>.<track> – <short-name>.md`, for example `1.2 – a
 
     Add the repository's own required checks from its `AGENTS.md`.
 
-    Every task document ends with a **Status** section. When the task runs in its own thread, it tells the agent to update its own row in `0.0 – index.md`, and no other row:
-    - set it to In progress when it starts;
-    - set it to Blocked, with the reason, when it cannot go on;
-    - set it to Done, with its PR link, as the last step.
+    Every task document ends with a **Status** section. When the task runs in its own thread, it tells the agent to update its own row in `0.0 – index.md`, and no other row: In progress when it starts, Blocked with the reason when it cannot go on, Done with its PR link as the last step.
 
     In an orchestrated run, the orchestrator updates the rows and the agent reports instead.
-
-Write for a capable engineer with zero context: specific, no hand-waving, no "as discussed above".
 
 ## Also write `0.0 – index.md`
 
 - A table of all tasks with these columns: ID, name, phase, depends on, files owned, labels, rough size (S/M/L), status, PR.
-  - Status is Not started, In progress, Blocked (with the reason) or Done. Every task starts as Not started.
-  - The rows always show where the build stands.
-  - A phase may start only when every row in the previous phase says Done.
+  - Status is Not started, In progress, Blocked (with the reason) or Done.
   - If two tasks' status edits conflict in a merge, keep both rows' values.
 - A Mermaid diagram of the dependencies, grouped by phase.
-- The open questions or ambiguities in the master document that block a task. Flag each one with the tasks it blocks; never invent an answer.
+- The open questions: what the master document leaves missing, ambiguous or contradictory. Flag each one with the tasks it blocks; never invent an answer.
 
 ## Rules
 
-- Don't change the architecture or stack in the master document. If something is missing or contradictory, list it in the index under open questions.
+- Don't change the architecture or stack in the master document.
 - Every feature entry or slice in the approved work lands in exactly one task. Check the coverage both ways.
-- Before handing off, read the index table phase by phase and confirm that no file or directory is owned by two tasks in the same phase.
-- Output each document as a separate file.
 - If the scope changes after the split, rewrite the tasks it touches that have not started yet, and update the index.

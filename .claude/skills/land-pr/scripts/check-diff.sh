@@ -15,8 +15,10 @@
 # printed, because it may be a secret.
 #
 # Rules:
-#   secret             a credential-shaped string, or an added .env, key or certificate file
-#   suppression        @ts-ignore, @ts-nocheck, bare @ts-expect-error, lint disables, `as any`
+#   secret             a credential-shaped string, an added .env, key or certificate file, or,
+#                      outside tests and fixtures, a long value assigned to a key, token or password
+#   suppression        @ts-ignore, @ts-nocheck, bare @ts-expect-error, lint disables, an `as any`
+#                      cast; one more than the file lost, so a moved suppression is not a finding
 #   skip               .skip / .only / .todo / .fixme on tests, xit, fit and friends
 #   ci-soften          continue-on-error: true or `|| true` in a workflow or action
 #   assertion-removed  a test file loses more assertions than it gains
@@ -127,6 +129,7 @@ function is_code(f) { return f ~ /\.(ts|tsx|js|jsx|mjs|cjs|mts|cts|vue|svelte|as
 function is_test(f) {
   return f ~ /(^|\/)(test|tests|__tests__|e2e|spec)\// || f ~ /[._-](test|spec|e2e)\.[A-Za-z0-9]+$/
 }
+function is_fixture(f) { return is_test(f) || f ~ /(^|\/)(fixtures|__fixtures__|__mocks__|testdata)\// }
 function is_workflow(f) { return f ~ /(^|\/)\.github\/workflows\/[^\/]+\.ya?ml$/ || f ~ /(^|\/)action\.ya?ml$/ }
 function basename(f) { sub(/.*\//, "", f); return f }
 function flag(rule, f, n) { print "[" rule "] " f ":" n }
@@ -144,8 +147,10 @@ function placeholder(v) {
   return v ~ /example|placeholder|changeme|dummy|your|redacted|xxxx|\*\*\*\*|\$\{|<[a-z_-]+>/
 }
 
-function has_secret(t,    low, i) {
+# Tests and fixtures are full of made-up tokens, so only credential shapes count there.
+function has_secret(f, t,    low, i) {
   for (i = 1; i <= nshape; i++) if (t ~ shape[i]) return 1
+  if (is_fixture(f)) return 0
   low = tolower(t)
   if (match(low, quoted)) {
     if (!placeholder(substr(t, RSTART, RLENGTH))) return 1
@@ -156,11 +161,23 @@ function has_secret(t,    low, i) {
   return 0
 }
 
-function has_suppression(t) {
-  if (t ~ /@ts-ignore|@ts-nocheck|eslint-disable|biome-ignore|oxlint-disable/) return 1
-  if (t ~ /@ts-expect-error[ \t]*(\*\/[ \t]*\}?[ \t]*)?$/) return 1
-  if (t ~ ("(^|" NOT_ID ")as[ \t]+any(" NOT_ID "|$)")) return 1
+# An `as any` cast, not the words in a comment or a sentence ("the same as any other call").
+function has_any_cast(t,    rest) {
+  if (t ~ /^[ \t]*(\/\/|\/[*]|[*])/) return 0
+  while (match(t, "(^|" NOT_ID ")as[ \t]+any")) {
+    rest = substr(t, RSTART + RLENGTH)
+    if (rest !~ /^[A-Za-z0-9_$]/ && (rest !~ /^[ \t]+[A-Za-z_$]/ || rest ~ ("^[ \t]+as(" NOT_ID "|$)"))) return 1
+    t = rest
+  }
   return 0
+}
+
+# The kind of suppression on a line: the directive with the rule it names, or "".
+function suppression(t) {
+  if (match(t, /(@ts-ignore|@ts-nocheck|eslint-disable[a-z-]*|biome-ignore|oxlint-disable[a-z-]*)([ \t]+[A-Za-z0-9@_\/-]+)?/)) return substr(t, RSTART, RLENGTH)
+  if (t ~ /@ts-expect-error[ \t]*(\*\/[ \t]*\}?[ \t]*)?$/) return "@ts-expect-error"
+  if (has_any_cast(t)) return "as any"
+  return ""
 }
 
 function has_skip(t) {
@@ -177,18 +194,23 @@ function has_ci_soften(t) {
 
 function is_assertion(t) { return t ~ ("(^|" NOT_ID ")(expect|assert)[ \t]*[.(]") }
 
-function added(f, n, t) {
-  if (has_secret(t)) flag("secret", f, n)
+function added(f, n, t,    kind) {
+  if (has_secret(f, t)) flag("secret", f, n)
   if (is_code(f)) {
-    if (has_suppression(t)) flag("suppression", f, n)
+    kind = suppression(t)
+    if (kind != "") { nsup++; sup_file[nsup] = f; sup_line[nsup] = n; sup_kind[nsup] = kind }
     if (has_skip(t)) flag("skip", f, n)
     if (is_test(f) && is_assertion(t)) gained[f]++
   }
   if (is_workflow(f) && has_ci_soften(t)) flag("ci-soften", f, n)
 }
 
-function removed(f, n, t) {
+function removed(f, n, t,    kind) {
   if (f in deleted) return
+  if (is_code(f)) {
+    kind = suppression(t)
+    if (kind != "") sup_lost[f SUBSEP kind]++
+  }
   if (is_code(f) && is_test(f) && is_assertion(t)) {
     lost[f]++
     if (!(f in first_lost)) first_lost[f] = n
@@ -239,6 +261,12 @@ in_hunk && /^\+/ { added(cur, pos, substr($0, 2)); pos++; next }
 in_hunk && /^-/ { removed(cur, pos, substr($0, 2)); next }
 
 END {
+  # A suppression the same file lost is one that moved; flag only what it gained.
+  for (i = 1; i <= nsup; i++) {
+    key = sup_file[i] SUBSEP sup_kind[i]
+    if (sup_lost[key] > 0) sup_lost[key]--
+    else flag("suppression", sup_file[i], sup_line[i])
+  }
   for (f in lost) if (lost[f] > gained[f] + 0) flag("assertion-removed", f, first_lost[f])
 }
 AWK
