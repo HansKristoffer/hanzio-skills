@@ -191,7 +191,25 @@ export const MIGRATIONS = [
 		arrived_at integer,
 		flagged_at integer
 	);
-	create index sends_open on sends (issue_id) where arrived_at is null;`
+	create index sends_open on sends (issue_id) where arrived_at is null;`,
+	// The webhook's outbox: each post waits here until the receiver takes it. An issue's posts outlive it, since
+	// they may still be on their way when it closes.
+	`create table webhook_deliveries (
+		id text primary key,
+		event text not null,
+		issue_id text,
+		payload text not null,
+		attempts integer not null default 0,
+		next_at integer not null,
+		state text not null default 'pending' check (state in ('pending', 'sent', 'failed')),
+		last_status integer,
+		last_error text,
+		created_at integer not null,
+		sent_at integer
+	);
+	create index webhook_deliveries_due on webhook_deliveries (next_at) where state = 'pending';`,
+	// Who answered a decision held for the thread: the page, or an agent through the MCP server.
+	`alter table decisions add column answered_from text;`
 ]
 
 export const MAX_EVENT = 2000
@@ -363,6 +381,8 @@ export type DecisionRow = {
 	answered_at: number | null
 	head: string | null
 	round: number | null
+	/** `mcp` for an answer an agent gave through the MCP server; null for the page or the thread. */
+	answered_from: string | null
 }
 
 export type EventRow = { id: number; issue_id: string; run_id: string | null; at: number; kind: string; text: string }

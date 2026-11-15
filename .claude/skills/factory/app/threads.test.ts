@@ -87,7 +87,7 @@ test('the thread that new started finds its issue with start, adding no row', as
 test('the page starts threads only in repositories the factory has seen, and never takes a path', async () => {
 	const unseen = await h.call('POST', '/api/threads', { repo: 'acme/api', title: 'x' })
 	expect(unseen.status).toBe(400)
-	expect(unseen.body.error).toContain('never seen')
+	expect(unseen.body.error).toContain('never worked in')
 	await newThread({})
 	const seen = await h.call('POST', '/api/threads', { repo: 'acme/api', title: 'Second issue' })
 	expect(seen.status).toBe(200)
