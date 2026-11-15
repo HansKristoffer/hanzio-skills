@@ -768,6 +768,8 @@ export function startServer(options: ServerOptions) {
 					...(reviewed ? [`- Reviewed before at ${reviewed}: review only \`git diff ${reviewed}..${head ?? '<head>'}\``] : [])
 				].join('\n')
 			)
+			const reproduction = research?.result.reproduction as { command?: string } | undefined
+			if (reproduction?.command) parts.push(json("Research's reproduction, red on the base", reproduction))
 			const earlier = findings.filter((f) => f.subject === 'pr')
 			const section = list(
 				'Findings of earlier rounds, with what became of them',
@@ -1712,7 +1714,8 @@ export function startServer(options: ServerOptions) {
 	 * has no sign-in, so its address goes into no body the public can read. */
 	function reviewSections(issue: IssueRow, repoPrivate = false) {
 		const repo = repoWebBase(issue.pr_url)
-		const seen = latestResult(issue.id, 'research')?.result.reproduction as { command?: string; base?: string; observed?: string } | undefined
+		const researched = latestResult(issue.id, 'research')?.result
+		const seen = researched?.reproduction as { command?: string; base?: string; observed?: string; notPossible?: string } | undefined
 		const later = (latestResult(issue.id, 'plan')?.result.later ?? []) as { title: string }[]
 		const built = latestResult(issue.id, 'implement')?.result as
 			| {
@@ -1724,7 +1727,9 @@ export function startServer(options: ServerOptions) {
 					measured?: Measured
 			  }
 			| undefined
-		const review = latestResult(issue.id, 'review', 'pr')?.result as { risk?: { focus?: string[] } } | undefined
+		const review = latestResult(issue.id, 'review', 'pr')?.result as
+			| { commit?: string; reproductionOnHead?: string; risk?: { focus?: string[] } }
+			| undefined
 		const shown = evidenceMarkdown(evidenceOf(issue.id), repo) || built?.media?.trim()
 		const measured = measuredMarkdown(built?.measured, repo)
 		const order = ['low', 'medium', 'high']
@@ -1738,8 +1743,14 @@ export function startServer(options: ServerOptions) {
 				? [
 						`### Reproduced on ${seen.base ? commitRef(seen.base, repo) : 'the base'}`,
 						fenced(seen.command.trim(), 'bash'),
-						...(seen.observed?.trim() ? [seen.observed.trim()] : [])
+						...(seen.observed?.trim() ? [seen.observed.trim()] : []),
+						...(review?.commit && review.reproductionOnHead === 'passes'
+							? [`The review ran it again on ${commitRef(review.commit, repo)}: it passes.`]
+							: [])
 					]
+				: []),
+			...(researched?.kind === 'bug' && seen?.notPossible?.trim()
+				? ['### Not reproduced', `Nothing showed this bug failing before the fix, so nothing shows that it is fixed. ${seen.notPossible.trim()}`]
 				: []),
 			...(shown ? ['### What it looks like', shown] : []),
 			...(measured ? ['### Measured', measured] : []),

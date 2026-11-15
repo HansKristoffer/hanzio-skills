@@ -81,6 +81,7 @@ Run research. Its result decides the route:
 
 - `not-a-bug`, `already-fixed`, `duplicate`: `factory close --outcome <it> -` with the reason on stdin, then write back (step 9).
 - `kind`: `factory update --kind <kind>`.
+- A `bug` comes with the command that reproduces it, red on the base, and `factory report` says so. A `bug` whose `reproduction` is `notPossible` goes on, but nothing will show the fix works: ask a provisional question that quotes research's reason (step 3), recommending a merge once the review agrees on the cause, with the option of the user giving what would reproduce it (access, a captured payload, the steps). An answer that gives it is a research run again with the answer in `--context-file`.
 - `route: implement` (size S): go to step 7.
 - `route: plan` (M or L, or any one-way door): step 6.
 - `route: review` (a PR the issue took in, with nothing to build): a review of its head, then `existing-pr.md`.
@@ -99,9 +100,9 @@ Read [references/plan-flow.md](references/plan-flow.md) and follow it: a plan ru
 2. With `reviewRounds` above 0, pull the PR branch here and run a review of its head.
 3. An `important` finding starts a new implement run. The service lists every open finding with its id, nits included, and the implementer reports each as `fixed` or `declined`. The next review covers only the new commits, sees every earlier finding with its outcome, and can uphold a decline. Stop after `reviewRounds` rounds.
 4. A review with only `nit` findings needs no run: fix them yourself, in this worktree, on the PR branch, and record each with `factory finding <id> --fixed <commit>`. Keep `pre-existing` findings for step 9.
-5. Check the proof: what the reviewer sees on the page and in the PR in place of the diff. The table in [references/evidence.md](references/evidence.md) names the proof each kind of change needs. `factory status` lists the captures under `evidence`, each with the commit it shows, and the implement result holds `measured` (the numbers of a change made to move one) and `media` (what was captured and why). Proof the change's row names and the result lacks, or proof older than a commit that changed what it shows, is one more implement run with that in `--context-file`.
+5. Check the proof: what the reviewer sees on the page and in the PR in place of the diff. A bug research reproduced is fixed only when its command, unchanged, passes on the head: in an implement claim, and in the last review's `reproductionOnHead`. A `fails` there is an `important` finding, so another implement run. The table in [references/evidence.md](references/evidence.md) names the proof each kind of change needs. `factory status` lists the captures under `evidence`, each with the commit it shows, and the implement result holds `measured` (the numbers of a change made to move one) and `media` (what was captured and why). Proof the change's row names and the result lacks, or proof older than a commit that changed what it shows, is one more implement run with that in `--context-file`.
 
-**Done when** the last review of the PR's current head has no `important` finding, or the rounds are used up (then the gate holds the merge until a `merge` decision on that head is answered Merge), and the proof shows the head's behavior.
+**Done when** the last review of the PR's current head has no `important` finding, or the rounds are used up (then the gate holds the merge until a `merge` decision on that head is answered Merge), the proof shows the head's behavior, and a reproduced bug's command passes on that head.
 
 ## 8. The review on GitHub, then land
 
