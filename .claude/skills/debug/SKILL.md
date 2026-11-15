@@ -36,7 +36,7 @@ Try these in order and take the first that reaches the bug. [references/loops.md
 1. A focused test (`bun test`, vitest) at the seam that reaches the bug.
 2. A call to the procedure: through the app's CLI, an in-process `call`, or curl against the dev server.
 3. A script that runs the Prisma query or service function against the dev database with the failing input.
-4. A Playwright script that drives the UI and checks the DOM, console or network.
+4. An `agent-browser` script that drives the UI and checks the DOM, console or network.
 5. A replay of a captured webhook, job payload or request through its handler.
 6. `git bisect run` with any of the above, when there is a known good commit.
 7. A differential run: the same input through the old and the new version, outputs diffed.

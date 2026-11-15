@@ -56,7 +56,7 @@ For each slice, write how you will show it works, with the most direct evidence 
 - a reproduction that fails before and passes after;
 - a focused test that fails without the change;
 - the checks CI runs;
-- the running app, looked at, for UI and runtime behavior.
+- the running app, looked at with `agent-browser`, for UI and runtime behavior.
 
 This becomes the **Evidence** in the PR body that `land-pr` writes, and the proof an unattended "full send" requires. A slice you cannot plan a proof for is a slice to rethink.
 

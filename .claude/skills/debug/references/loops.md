@@ -48,33 +48,27 @@ process.exit(totals.total === 900 ? 0 : 1)
 
 Exit 0 for green and 1 for red, so the same script works under `git bisect run`. To see the SQL Prisma sends, turn on query logging for the script's client (`log: ['query']`).
 
-## Playwright script
+## agent-browser script
 
-For a bug that only shows in the browser. Write a one-off script, not a new spec in the suite:
+For a bug that only shows in the browser. Call the Skill tool with `agent-browser` first, then write a one-off script, not a new spec in the suite:
 
-```ts
-// scratch/repro-checkout.ts (delete when done)
-import { chromium } from 'playwright'
+```bash
+#!/usr/bin/env bash
+# scratch/repro-checkout.sh (delete when done)
+set -u
+ab() { agent-browser --session repro-checkout "$@"; }
 
-const browser = await chromium.launch()
-const page = await browser.newPage()
-const errors: string[] = []
-page.on('console', (message) => {
-  if (message.type() === 'error') errors.push(message.text())
-})
-page.on('pageerror', (error) => errors.push(error.message))
+ab open http://localhost:5173/checkout >/dev/null
+ab find role button click --name "Apply code" >/dev/null
+total=$(ab get text '[data-testid="order-total"]')
+errors=$(ab errors --json | jq '.data.errors | length')
+ab close >/dev/null
 
-await page.goto('http://localhost:5173/checkout')
-await page.getByRole('button', { name: 'Apply code' }).click()
-const total = await page.getByTestId('order-total').textContent()
-
-await browser.close()
-console.log({ total, errors })
-process.exit(total === '900 kr' && errors.length === 0 ? 0 : 1)
+echo "[DEBUG-a4f2] total=$total errors=$errors"
+[ "$total" = "900 kr" ] && [ "$errors" = 0 ]
 ```
 
-Log in through the app's dev login or a stored `storageState` file, never by typing a real password into the script. When the repo already has Playwright fixtures for login, run a single spec with `bunx playwright test path/to/spec.ts -g '<name>'` instead.
-
+Its exit status is the verdict, so it runs under `git bisect run`. Sign in through the app's dev login, never by typing a real password into the script. When the repo already has Playwright fixtures for the flow, run a single spec with `bunx playwright test path/to/spec.ts -g '<name>'` instead.
 ## Replaying a webhook or job
 
 When the failure starts from an event, capture the real payload once and replay it.
