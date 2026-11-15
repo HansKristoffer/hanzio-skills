@@ -3,7 +3,9 @@
 //
 // Observed on 0.1.9-nightly: `t3 thread show --json` prints { thread, messages }; `thread.status` is
 // `running` while a turn works and `completed` or `interrupted` once it ended, and
-// `thread.pendingRequestCount` counts questions waiting for a person.
+// `thread.pendingRequestCount` counts questions waiting for a person. 0.1.10-nightly adds
+// `pendingBackgroundTasks` (a list), `blockedOnThreadWait` and `snoozed`, and each message is
+// { role, runId, text }.
 import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -49,20 +51,59 @@ export async function threadSend(threadId: string, message: string) {
 	if (!result.ok) throw new Error(result.err || result.out || `t3 thread send ${threadId} failed`)
 }
 
-export type ThreadState = { status: string; link?: string; pendingRequests: number }
+export type ThreadMessage = { role: string; text: string }
 
-export async function threadShow(threadId: string): Promise<ThreadState | null> {
-	const result = await run(['thread', 'show', threadId, '--json', '--messages', '0'])
+export type ThreadState = {
+	status: string
+	link?: string
+	pendingRequests: number
+	/** Background tasks the thread waits on, such as a build it started. */
+	backgroundTasks: number
+	/** The thread waits on another thread, such as a child it delegated to. */
+	waitsOnThread: boolean
+	/** Someone snoozed it in T3 Code. */
+	snoozed: boolean
+	/** The latest messages, oldest first, when `threadShow` was asked for them. */
+	messages: ThreadMessage[]
+}
+
+export async function threadShow(threadId: string, messages = 0): Promise<ThreadState | null> {
+	const result = await run(['thread', 'show', threadId, '--json', '--messages', String(messages)])
 	if (!result.ok) return null
 	try {
-		const thread = JSON.parse(result.out).thread
-		return { status: String(thread.status), link: thread.link, pendingRequests: Number(thread.pendingRequestCount ?? 0) }
+		const parsed = JSON.parse(result.out)
+		const thread = parsed.thread
+		const background = thread.pendingBackgroundTasks
+		return {
+			status: String(thread.status),
+			link: thread.link,
+			pendingRequests: Number(thread.pendingRequestCount ?? 0),
+			backgroundTasks: Array.isArray(background) ? background.length : Number(background ?? 0) || 0,
+			waitsOnThread: thread.blockedOnThreadWait === true,
+			snoozed: thread.snoozed === true,
+			messages: (Array.isArray(parsed.messages) ? parsed.messages : []).map((m: Record<string, unknown>) => ({
+				role: String(m.role ?? ''),
+				text: String(m.text ?? '')
+			}))
+		}
 	} catch {
 		return null
 	}
 }
 
 export const isWorking = (state: ThreadState) => !ENDED.has(state.status)
+
+/** The turn ended, but the thread still waits on something that will wake it: a nudge would only interrupt. */
+export const isWaiting = (state: ThreadState) =>
+	state.pendingRequests > 0 || state.backgroundTasks > 0 || state.waitsOnThread || state.snoozed
+
+const squash = (text: string) => text.replace(/\s+/g, ' ').trim()
+
+/** Whether a message the service sent shows among the thread's messages, matched on its start. */
+export const showsMessage = (state: ThreadState, head: string) => {
+	const start = squash(head).slice(0, 80)
+	return state.messages.some((m) => m.role === 'user' && squash(m.text).startsWith(start))
+}
 
 export type StartArgs = {
 	root: string

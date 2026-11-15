@@ -462,6 +462,7 @@ function drawNav() {
 function statusOf(i) {
 	if (i.state && i.state !== 'open') return { tone: 'idle', label: outcomeName(i.outcome || i.state) }
 	if (i.threadGone) return { tone: 'bad', label: 'Thread gone', note: ['T3 Code cannot find its thread'] }
+	if (i.undelivered) return { tone: 'bad', label: 'Message stuck', note: ["A factory message has not reached the idle thread: open it in T3 Code and resume its queue"] }
 	if (i.stuck) return { tone: 'bad', label: 'Stuck', note: ['No report after being asked to go on'] }
 	const open = (i.decisions || []).filter((d) => d.answer === null).length
 	if (open) {
@@ -470,6 +471,9 @@ function statusOf(i) {
 	}
 	if (i.decisions && i.decisions.length) return { tone: 'warn', label: 'Answer not delivered' }
 	const w = i.waiting
+	if (w && w.on === 'limit') {
+		return { tone: 'idle', label: `Usage limit until ${clock(w.until)}`, note: dotted(w.note, 'Goes on by itself at the reset') }
+	}
 	if (w) {
 		return {
 			tone: w.overdue ? 'warn' : 'idle',
@@ -589,7 +593,7 @@ function issueRow(i) {
 function drawBoard() {
 	if (!loaded) return render()
 	const waiting = board.issues.flatMap((issue) => issue.decisions.map((d) => [issue, d]))
-	const trouble = board.issues.filter((i) => i.stuck || i.threadGone)
+	const trouble = board.issues.filter((i) => i.stuck || i.threadGone || i.undelivered)
 	const others = board.issues.filter((i) => i.waiting && !i.needsYou).length
 	const stat = (label, value, cls, href) => h(href ? 'a' : 'div', { class: `stat${cls ? ` ${cls}` : ''}`, href }, h('div', { class: 'stat-l' }, label), h('div', { class: 'stat-n' }, value))
 	const needs = waiting.length + trouble.length
@@ -918,7 +922,7 @@ function prPanel(data) {
 		h('div', { class: 'meta' },
 			h('div', {}, dotted(`head ${pr.head.slice(0, 7)}`, h('span', {}, 'synced ', when(pr.syncedAt)), pr.rules ? `rules: ${pr.rules.approvals} approval(s)${pr.rules.resolveThreads ? ', resolved conversations' : ''}` : 'branch rules unreadable')),
 			data.round ? h('div', {}, `Round ${data.round.n}${data.round.ended_at ? ' closed' : ' open'}, ${data.round.pushes} push${data.round.pushes === 1 ? '' : 'es'}`) : null,
-			data.waiting ? h('div', {}, `Waiting on ${data.waiting.on}${data.waiting.note ? `: ${data.waiting.note}` : ''} since ${ago(data.waiting.since)}${data.waiting.overdue ? ' (overdue)' : ''}. Safety net ${data.waiting.safetyNet}.`) : null
+			data.waiting?.on === 'limit' ? h('div', {}, `Stopped by a usage limit${data.waiting.note ? ` (${data.waiting.note})` : ''}; the thread goes on after the reset at ${clock(data.waiting.until)}.`) : data.waiting ? h('div', {}, `Waiting on ${data.waiting.on}${data.waiting.note ? `: ${data.waiting.note}` : ''} since ${ago(data.waiting.since)}${data.waiting.overdue ? ' (overdue)' : ''}. Safety net ${data.waiting.safetyNet}.`) : null
 		)
 	)
 }

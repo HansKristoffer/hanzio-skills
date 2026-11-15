@@ -18,6 +18,7 @@ import {
 	type CommentRow,
 	type FindingRow,
 	type IssueRow,
+	type SendRow,
 	type ItemRow,
 	type RoundRow,
 	type RunRow
@@ -68,7 +69,7 @@ import {
 	type PrState
 } from './pr.ts'
 import { check, outcomeShape } from './results.ts'
-import { isWorking, threadSend, threadShow, threadStart } from './t3.ts'
+import { isWaiting, isWorking, showsMessage, threadSend, threadShow, threadStart } from './t3.ts'
 
 export type Tailnet = { ip: string; name?: string }
 export type ServerOptions = {
@@ -94,6 +95,12 @@ const REPO_NAME = /^[^/\s]+(\/[^/\s]+)?$/
 /** Where a project's own settings live: its factory.config.yaml, or this machine. */
 type Store = 'file' | 'machine'
 const MAX_NUDGES = 2
+/** A message the thread is free to take that has not shown in it after this long is stuck in T3 Code's queue. */
+const STUCK_SEND_MS = 10 * 60 * 1000
+/** A usage limit resets within a week at the most. */
+const MAX_LIMIT_MS = 8 * 24 * 60 * 60 * 1000
+/** Failed stage runs in this many issues within the last hour look like a provider outage. */
+const FAILING_WINDOW_MS = 60 * 60 * 1000
 const MISSING_LIMIT = 3
 const MAX_POKES = 3
 const POKE_EVERY_MS = 30 * 60 * 1000
@@ -257,8 +264,16 @@ export function startServer(options: ServerOptions) {
 	}
 	const waits = (d: DecisionRow) => d.answer === null || (d.answered_via === 'page' && d.delivery !== 'sent')
 	const gone = (issue: IssueRow) => issue.thread_missing >= MISSING_LIMIT
+	const openSends = (id: string) =>
+		db.query('select * from sends where issue_id = $id and arrived_at is null order by id').all({ id }) as SendRow[]
+	/** A message the service gave the thread that T3 Code has held for longer than a free thread would. */
+	const undelivered = (id: string) => openSends(id).some((row) => row.flagged_at !== null)
 	const needsYou = (issue: IssueRow) =>
-		decisionsOf(issue.id).some(waits) || issue.nudges >= MAX_NUDGES || gone(issue) || issue.pr_pokes >= MAX_POKES
+		decisionsOf(issue.id).some(waits) ||
+		issue.nudges >= MAX_NUDGES ||
+		gone(issue) ||
+		issue.pr_pokes >= MAX_POKES ||
+		undelivered(issue.id)
 	const blockingOpen = (id: string) => decisionsOf(id).some((d) => d.answer === null && !d.provisional)
 
 	const pageUrl = (id: string) => `http://${tailnet?.name ?? tailnet?.ip ?? '127.0.0.1'}:${options.port}/#/issue/${id}`
@@ -380,6 +395,7 @@ export function startServer(options: ServerOptions) {
 		configError: i.config_error,
 		needsYou: needsYou(i),
 		stuck: i.nudges >= MAX_NUDGES || i.pr_pokes >= MAX_POKES,
+		undelivered: undelivered(i.id),
 		threadGone: gone(i),
 		createdAt: i.created_at,
 		updatedAt: i.updated_at,
@@ -403,6 +419,9 @@ export function startServer(options: ServerOptions) {
 	}
 
 	function waitingOf(i: IssueRow) {
+		if (i.limit_until) {
+			return { on: 'limit' as const, note: i.limit_note, since: i.waiting_since, until: i.limit_until, who: [], overdue: false, safetyNet: 'on' }
+		}
 		if (!i.waiting_on || !i.waiting_since) return null
 		const hours = parseResolved(i).settings.reviewOverdueHours
 		const pr = i.pr_state ? (JSON.parse(i.pr_state) as PrState) : null
@@ -446,10 +465,35 @@ export function startServer(options: ServerOptions) {
 		emit(issueId)
 	}
 
-	/** Any report or run by the thread says it is working again, so it no longer waits on others. */
+	/** An event the service itself notes: unlike `addEvent`, it is no sign of life from the thread, so it keeps
+	 * the nudge count and the quiet clock. */
+	function serviceEvent(issueId: string, kind: string, message: string, at = Date.now()) {
+		db.query('insert into events (issue_id, at, kind, text) values ($issueId, $at, $kind, $text)').run({
+			issueId,
+			at,
+			kind,
+			text: message.slice(0, MAX_EVENT)
+		})
+	}
+
+	/** Any report or run by the thread says it is working again, so it no longer waits on others, and whatever the
+	 * service sent it is no longer stuck: it reads the truth from `factory status`. */
 	function clearWaiting(issueId: string) {
-		db.query('update issues set waiting_on = null, waiting_note = null, waiting_since = null where id = $id and waiting_on is not null').run({
-			id: issueId
+		db.query('update sends set arrived_at = $now where issue_id = $id and arrived_at is null').run({ now: Date.now(), id: issueId })
+		db.query(
+			`update issues set waiting_on = null, waiting_note = null, waiting_since = null, limit_until = null, limit_note = null
+			where id = $id and (waiting_on is not null or limit_until is not null)`
+		).run({ id: issueId })
+	}
+
+	/** Gives the thread a message, and keeps its start so `checkDeliveries` can see it arrive. */
+	async function sendTo(issueId: string, kind: string, message: string) {
+		await threadSend(issueId, message)
+		db.query('insert into sends (issue_id, at, kind, head) values ($issueId, $now, $kind, $head)').run({
+			issueId,
+			now: Date.now(),
+			kind,
+			head: message.slice(0, 200)
 		})
 	}
 
@@ -497,7 +541,7 @@ export function startServer(options: ServerOptions) {
 			return `- ${d.id} ("${d.question}"): ${d.answer}${went}`
 		})
 		try {
-			await threadSend(issueId, `Factory decisions answered on the page:\n${lines.join('\n')}`)
+			await sendTo(issueId, 'answer', `Factory decisions answered on the page:\n${lines.join('\n')}`)
 			mark('sent')
 			addEvent(issueId, 'answer', `Answers delivered to the thread: ${ids.join(', ')}`)
 			return { delivered: ids.length, held: false }
@@ -1052,8 +1096,9 @@ export function startServer(options: ServerOptions) {
 		let told = false
 		if (await threadShow(issue.id)) {
 			try {
-				await threadSend(
+				await sendTo(
 					issue.id,
+					'drop',
 					`Factory: this issue was dropped outside this thread (${reason}). Stop working on it: unwatch its PR and stop what you started. Leave the PR and the branch as they are; run no more factory commands for it.`
 				)
 				told = true
@@ -1094,9 +1139,26 @@ export function startServer(options: ServerOptions) {
 			.query(`select * from issues where state != 'open' and closed_at > $since order by closed_at desc`)
 			.all({ since }) as IssueRow[]
 		const issues = open.map(boardItem)
+		const now = Date.now()
+		const limited = open.filter((i) => i.limit_until && i.limit_until > now)
+		const failed = db
+			// Only open issues: dropping an issue ends its running runs as failed, which is no outage.
+			.query(
+				`select r.* from runs r join issues i on i.id = r.issue_id
+				where r.state = 'failed' and r.ended_at > $after and i.state = 'open' order by r.ended_at`
+			)
+			.all({ after: now - FAILING_WINDOW_MS }) as RunRow[]
 		return {
 			open: issues.length,
 			needsYou: issues.filter((i) => i.needsYou).length,
+			/** Issues paused on a provider's usage limit: a new thread would most likely meet it too. */
+			limited: limited.map((i) => ({ issue: i.id, title: i.title, until: i.limit_until, note: i.limit_note })),
+			/** Stage runs that failed in the last hour, and in how many issues; two or more issues look like an outage. */
+			failing: {
+				issues: new Set(failed.map((r) => r.issue_id)).size,
+				runs: failed.length,
+				reasons: [...new Set(failed.map((r) => (r.summary ?? '').slice(0, 200)).filter(Boolean))].slice(0, 5)
+			},
 			issues,
 			done: done.map(publicIssue)
 		}
@@ -1305,11 +1367,19 @@ export function startServer(options: ServerOptions) {
 		}
 	}
 
-	/** Nudges an open issue whose threads have all gone quiet with nothing waiting for the user. */
+	/** Nudges an open issue whose threads have all gone quiet with nothing waiting for the user, and wakes one
+	 * whose usage limit has reset. */
 	async function checkQuiet(now = Date.now()) {
+		await checkDeliveries(now)
 		const open = db.query(`select * from issues where state = 'open'`).all() as IssueRow[]
 		for (const issue of open) {
 			if (blockingOpen(issue.id)) continue
+			if (issue.limit_until) {
+				if (now >= issue.limit_until) await wakeAfterLimit(issue)
+				continue
+			}
+			// A nudge would only queue behind a message stuck in T3 Code's queue, which the page already shows.
+			if (undelivered(issue.id)) continue
 			const runs = runsOf(issue.id)
 			const newest = runs.at(-1)
 			const limit = newest?.stage === 'land' && newest.state === 'running' ? QUIET_LAND_MS : QUIET_MS
@@ -1338,12 +1408,13 @@ export function startServer(options: ServerOptions) {
 			if (now - last < limit || issue.waiting_on || issue.nudges >= MAX_NUDGES) continue
 			const children = runs.filter((r) => r.state === 'running' && r.thread_id).map((r) => r.thread_id!)
 			const states = [own, ...(await Promise.all(children.map(threadShow)))]
-			if (states.some((s) => s && (isWorking(s) || s.pendingRequests > 0))) continue
+			if (states.some((s) => s && (isWorking(s) || isWaiting(s)))) continue
 			if (states.some((s) => s === null)) continue
 			const minutes = Math.round((now - (lastEvent(issue.id)?.at ?? issue.created_at)) / 60000)
 			try {
-				await threadSend(
+				await sendTo(
 					issue.id,
+					'nudge',
 					`Factory: "${issue.title}" has had no report for ${minutes} minutes, and nothing waits for you or for a child. Run factory status, then continue the stage it shows, or ask with factory ask.`
 				)
 			} catch {
@@ -1358,6 +1429,58 @@ export function startServer(options: ServerOptions) {
 			})
 			db.query('update issues set nudges = $nudges, nudged_at = $now where id = $id').run({ nudges, now, id: issue.id })
 			emit(issue.id)
+		}
+	}
+
+	async function wakeAfterLimit(issue: IssueRow) {
+		const what = issue.limit_note ? ` (${issue.limit_note})` : ''
+		try {
+			await sendTo(
+				issue.id,
+				'limit',
+				`Factory: the usage limit that stopped "${issue.title}"${what} has reset. Run factory status, then run the stage that stopped again.`
+			)
+		} catch {
+			return
+		}
+		db.query('update issues set limit_until = null, limit_note = null, waiting_since = null where id = $id').run({ id: issue.id })
+		addEvent(issue.id, 'limit', `The usage limit reset${what}: the thread was told to go on`)
+	}
+
+	/** Looks for each message the service sent in its thread's latest messages. One the thread was free to take
+	 * that has not shown after a while is stuck in T3 Code's queue: the page says so once, since only a person
+	 * can open the thread and resume it. */
+	async function checkDeliveries(now = Date.now()) {
+		const day = now - 24 * 60 * 60 * 1000
+		db.query('delete from sends where at < $day').run({ day })
+		const issues = db
+			.query(`select distinct s.issue_id from sends s join issues i on i.id = s.issue_id where s.arrived_at is null and i.state = 'open'`)
+			.all() as { issue_id: string }[]
+		for (const { issue_id } of issues) {
+			const rows = openSends(issue_id)
+			const state = await threadShow(issue_id, 30)
+			if (!state) continue
+			let changed = false
+			for (const row of rows) {
+				if (showsMessage(state, row.head)) {
+					db.query('update sends set arrived_at = $now where id = $id').run({ now, id: row.id })
+					if (row.flagged_at !== null) serviceEvent(issue_id, 'queue', `The ${row.kind} message reached the thread after all`, now)
+					changed = true
+					continue
+				}
+				// A busy thread takes it as its next turn: that is a queue doing its job, not a stuck one.
+				if (row.flagged_at !== null || now - row.at < STUCK_SEND_MS || isWorking(state) || isWaiting(state)) continue
+				db.query('update sends set flagged_at = $now where id = $id').run({ now, id: row.id })
+				const minutes = Math.round((now - row.at) / 60000)
+				serviceEvent(
+					issue_id,
+					'queue',
+					`The ${row.kind} message sent ${minutes} minutes ago has not reached the idle thread: open it in T3 Code and resume its queue`,
+					now
+				)
+				changed = true
+			}
+			if (changed) emit(issue_id)
 		}
 	}
 
@@ -1754,8 +1877,10 @@ export function startServer(options: ServerOptions) {
 			addEvent(issue.id, 'wait', 'No longer waiting')
 			return { ok: true }
 		}
-		const on = oneOf(body.on, ['checks', 'bots', 'review', 'merge', 'deploy'] as const, 'on')
+		const on = oneOf(body.on, ['checks', 'bots', 'review', 'merge', 'deploy', 'limit'] as const, 'on')
 		const note = text(body.note, 'note', { max: 500 }) ?? null
+		if (on === 'limit') return waitForLimit(issue, body.until, note)
+		if (body.until !== undefined) fail(400, 'wait: --until goes with --on limit only')
 		const since = issue.waiting_on === on && issue.waiting_since ? issue.waiting_since : Date.now()
 		addEvent(issue.id, 'wait', `Waiting on ${on}${note ? `: ${note}` : ''}`)
 		db.query('update issues set waiting_on = $on, waiting_note = $note, waiting_since = $since where id = $id').run({
@@ -1764,6 +1889,20 @@ export function startServer(options: ServerOptions) {
 			since,
 			id: issue.id
 		})
+		emit(issue.id)
+		return { ok: true, waiting: waitingOf(getIssue(issue.id)!) }
+	}
+
+	/** A stage stopped by its provider's usage limit: the service wakes the thread once the limit resets. */
+	function waitForLimit(issue: IssueRow, until: unknown, note: string | null) {
+		const raw = text(until, 'until', { max: 100 }) ?? fail(400, 'wait --on limit: give --until <when the limit resets, as an ISO time>')
+		const at = /^\d+$/.test(raw) ? Number(raw) : Date.parse(raw)
+		const now = Date.now()
+		if (!Number.isFinite(at)) fail(400, `wait --on limit: --until ${raw} is not a time; give it as an ISO time with its offset`)
+		if (at <= now) fail(400, `wait --on limit: ${raw} has passed, so the limit has reset: run the stage again`)
+		if (at - now > MAX_LIMIT_MS) fail(400, `wait --on limit: ${raw} is more than a week away; ask a blocked decision instead`)
+		addEvent(issue.id, 'wait', `Waiting on a usage limit until ${new Date(at).toISOString()}${note ? `: ${note}` : ''}`)
+		db.query('update issues set limit_until = $at, limit_note = $note, waiting_since = $now where id = $id').run({ at, note, now, id: issue.id })
 		emit(issue.id)
 		return { ok: true, waiting: waitingOf(getIssue(issue.id)!) }
 	}
@@ -1803,11 +1942,12 @@ export function startServer(options: ServerOptions) {
 				}
 				continue
 			}
-			if (!reasons.length || isWorking(show) || fresh.pr_pokes >= MAX_POKES) continue
+			if (!reasons.length || isWorking(show) || fresh.pr_pokes >= MAX_POKES || undelivered(issue.id)) continue
 			if (fresh.pr_pokes > 0 && fresh.pr_poked_at && now - fresh.pr_poked_at < POKE_EVERY_MS) continue
 			try {
-				await threadSend(
+				await sendTo(
 					issue.id,
+					'poke',
 					`Factory: ${reasons.join('; ')} on ${pr.url}. Run factory pr sync and act on it as references/review-loop.md says.`
 				)
 			} catch {
@@ -1993,7 +2133,7 @@ export function startServer(options: ServerOptions) {
 		if (!(await threadShow(issue.id))) fail(409, "T3 Code cannot find this issue's thread, so nothing here can start its dev environment")
 		setPreview(issue.id, { state: asking, urls: action === 'stop' ? (before?.urls ?? []) : [], head: before?.head ?? null, error: null, at: Date.now() })
 		try {
-			await threadSend(issue.id, action === 'start' ? PREVIEW_START : PREVIEW_STOP)
+			await sendTo(issue.id, 'preview', action === 'start' ? PREVIEW_START : PREVIEW_STOP)
 		} catch (error) {
 			setPreview(issue.id, before)
 			return fail(502, `could not reach the thread: ${(error as Error).message}`)
