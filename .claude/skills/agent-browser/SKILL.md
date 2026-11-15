@@ -17,7 +17,7 @@ Three things keep their own tooling: a repository's committed end-to-end suite (
 bun add -g agent-browser && agent-browser install
 ```
 
-A repository may pin its own version behind a script (gey-mono's `bun run browser <command>`); its `AGENTS.md` says so, and that script is the CLI there. On Linux, a launch that ends in `No usable sandbox!` (Ubuntu's AppArmor) needs `{ "args": "--no-sandbox" }` in `~/.agent-browser/config.json`, once per machine.
+A repository may run the CLI through its own script (gey-mono's `bun run browser <command>`); its `AGENTS.md` says so, and that script is the CLI there. On Linux, a launch that ends in `No usable sandbox!` (Ubuntu's AppArmor) needs `{ "args": "--no-sandbox" }` in `~/.agent-browser/config.json`, once per machine.
 
 ## 2. Load the guide for this version
 
