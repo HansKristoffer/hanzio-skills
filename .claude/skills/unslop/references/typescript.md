@@ -168,6 +168,8 @@ Without hanzio, use a `switch` with a `const _exhaustive: never = value` default
 | `value as LanguageCode` from `Object.entries` | The curated list from the shared package |
 | `ref<string \| null>` for entity ids | `Id<'Model'> \| null` |
 | `reason: null as string \| null` | `reason: null` |
+| `user!.id` at each use | Narrow once with an early return, or split the component as section 4 does, so the code below holds a non-null value |
+| `name?: string` that every caller passes, or `string \| null \| undefined` from a source that yields only `null` | Make it required, or keep the one absent value; delete the `?.`, `??` and guards this leaves dead |
 | `(data ?? null) as SomeState \| null` | Fix the helper's generic; drop the cast |
 | Duplicate local API response types | `RouterOutput['route']['method']` |
 | `as never as Foo[]` on data from a shared protocol | Run it through that package's parser or reducer |
@@ -178,7 +180,7 @@ Without hanzio, use a `switch` with a `const _exhaustive: never = value` default
 
 For touched backend formatters, API consumers and list code:
 
-1. Grep touched files for `\bas\b`, `as never`, `as unknown` and `: any`; eliminate each or document it at a single boundary.
+1. Grep touched files for `\bas\b`, `\bany\b` and the non-null `!` (`[A-Za-z0-9_)\]]!([.,;)\[]|$)`); eliminate each or document it at a single boundary.
 2. Backend formatters and providers: row types come from the extended client when returning branded ids; **no `asId` on Prisma query fields**.
 3. Clients: consume router input/output types and shared protocol packages, never parallel shapes.
 4. Route params: **`asId` once** at the boundary; props typed as `Id<'Model'>` downstream.
