@@ -1,6 +1,16 @@
 # Execution: changing an external system safely
 
-Read this when the engine writes to a system it doesn't own. A read-only engine needs none of it.
+Read this when the engine reads or writes a system it doesn't own. **Adapters** and **Every write** apply to any engine that writes. Each later section belongs to one row of the skill's table; read the ones answered yes.
+
+## Adapters
+
+- An adapter translates. One folder per external workflow holds its payload schemas, reads, writes and test harness; the rules stay in the engine.
+- Parse every response with a schema. When the external system publishes one (GraphQL, OpenAPI), generate its types from a pinned version and key any map over its enums by the generated enum.
+- Probe before relying: every assumption about the API (scopes, pagination caps, nullability, what "success" returns) gets a probe against a sandbox account. See the real-system leg in [proof.md](proof.md).
+
+## Every write
+
+Send through one shared write wrapper that forces the client library's retries to 0 for mutations and classifies the result: applied, rejected, or unknown. Only known pre-execution error codes count as "not applied". An HTTP 200 is not success; read the body. A timeout is `unknown`: read the target back before retrying it or reporting it as failed.
 
 ## Intent, plan, receipt
 
@@ -18,12 +28,12 @@ A pure function decides whether a command may still run: compare the external sy
 
 ## Durable effects
 
-Every external write is an **attempt**:
+When a run outlives one request, every external write is an **attempt**:
 
 1. Persist the attempt (its commands and payload digest) **before** sending.
-2. Send through one shared write wrapper that forces the client library's retries to 0 for mutations and classifies the result: responded, rejected, or unknown. Only known pre-execution error codes count as "not applied". An HTTP 200 is not success; read the body.
+2. Send it through the write wrapper.
 3. Record the outcome. The union is wider than success and failure: `applied | notApplied | unknown | failed | pending`, plus `unresolved` / `deferred` at the run level.
-4. A timeout is `unknown`. It must be **observed** (read back) before anything is retried.
+4. An `unknown` attempt is **observed** (read back) before anything is retried.
 5. Evidence is an append-only log per attempt.
 
 ## Derive guarantees, don't claim them
@@ -40,7 +50,7 @@ Nothing is idempotent by default. Retry policy is a total table, `retryDecision[
 
 ## Checked write (no compare token)
 
-1. Re-read the target right before writing. If it differs from the expected state, that command is a conflict and nothing is sent.
+1. Re-read the target right before writing. If it differs from the expected state (the plan's before-state, or the value the user saw in the preview when there is no stored plan), that command is a conflict and nothing is sent. This also makes a repeated request safe: a relative change such as "raise by 10%" is not applied twice, because the second attempt no longer sees the expected value.
 2. Write.
 3. Read back. A different value is a conflict.
 4. Map the external system's user errors back to the exact command by input index.

@@ -4,13 +4,13 @@ Use this when several agents (or people) build the engine in parallel. A solo bu
 
 ## The design document
 
-One numbered document: glossary, concepts and the invariant each protects, the flow, guarantees, a decisions table. Once fan-out starts it is **frozen**: it changes only by adding a numbered decision row. When an agent finds it wrong, unclear or silent, the agent writes the question in its PR and does not invent an answer. A value it leaves open (a timeout, a limit) becomes a named constant with a comment saying it is provisional, and the PR lists it.
+One short, numbered document: glossary, concepts and the invariant each protects, the flow, guarantees, a decisions table. Agents read only the sections their package lists, and decisions still come up mid-build, so the decisions table is the part that grows. Once fan-out starts it is **frozen**: it changes only by adding a numbered decision row. When an agent finds it wrong, unclear or silent, the agent writes the question in its PR and does not invent an answer. A value it leaves open (a timeout, a limit) becomes a named constant with a comment saying it is provisional, and the PR lists it.
 
 The engine package's `AGENTS.md` is the rulebook: numbered, one paragraph each, each citing the design section it comes from. Agents follow the rulebook without reading the whole design. When the rulebook and the design disagree, stop and ask.
 
 ## Waves
 
-1. **Groundwork:** repo, checks, strict tsconfig, bundle boundary, empty registries.
+1. **Groundwork:** repo, checks, strict tsconfig, import-graph test, empty registries.
 2. **Contracts:** one agent writes every shared interface, then they freeze.
 3. **Proofs:** executable vertical slices that exercise the frozen interfaces on the hardest paths (typing across the API, durable execution, file round trips). Finding a contract mistake here is cheap.
 4. **Fan-out:** a few agents at a time, one work package each.
@@ -19,7 +19,6 @@ The engine package's `AGENTS.md` is the rulebook: numbered, one paragraph each, 
 
 - **Run one package alone first (the pilot)**, usually the repo-checks and package skeleton, and fix the template, the review formats and the round limits from its report before anything runs in parallel.
 - **A proof covers every family it will be trusted for.** A routing proof that exercised scalar fields only forced a broad contract change when collection and family commands arrived. Prove one case of each command family, not the easiest one.
-- **Bind consumers to the real registry as soon as it exists.** A UI kit typed against a small fixture registry while the real one grew hid every missing renderer until the switch.
 - **Size a package to one session.** When a plan needs several sub-plans or a review round's findings run past what one fix round can absorb, split it into stacked packages.
 - **Verify every claim a spec makes about tooling and code before freezing it**: that a config hook or lint override exists in the installed versions, and that each "Uses" names a merged package and a real module path.
 
