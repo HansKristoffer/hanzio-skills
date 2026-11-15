@@ -209,7 +209,30 @@
 	.item-head strong { font-weight: 500; }
 	.item-head .end { margin-left: auto; }
 	.item-head .end a:not(.btn) { font-size: 13px; color: var(--ink2); text-underline-offset: 3px; }
+	/* Markdown from reports, issues and comments */
+	.md { max-width: 80ch; overflow-wrap: anywhere; }
+	.md > * + * { margin-top: 10px; }
+	.md h3, .md h4, .md h5, .md h6 { font-size: 14px; line-height: 20px; font-weight: 500; }
+	.md h3 { font-size: 15px; }
+	.md * + h3, .md * + h4, .md * + h5 { margin-top: 20px; }
+	.md p, .md li { color: var(--ink); }
+	.md ul, .md ol { margin: 0; padding-left: 20px; }
+	.md li + li { margin-top: 4px; }
+	.md li > * + * { margin-top: 4px; }
+	.md strong { font-weight: 600; }
+	.md code { padding: 1px 4px; border-radius: 4px; background: var(--raised); font: 12px/18px var(--mono); }
+	.md pre code { padding: 0; background: none; }
+	.md a { text-underline-offset: 3px; }
+	.md blockquote { margin: 0; padding-left: 12px; border-left: 2px solid var(--line2); color: var(--ink2); }
+	.md hr { border: 0; border-top: 1px solid var(--line); }
+	.md .table { overflow-x: auto; }
+	.md table { min-width: 100%; border-collapse: collapse; font-size: 13px; line-height: 20px; overflow-wrap: normal; }
+	.md th, .md td { padding: 6px 12px 6px 0; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+	.md th { font-weight: 500; color: var(--ink2); }
+	.md tr:last-child td { border-bottom: 0; }
 	.quote { padding-left: 12px; border-left: 2px solid var(--line2); white-space: pre-wrap; }
+	.quote.md { white-space: normal; }
+	.quote.md > .meta + * { margin-top: 2px; }
 	.quote .meta { margin-bottom: 2px; }
 	.quote.hidden { color: var(--muted); }
 	.tl { margin-left: 4px; padding: 4px 0 4px 16px; border-left: 1px solid var(--line2); }
@@ -425,6 +448,123 @@ const plain = (value) => (value && typeof value === 'object' ? Object.entries(va
 const dotted = (...parts) => parts.filter((p) => p !== null && p !== undefined && p !== false && p !== '').flatMap((p, n) => (n ? [' · ', p] : [p]))
 const isUrl = (url) => !!url && /^https?:\/\//.test(url)
 const safeLink = (url, label) => (isUrl(url) ? h('a', { href: url, target: '_blank', rel: 'noreferrer' }, label) : null)
+
+/**
+ * Markdown, drawn as elements and text nodes only. Issue bodies and GitHub comments come from
+ * other people, so nothing in them may run as HTML, and only http(s) links become links.
+ */
+const MD_INLINE = /\\([\\`*_{}[\]()#+\-.!|>~])|(`+)([\s\S]+?)\2(?!`)|\*\*(?=\S)([\s\S]+?)\*\*|__(?=\S)([\s\S]+?)__(?!\w)|~~(?=\S)([\s\S]+?)~~|\*(?=[^\s*])([\s\S]*?[^\s\\])\*|(?<![\w\\])_(?=[^\s_])([\s\S]*?[^\s\\])_(?!\w)|\[([^\]]+)\]\((\S+?)(?:\s+"[^"]*")?\)|(https?:\/\/[^\s<>]*[^\s<>.,;:!?'")\]])/g
+function mdInline(text) {
+	const out = []
+	let last = 0
+	for (const m of text.matchAll(MD_INLINE)) {
+		if (m.index > last) out.push(text.slice(last, m.index))
+		const [all, escaped, , code, strong, strong2, strike, em, em2, label, href, bare] = m
+		if (escaped) out.push(escaped)
+		else if (code !== undefined) out.push(h('code', {}, code.length > 2 && code.startsWith(' ') && code.endsWith(' ') ? code.slice(1, -1) : code))
+		else if (strong || strong2) out.push(h('strong', {}, mdInline(strong || strong2)))
+		else if (strike) out.push(h('s', {}, mdInline(strike)))
+		else if (em || em2) out.push(h('em', {}, mdInline(em || em2)))
+		else if (label) out.push(isUrl(href) ? h('a', { href, target: '_blank', rel: 'noreferrer' }, mdInline(label)) : all)
+		else if (bare) out.push(safeLink(bare, bare))
+		last = m.index + all.length
+	}
+	if (last < text.length) out.push(text.slice(last))
+	return out
+}
+const MD_FENCE = /^ {0,3}(`{3,}|~{3,})/
+const MD_HEADING = /^ {0,3}(#{1,6})\s+(.*?)(?:\s+#+)?\s*$/
+const MD_RULE = /^ {0,3}([-*_])(?:\s*\1){2,}\s*$/
+const MD_ITEM = /^(\s*)([-*+]|\d{1,9}[.)])(?:\s+(.*)|$)/
+const MD_QUOTE = /^ {0,3}>/
+const MD_TABLE_RULE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/
+const mdCells = (line) => line.trim().replace(/^\|/, '').replace(/(?<!\\)\|$/, '').split(/(?<!\\)\|/).map((c) => c.trim().replaceAll('\\|', '|'))
+const mdTableStart = (lines, i) => lines[i].includes('|') && i + 1 < lines.length && lines[i + 1].includes('-') && MD_TABLE_RULE.test(lines[i + 1])
+const mdBlockStart = (lines, i) => MD_FENCE.test(lines[i]) || MD_HEADING.test(lines[i]) || MD_RULE.test(lines[i]) || MD_QUOTE.test(lines[i]) || MD_ITEM.test(lines[i]) || mdTableStart(lines, i)
+const indentOf = (line) => line.match(/^\s*/)[0].length
+
+function md(text) {
+	const lines = String(text ?? '').replace(/\r\n?/g, '\n').replaceAll('\t', '    ').split('\n')
+	const blocks = []
+	let i = 0
+	while (i < lines.length) {
+		const line = lines[i]
+		if (!line.trim()) { i++; continue }
+		const fence = line.match(MD_FENCE)
+		if (fence) {
+			const body = []
+			i++
+			while (i < lines.length && !(lines[i].trim().startsWith(fence[1][0].repeat(fence[1].length)) && !lines[i].trim().replace(/^[`~]+/, '').trim())) body.push(lines[i++])
+			i++
+			blocks.push(h('pre', {}, h('code', {}, body.join('\n'))))
+			continue
+		}
+		const heading = line.match(MD_HEADING)
+		if (heading) {
+			blocks.push(h(`h${Math.min(6, heading[1].length + 2)}`, {}, mdInline(heading[2])))
+			i++
+			continue
+		}
+		if (MD_RULE.test(line)) { blocks.push(h('hr')); i++; continue }
+		if (mdTableStart(lines, i)) {
+			const head = mdCells(line)
+			const align = mdCells(lines[i + 1]).map((c) => (c.endsWith(':') ? (c.startsWith(':') ? 'center' : 'right') : null))
+			const cell = (tag, c, n) => h(tag, { style: align[n] ? `text-align:${align[n]}` : null }, mdInline(c))
+			const rows = []
+			i += 2
+			while (i < lines.length && lines[i].trim() && lines[i].includes('|')) rows.push(mdCells(lines[i++]))
+			blocks.push(h('div', { class: 'table' }, h('table', {},
+				h('thead', {}, h('tr', {}, head.map((c, n) => cell('th', c, n)))),
+				rows.length ? h('tbody', {}, rows.map((r) => h('tr', {}, head.map((_, n) => cell('td', r[n] || '', n))))) : null
+			)))
+			continue
+		}
+		if (MD_QUOTE.test(line)) {
+			const body = []
+			while (i < lines.length && lines[i].trim() && (MD_QUOTE.test(lines[i]) || !mdBlockStart(lines, i))) body.push(lines[i++].replace(/^ {0,3}> ?/, ''))
+			blocks.push(h('blockquote', {}, md(body.join('\n'))))
+			continue
+		}
+		const first = line.match(MD_ITEM)
+		if (first) {
+			const base = first[1].length
+			const ordered = /\d/.test(first[2])
+			const items = []
+			while (i < lines.length) {
+				const m = lines[i].match(MD_ITEM)
+				if (m && indentOf(lines[i]) <= base + 1) {
+					if (/\d/.test(m[2]) !== ordered) break
+					items.push([m[3] || ''])
+					i++
+					continue
+				}
+				if (!lines[i].trim()) {
+					// A blank line ends the list unless the next text belongs to it.
+					let next = i + 1
+					while (next < lines.length && !lines[next].trim()) next++
+					if (next < lines.length && (indentOf(lines[next]) > base || (MD_ITEM.test(lines[next]) && indentOf(lines[next]) === base))) { items.at(-1).push(''); i++; continue }
+					break
+				}
+				if (indentOf(lines[i]) > base) { items.at(-1).push(lines[i].slice(Math.min(indentOf(lines[i]), base + 2))); i++; continue }
+				if (mdBlockStart(lines, i)) break
+				items.at(-1).push(lines[i++])
+			}
+			const start = ordered ? parseInt(first[2], 10) : 1
+			blocks.push(h(ordered ? 'ol' : 'ul', { start: ordered && start !== 1 ? start : null }, items.map((body) => {
+				const inner = md(body.join('\n'))
+				// A one-paragraph item is drawn without the paragraph, so the list stays tight.
+				return h('li', {}, inner.length === 1 && inner[0].tagName === 'P' ? [...inner[0].childNodes] : inner)
+			})))
+			continue
+		}
+		const para = [line]
+		i++
+		while (i < lines.length && lines[i].trim() && !mdBlockStart(lines, i)) para.push(lines[i++])
+		// Line breaks are kept, as GitHub keeps them in comments: reports put one field per line.
+		blocks.push(h('p', {}, para.flatMap((l, n) => (n ? [h('br'), ...mdInline(l.trim())] : mdInline(l.trim())))))
+	}
+	return blocks
+}
 const out = (url, label, name, cls = 'btn sm', title) => (isUrl(url) ? h('a', { class: cls, href: url, target: '_blank', rel: 'noreferrer', title }, icon(name), label) : null)
 const issueHref = (issue) => `#/issue/${encodeURIComponent(issue.id)}`
 const short = (sha) => (sha ? sha.slice(0, 7) : '')
@@ -716,7 +856,7 @@ async function drawIssue(id) {
 		) : null,
 		h('div', { class: 'igrid' },
 			h('div', {},
-				data.report ? section('Closing report', null, h('pre', {}, data.report)) : null,
+				data.report ? section('Closing report', null, h('div', { class: 'panel body md' }, md(data.report))) : null,
 				shots.length || built?.media ? section('What it looks like', shots.length, gallery(shots, built?.media, data.pr?.head)) : null,
 				built?.measured?.rows?.length ? section('Measured', null, measuredPanel(built.measured, data.pr?.head)) : null,
 				(i.state === 'open' && (built || data.preview)) || data.preview?.state === 'up' ? section('Try it', null, previewPanel(i, data.preview, built?.tryIt, data.pr?.head)) : null,
@@ -730,7 +870,7 @@ async function drawIssue(id) {
 					h('p', {}, d.question),
 					h('p', { class: 'meta' }, d.answer === null ? `Recommended: ${d.recommendation}` : `Answer (${d.answeredVia}): ${d.answer}`)
 				)))) : null,
-				section('The issue as taken in', null, h('pre', {}, data.body || '(no text)'))
+				section('The issue as taken in', null, data.body ? h('div', { class: 'panel body md' }, md(data.body)) : h('p', { class: 'muted' }, '(no text)'))
 			),
 			h('div', {}, section('Timeline', null, h('div', { class: 'tl' }, ...data.events.slice().reverse().map((e) => h('div', {}, cap(e.text), h('time', {}, clock(e.at)))))))
 		)
@@ -943,7 +1083,7 @@ function reviewItems(items) {
 				h('span', { class: 'end' }, safeLink(item.url, 'Open on GitHub'))
 			),
 			...item.comments.map((c) => c.trusted || c.byFactory
-				? h('div', { class: 'quote' }, h('div', { class: 'meta' }, `@${c.author}${c.authorKind === 'bot' ? ' (bot)' : ''}${c.byFactory ? ' (the factory)' : ''} · ${ago(c.createdAt)}`), c.body)
+				? h('div', { class: 'quote md' }, h('div', { class: 'meta' }, `@${c.author}${c.authorKind === 'bot' ? ' (bot)' : ''}${c.byFactory ? ' (the factory)' : ''} · ${ago(c.createdAt)}`), md(c.body))
 				: h('div', { class: 'quote hidden' }, `Hidden: @${c.author} is outside the project, so the factory ignores this comment.`)),
 			item.handledNote ? h('div', { class: 'meta' }, `Factory: ${item.handledNote}`) : null
 		)
