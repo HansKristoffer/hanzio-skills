@@ -6,15 +6,18 @@
 // `thread.pendingRequestCount` counts questions waiting for a person. 0.1.10-nightly adds
 // `pendingBackgroundTasks` (a list), `blockedOnThreadWait` and `snoozed`, and each message is
 // { role, runId, text }.
+import { Database } from 'bun:sqlite'
 import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 const ENDED = new Set(['completed', 'interrupted', 'failed', 'error', 'stopped'])
 
+const t3Home = () => process.env.T3CODE_HOME || join(homedir(), '.t3')
+
 export function t3Binary() {
 	if (process.env.FACTORY_T3) return process.env.FACTORY_T3
-	const home = process.env.T3CODE_HOME || join(homedir(), '.t3')
+	const home = t3Home()
 	try {
 		const state = JSON.parse(readFileSync(join(home, 'runtime', 'service-state.json'), 'utf8'))
 		const binary = join(home, 'runtime', 'versions', String(state.activeVersion), 't3')
@@ -105,19 +108,78 @@ export const showsMessage = (state: ThreadState, head: string) => {
 	return state.messages.some((m) => m.role === 'user' && squash(m.text).startsWith(start))
 }
 
-export type StartArgs = {
-	root: string
+export type T3Project = {
+	id: string
 	title: string
+	root: string
+	archived: boolean
+	/** The project's own default model in T3 Code, as provider and model, when it has one. */
+	defaultModel: { provider: string; model: string } | null
+}
+
+/**
+ * The projects T3 Code has on this machine. The `t3` command has no `project list`, so this reads T3 Code's
+ * own database, read-only. Observed on 0.1.10-nightly: `userdata/statev2.sqlite` (older versions:
+ * `state.sqlite`) has `projection_projects` with `project_id`, `title`, `workspace_root`, `deleted_at`,
+ * `archived_at` and `default_model_selection_json` ({ instanceId or provider, model }).
+ */
+export function projectList(): T3Project[] {
+	const userdata = join(t3Home(), 'userdata')
+	const file = ['statev2.sqlite', 'state.sqlite'].map((name) => join(userdata, name)).find((path) => existsSync(path))
+	if (!file) throw new Error(`T3 Code keeps no projects here: no state database in ${userdata}`)
+	let db: Database | undefined
+	try {
+		db = new Database(file, { readonly: true })
+		const columns = new Set((db.query('pragma table_info(projection_projects)').all() as { name: string }[]).map((c) => c.name))
+		if (!columns.has('project_id') || !columns.has('workspace_root')) throw new Error('it has no projection_projects table')
+		const archived = columns.has('archived_at') ? 'archived_at' : 'null'
+		const model = columns.has('default_model_selection_json') ? 'default_model_selection_json' : 'null'
+		const rows = db
+			.query(`select project_id, title, workspace_root, ${archived} as archived_at, ${model} as model from projection_projects where deleted_at is null order by lower(title)`)
+			.all() as { project_id: string; title: string; workspace_root: string; archived_at: string | null; model: string | null }[]
+		return rows.map((row) => ({
+			id: row.project_id,
+			title: row.title,
+			root: row.workspace_root,
+			archived: row.archived_at !== null,
+			defaultModel: parseModel(row.model)
+		}))
+	} catch (error) {
+		throw new Error(`cannot read T3 Code's projects from ${file}: ${(error as Error).message}`)
+	} finally {
+		db?.close()
+	}
+}
+
+function parseModel(json: string | null) {
+	if (!json) return null
+	try {
+		const parsed = JSON.parse(json) as Record<string, unknown>
+		const provider = parsed.instanceId ?? parsed.providerInstanceId ?? parsed.provider
+		return typeof provider === 'string' && typeof parsed.model === 'string' ? { provider, model: parsed.model } : null
+	} catch {
+		return null
+	}
+}
+
+export type StartArgs = {
+	/** A project id, or a path inside the project. */
+	root: string
+	title?: string
 	message: string
 	provider?: string
 	model?: string
-	worktree: string
-	branch: string
+	/** The ref a new worktree starts from; without it the thread works in the project's folder. */
+	worktree?: string
+	branch?: string
 }
 
-/** Starts a thread in a new worktree and returns its id and link. */
+/** Starts a thread, in a new worktree when given one, and returns its id and link. */
 export async function threadStart(args: StartArgs) {
-	const flags = ['--title', args.title, '--worktree', args.worktree, '--branch', args.branch, '--json']
+	const flags: string[] = []
+	if (args.title) flags.push('--title', args.title)
+	if (args.worktree) flags.push('--worktree', args.worktree, ...(args.branch ? ['--branch', args.branch] : []))
+	flags.push('--json')
 	if (args.provider && args.model) flags.push('--provider', args.provider, '--model', args.model)
 	const result = await run(['thread', 'start', args.root, '-', ...flags], args.message)
 	if (!result.ok) throw new Error(result.err || result.out || 't3 thread start failed')

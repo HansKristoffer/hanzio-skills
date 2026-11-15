@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { freePort, scratchRepo, setup, type Harness } from './fixtures/harness.ts'
+import { mkdirSync } from 'node:fs'
+import { join } from 'node:path'
+import { freePort, git, scratchRepo, setup, type Harness } from './fixtures/harness.ts'
 import { SIGNATURE_HEADER, sign } from './webhook.ts'
 
 let h: Harness
@@ -149,6 +151,96 @@ describe('the tools', () => {
 		await start('t1')
 		await tool('drop_issue', { issue: 't1', reason: 'not ours' })
 		expect((await tool('list_issues', { state: 'closed' })).issues[0]).toMatchObject({ id: 't1', outcome: 'dropped' })
+	})
+})
+
+describe("T3 Code's projects", () => {
+	const starts = () => h.calls().filter((c) => c.args[1] === 'start')
+
+	/** acme/api (which the factory works in), a library checkout, a plain folder, an archived and a deleted project. */
+	function projects() {
+		mkdirSync(join(h.dir, 'lib'))
+		const { work: lib, other } = scratchRepo(join(h.dir, 'lib'), 'acme/tiny-lib')
+		const notes = join(h.dir, 'notes')
+		mkdirSync(notes)
+		h.projects([
+			{ id: 'p-api', title: 'api', root: work },
+			{ id: 'p-lib', title: 'tiny-lib', root: lib, model: { instanceId: 'codex', model: 'gpt-6-luna' } },
+			{ id: 'p-notes', title: 'notes', root: notes },
+			{ id: 'p-old', title: 'old', root: join(h.dir, 'gone'), archived: true },
+			{ id: 'p-deleted', title: 'deleted', root: lib, deleted: true }
+		])
+		return { lib, notes, other }
+	}
+
+	test('list_projects lists every project T3 Code has, the factory\'s and the others', async () => {
+		const { lib, notes } = projects()
+		await start('t1')
+		const listed = (await tool('list_projects')).projects
+		expect(listed).toEqual([
+			{ id: 'p-api', title: 'api', path: work, repo: 'acme/api', git: true, factory: true },
+			{ id: 'p-notes', title: 'notes', path: notes, repo: null, git: false, factory: false },
+			{ id: 'p-lib', title: 'tiny-lib', path: lib, repo: 'acme/tiny-lib', git: true, factory: false, defaultModel: { provider: 'codex', model: 'gpt-6-luna' } }
+		])
+		const all = (await tool('list_projects', { archived: true })).projects
+		expect(all.find((p: { id: string }) => p.id === 'p-old')).toMatchObject({ archived: true, missing: expect.any(String) })
+	})
+
+	test('without T3 Code\'s database, list_projects says where it looked', async () => {
+		expect((await tool('list_projects')).error).toContain('no state database')
+	})
+
+	test('start_thread starts a plain thread in a worktree from the fetched default branch, with the message as written', async () => {
+		const { lib, other } = projects()
+		const started = await tool('start_thread', { project: 'tiny-lib', message: 'Bump Bun to 1.3\n\nThen run the tests.' })
+		expect(started).toMatchObject({
+			thread: 'thread-new-1',
+			threadLink: 'https://app.t3.codes/threads/env/thread-new-1',
+			project: { id: 'p-lib', repo: 'acme/tiny-lib', path: lib },
+			workspace: { worktree: true, base: 'origin/main', branch: 't3/bump-bun-to-1-3' },
+			model: { provider: 'codex', model: 'gpt-6-luna' }
+		})
+		const call = starts()[0]!
+		expect(call.args).toEqual(['thread', 'start', 'p-lib', '-', '--worktree', 'origin/main', '--branch', 't3/bump-bun-to-1-3', '--json'])
+		expect(call.stdin).toBe('Bump Bun to 1.3\n\nThen run the tests.')
+		// The worktree starts from origin as it is now, not the local main behind it.
+		expect(git(lib, 'rev-parse', 'origin/main')).toBe(git(other, 'rev-parse', 'HEAD'))
+		// Nothing is tracked: no issue was registered.
+		expect((await tool('list_issues', { state: 'all' })).issues).toEqual([])
+	})
+
+	test('a branch the checkout already has is not taken again', async () => {
+		const { lib } = projects()
+		git(lib, 'branch', 't3/fix-readme')
+		const started = await tool('start_thread', { project: 'acme/tiny-lib', message: 'whatever', title: 'Fix README', provider: 'claudeAgent', model: 'claude-opus-5-5' })
+		expect(started.workspace.branch).toBe('t3/fix-readme-2')
+		expect(starts()[0]!.args).toEqual([
+			'thread', 'start', 'p-lib', '-', '--title', 'Fix README', '--worktree', 'origin/main', '--branch', 't3/fix-readme-2', '--json', '--provider', 'claudeAgent', '--model', 'claude-opus-5-5'
+		])
+	})
+
+	test('worktree: false, and a project that is no git checkout, work in the folder itself', async () => {
+		const { notes } = projects()
+		expect((await tool('start_thread', { project: 'p-api', message: 'Look around', worktree: false })).workspace).toEqual({ worktree: false, path: work })
+		expect((await tool('start_thread', { project: notes, message: 'Tidy up' })).workspace).toEqual({ worktree: false, path: notes })
+		expect(starts().map((c) => c.args)).toEqual([
+			['thread', 'start', 'p-api', '-', '--json'],
+			['thread', 'start', 'p-notes', '-', '--json']
+		])
+		expect((await tool('start_thread', { project: 'notes', message: 'x', worktree: true })).error).toContain('not a git repository')
+	})
+
+	test('a wrong project or a half-given model is refused before anything starts', async () => {
+		projects()
+		const unknown = (await tool('start_thread', { project: 'nope', message: 'x' })).error
+		expect(unknown).toContain('no project nope')
+		expect(unknown).toContain('tiny-lib')
+		expect(unknown).toContain('Next: list_projects')
+		expect((await tool('start_thread', { project: 'tiny-lib', message: 'x', model: 'gpt-6-luna' })).error).toContain('provider and model together')
+		expect((await tool('start_thread', { project: 'notes', message: 'x', worktree: false, branch: 'b' })).error).toContain('leave it out')
+		expect((await tool('start_thread', { project: 'old', message: 'x' })).error).toContain('is gone')
+		expect((await tool('start_thread', { project: 'tiny-lib' })).error).toContain('message is required')
+		expect(starts()).toEqual([])
 	})
 })
 
