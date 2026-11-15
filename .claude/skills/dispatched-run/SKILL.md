@@ -44,7 +44,7 @@ Stop (go to step 8, and say which rule) when any of these holds, or any stop rul
 
 Write a test that goes red on the item's exact symptom, find the cause, and keep that test as the regression test. Fix the cause, never the symptom: an error swallowed, caught and ignored, or downgraded to a warning is not a fix. When our code should handle the case, handle it and return the right error to the caller.
 
-Run the repository's checks for what you touched. When the change shows on screen, look at it in the running app and keep a screenshot for the PR. When the dev stack will not start, do not retry it in a loop: verify what you can and say in the PR what you could not.
+Run the repository's checks for what you touched. When the change shows on screen, look at it in the running app with the `agent-browser` skill and keep a screenshot for the PR. When the dev stack will not start, do not retry it in a loop: verify what you can and say in the PR what you could not.
 
 ## 6. Open the PR and land it
 

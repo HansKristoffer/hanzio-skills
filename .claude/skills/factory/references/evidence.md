@@ -36,7 +36,7 @@ A before picture, a baseline number and a base transcript all need the code as i
 ## Captures
 
 1. **Start the app** as the repository's `AGENTS.md` says. With buncargo: `bunx buncargo dev --detach`, then `bunx buncargo url` for the address. Sign in with the seeded or demo account the project's note or seed files name.
-2. **Stills.** Drive a browser with the repository's own tooling (its Playwright or end-to-end setup), or with an exploring script of the `product-video` skill, and save a PNG of the viewport at 1280 by 800 or wider. Frame what changed: scroll it into view, and open the dialog or the menu the change lives in. Use the same viewport, theme, account and data for a before and its after, so only the change differs.
+2. **Stills.** Call the Skill tool with `agent-browser` and drive the app with it, then save a PNG of the viewport at 1280 by 800 or wider. Frame what changed: scroll it into view, and open the dialog or the menu the change lives in. Use the same viewport, theme, account and data for a before and its after, so only the change differs.
 3. **A video.** Call the Skill tool with `product-video` and follow its "A silent clip for a reviewer". Its captions say what each step shows. Skip everything else that skill offers: no brand work, music, narration or critic.
 4. **Add each one**, with a title that names the screen or the flow in the user's words:
 
