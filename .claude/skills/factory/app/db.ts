@@ -177,7 +177,21 @@ export const MIGRATIONS = [
 	);
 	create index evidence_issue on evidence (issue_id);`,
 	// An issue can start from a PR that already exists, which it reviews or builds on.
-	`alter table issues add column pr_taken text;`
+	`alter table issues add column pr_taken text;`,
+	// A stage stopped by its provider's usage limit waits for the reset instead of asking the user, and every
+	// message the service gives a thread is checked until it shows in the thread.
+	`alter table issues add column limit_until integer;
+	alter table issues add column limit_note text;
+	create table sends (
+		id integer primary key autoincrement,
+		issue_id text not null references issues(id) on delete cascade,
+		at integer not null,
+		kind text not null,
+		head text not null,
+		arrived_at integer,
+		flagged_at integer
+	);
+	create index sends_open on sends (issue_id) where arrived_at is null;`
 ]
 
 export const MAX_EVENT = 2000
@@ -221,6 +235,22 @@ export type IssueRow = {
 	preview: string | null
 	/** The PR the issue started from, as JSON (`TakenPr` in takein.ts); null when the factory opens the PR. */
 	pr_taken: string | null
+	/** When the usage limit that stopped a stage resets; the service wakes the thread then. */
+	limit_until: number | null
+	limit_note: string | null
+}
+
+/** A message the service gave a thread, until it shows in the thread's messages. */
+export type SendRow = {
+	id: number
+	issue_id: string
+	at: number
+	kind: string
+	/** The message's start, which is how it is found in the thread. */
+	head: string
+	arrived_at: number | null
+	/** When the page was told it has not arrived. */
+	flagged_at: number | null
 }
 
 /** One screenshot or video of the change. `file`, `poster` and `clip` are names in the issue's evidence folder. */
@@ -366,7 +396,7 @@ export function pruneOld(db: Database, now = Date.now()) {
 	const old = `select id from issues where state != 'open' and closed_at < $before`
 	db.query(`delete from events where issue_id in (${old})`).run({ before })
 	db.query(`delete from decisions where issue_id in (${old})`).run({ before })
-	for (const table of ['pr_items', 'pr_written', 'pr_rounds', 'findings', 'evidence']) {
+	for (const table of ['pr_items', 'pr_written', 'pr_rounds', 'findings', 'evidence', 'sends']) {
 		db.query(`delete from ${table} where issue_id in (${old})`).run({ before })
 	}
 	db.query(`delete from runs where issue_id in (${old})`).run({ before })

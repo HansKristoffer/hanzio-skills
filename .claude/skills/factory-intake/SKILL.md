@@ -15,7 +15,11 @@ A scheduled run finds new items and hands each one to a thread of its own. It fi
 
 ## 1. Check the room
 
-Run `factory board`. With 5 or more issues waiting for the user, or 8 or more open (or the prompt's numbers), start nothing: say so in the overview and end NOOP.
+Run `factory board`. Start nothing, say why in the overview and end NOOP when:
+
+- 5 or more issues wait for the user, or 8 or more are open (or the prompt's numbers).
+- `limited` lists an issue paused on a usage limit: a new thread would most likely meet the same limit. Name the reset time.
+- `failing.issues` is 2 or more: stage runs failed in two issues within the last hour, which looks like a provider outage. Quote its `reasons`. Each new thread would fail the same way and raise its own decision.
 
 **Done when** you know how many threads this run may start: at most 3, or the prompt's cap, and never more than the room left under the open limit.
 

@@ -49,6 +49,8 @@ The review on GitHub (gh runs here, as this thread's login):
   gate                           sync, then print the merge gate
   risk --head <sha> --none | --rule <text>
   wait --on checks|bots|review|merge|deploy [--note <text>] | wait --clear
+  wait --on limit --until <ISO time> [--note <text>]
+      A stage stopped by its provider's usage limit: the service wakes this thread once the limit resets.
 
 What the reviewer looks at (git, ffmpeg and buncargo run here, in this checkout):
   evidence add <file> --title <t> [--label before|after] [--commit <sha>] [<note> | -]
@@ -463,7 +465,7 @@ async function main(argv: string[]) {
 			return print(await call('POST', '/api/issue/risk', values))
 		}
 		case 'wait': {
-			const { values } = args(rest, { on: { type: 'string' }, note: { type: 'string' }, clear: { type: 'boolean' } })
+			const { values } = args(rest, { on: { type: 'string' }, note: { type: 'string' }, until: { type: 'string' }, clear: { type: 'boolean' } })
 			await ensureServer()
 			return print(await call('POST', '/api/issue/wait', values))
 		}

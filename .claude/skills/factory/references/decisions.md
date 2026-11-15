@@ -18,7 +18,7 @@ A **blocking** question waits. End your turn after asking it, and ask it when no
 | --- | --- |
 | `plan` | The user approves a plan (see `plan-flow.md`). Options Approve and Change; the plan goes in `--body-file`. |
 | `merge` | `factory gate` is blocked by `risk`, or by the `ask` merge setting (see `review-loop.md` step 6). Give `--head <sha>`; the options are always Merge and Do not merge, and only Merge on that head clears the gate. |
-| `blocked` | Something only the user can give: access, a secret, a broken `factory.config.yaml`, a model this machine does not offer, a provider that refused the run of a stage with no `fallback`, a step `land-pr` would stop for. With `--round`, whether to go on past the review round budget; its options are Go on and Stop. |
+| `blocked` | Something only the user can give: access, a secret, a broken `factory.config.yaml`, a model this machine does not offer, a provider that refused the run of a stage with no `fallback` (a usage limit with a reset time waits for it instead: `factory wait --on limit`), a step `land-pr` would stop for. With `--round`, whether to go on past the review round budget; its options are Go on and Stop. |
 | `question` without `--provisional` | A whether question (above), or a one-way door: a schema, a public API, a data migration, a deletion, money, permissions. |
 
 The service refuses `--provisional` on `plan`, `merge` and `blocked`.
