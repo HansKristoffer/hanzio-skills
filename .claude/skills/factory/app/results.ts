@@ -81,6 +81,8 @@ export const RESULT_SHAPES = {
 		{
 			commit: str,
 			findings: list(reviewFinding(true)),
+			/** Research's reproduction run again on the reviewed head; `none` when research had no command. */
+			reproductionOnHead: oneOf('passes', 'fails', 'none'),
 			testsFailWithoutFix: oneOf(true, false, 'no-new-tests'),
 			risk: obj({
 				door: oneOf('one-way', 'two-way'),

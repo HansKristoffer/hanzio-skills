@@ -149,6 +149,32 @@ describe('on GitHub', () => {
 		expect(body).toContain('- No internal review ran\n- Run by the factory skill in T3 Code')
 		expect(body.indexOf('### Reproduced on')).toBeLessThan(body.indexOf('### Measured'))
 		expect(body.indexOf('### Not checked')).toBeLessThan(body.indexOf('### Not in this change'))
+		expect(body).not.toContain('The review ran it again')
+	})
+
+	async function researched(reproduction: Record<string, string>) {
+		const run = (await as('/api/issue/run', { stage: 'research' })).body.run
+		const result = { kind: 'bug', size: 'S', route: 'implement', reproduction, checks: [] }
+		expect((await h.as('child')('POST', `/api/runs/${run}/report`, { text: 'x', done: true, result: { outcome: 'done', result } })).status).toBe(200)
+	}
+
+	test('the body says when the review ran the reproduction again on the head and it passed', async () => {
+		await researched({ command: 'bun test src/export.test.ts', base: 'ba5e1234567890', observed: '1 fail' })
+		await built()
+		const review = (await as('/api/issue/run', { stage: 'review', head: 'abc1234' })).body.run
+		const reviewed = { commit: 'abc1234', findings: [], reproductionOnHead: 'passes', testsFailWithoutFix: true, risk: { door: 'two-way', reach: 'local', unrelated: [], focus: [] } }
+		expect((await h.as('child2')('POST', `/api/runs/${review}/report`, { text: 'x', done: true, result: { outcome: 'done', result: reviewed } })).status).toBe(200)
+		expect(await sections()).toContain('1 fail\n\nThe review ran it again on [`abc1234`](https://github.com/acme/api/commit/abc1234): it passes.')
+	})
+
+	test('a bug research could not reproduce says so in the body, with why', async () => {
+		await researched({ notPossible: 'It only shows on the customer tenant; a captured request would reproduce it.' })
+		await built()
+		const body = await sections()
+		expect(body).toContain(
+			'### Not reproduced\n\nNothing showed this bug failing before the fix, so nothing shows that it is fixed. It only shows on the customer tenant; a captured request would reproduce it.'
+		)
+		expect(body).not.toContain('### Reproduced on')
 	})
 
 	test('a feature shows no reproduction, and no measurements when nothing was measured', async () => {

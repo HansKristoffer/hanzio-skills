@@ -73,7 +73,7 @@ async function storeResults() {
 		done: true,
 		result: {
 			outcome: 'done',
-			result: { commit: HEAD, findings: [], testsFailWithoutFix: true, risk: { door: 'two-way', reach: 'module', unrelated: [], focus: ['src/export.ts:40'] } }
+			result: { commit: HEAD, findings: [], reproductionOnHead: 'passes', testsFailWithoutFix: true, risk: { door: 'two-way', reach: 'module', unrelated: [], focus: ['src/export.ts:40'] } }
 		}
 	})
 }

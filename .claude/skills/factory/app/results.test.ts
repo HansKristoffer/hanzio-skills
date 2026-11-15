@@ -36,6 +36,7 @@ const implement = (findings?: unknown[]) => ({
 const review = (findings: unknown[], extra: Record<string, unknown> = {}) => ({
 	commit: 'abc1234',
 	findings,
+	reproductionOnHead: 'passes',
 	testsFailWithoutFix: true,
 	risk: { door: 'two-way', reach: 'module', unrelated: [], focus: ['src/export.ts'] },
 	...extra
@@ -118,7 +119,17 @@ test("review findings get ids; the next review lists them with their outcome and
 	expect(second).toContain('[fixed in def5678]')
 	expect(second).toContain('[declined: x is the domain term]')
 	expect(second).toContain('git diff abc1234..def5678')
+	expect(second).toContain("### Research's reproduction, red on the base")
+	expect(second).toContain('"command": "bun test x"')
 	expect(second).not.toContain('IMPLEMENTER-CLAIM-TEXT')
+})
+
+test('a review brief carries no reproduction when research could not make one', async () => {
+	await runWith('research', done({ ...research, reproduction: { notPossible: 'Only on the customer tenant' } }))
+	await runWith('implement', done(implement()))
+	const brief = (await as('/api/issue/run', { stage: 'review', head: 'abc1234' })).body.brief as string
+	expect(brief).not.toContain("Research's reproduction")
+	expect(brief).not.toContain('Only on the customer tenant')
 })
 
 test('a declined finding the next review upholds is open again for the next implement run', async () => {

@@ -98,6 +98,7 @@ test('pr review posts the last review as one comment, with a link to each line, 
 					{ file: 'src/util.ts', severity: 'nit', text: 'Unused import.' },
 					{ file: 'src/old.ts', line: 3, severity: 'pre-existing', title: 'Old bug', text: 'Not this PR.' }
 				],
+				reproductionOnHead: 'none',
 				testsFailWithoutFix: 'no-new-tests',
 				risk: { door: 'two-way', reach: 'module', unrelated: [], focus: ['The CSV writer'] }
 			}
