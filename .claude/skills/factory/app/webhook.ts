@@ -9,8 +9,9 @@ export const WEBHOOK_EVENTS = ['decision', 'question', 'stuck', 'started', 'pr',
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number]
 export const DEFAULT_EVENTS: WebhookEvent[] = ['decision', 'stuck']
 
-/** `events` is `['*']` for every event, including any added later. */
-export type WebhookConfig = { url: string; events: (WebhookEvent | '*')[]; secret: string; createdAt: number }
+/** `events` is `['*']` for every event, including any added later. `headers` are sent with every post, such as
+ * the `Authorization` a receiver asks for. Their values are secrets, kept like `secret` and never shown. */
+export type WebhookConfig = { url: string; events: (WebhookEvent | '*')[]; secret: string; headers?: Record<string, string>; createdAt: number }
 
 export type DeliveryRow = {
 	id: string
@@ -33,6 +34,13 @@ export const MAX_ATTEMPTS = BACKOFF_MS.length + 1
 const TIMEOUT_MS = 10_000
 const KEEP_MS = 7 * 24 * 60 * 60 * 1000
 const SCOPE = 'webhook'
+
+/** Headers the service sets itself, so a header of the same name would break the post or its signature. */
+const RESERVED_HEADERS = ['content-type', 'content-length', 'host']
+const RESERVED_PREFIX = 'x-factory-'
+const HEADER_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/
+const MAX_HEADERS = 20
+const MAX_HEADER_VALUE = 8000
 
 export const sign = (secret: string, body: string) => `sha256=${createHmac('sha256', secret).update(body).digest('hex')}`
 export const newSecret = () => randomBytes(32).toString('hex')
@@ -61,6 +69,8 @@ export function parseWebhook(input: Record<string, unknown>, before: WebhookConf
 			events = input.events.includes('*') ? ['*'] : [...new Set(input.events as WebhookEvent[])].filter((e) => e !== 'test')
 		}
 	}
+	let headers = before?.headers ?? {}
+	if (input.headers !== undefined) headers = parseHeaders(input.headers, problems)
 	let secret = before?.secret
 	if (input.secret !== undefined) {
 		if (typeof input.secret !== 'string' || input.secret.length < 16) problems.push('secret: give at least 16 characters, or leave it out for a new one')
@@ -69,7 +79,45 @@ export function parseWebhook(input: Record<string, unknown>, before: WebhookConf
 		secret = newSecret()
 	}
 	if (problems.length) throw new Error(problems.join('; '))
-	return { url: url as string, events, secret: secret!, createdAt: before?.createdAt ?? now }
+	return { url: url as string, events, secret: secret!, headers, createdAt: before?.createdAt ?? now }
+}
+
+/** Checks the extra headers. `{}` clears them. Problems name the header, never its value. */
+function parseHeaders(input: unknown, problems: string[]) {
+	if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+		problems.push('headers: give an object of header names and values, such as { "Authorization": "Bearer <key>" }, or {} for none')
+		return {}
+	}
+	const entries = Object.entries(input)
+	if (entries.length > MAX_HEADERS) problems.push(`headers: give at most ${MAX_HEADERS}`)
+	const seen = new Set<string>()
+	const headers: Record<string, string> = {}
+	for (const [name, value] of entries) {
+		const lower = name.toLowerCase()
+		if (!HEADER_NAME.test(name)) problems.push(`headers: ${JSON.stringify(name)} is not a header name`)
+		else if (RESERVED_HEADERS.includes(lower) || lower.startsWith(RESERVED_PREFIX))
+			problems.push(`headers: ${name} is set by the factory itself, as are Content-Type, Content-Length, Host and x-factory-*`)
+		else if (seen.has(lower)) problems.push(`headers: ${name} is given twice`)
+		if (typeof value !== 'string') problems.push(`headers: the value of ${name} must be a string`)
+		else if (/[\r\n\0]/.test(value)) problems.push(`headers: the value of ${name} holds a line break or NUL`)
+		else if (value.length > MAX_HEADER_VALUE) problems.push(`headers: the value of ${name} is longer than ${MAX_HEADER_VALUE} characters`)
+		seen.add(lower)
+		headers[name] = value as string
+	}
+	return headers
+}
+
+/** A header value as it may be shown: its scheme, such as `Bearer`, and nothing of the secret. */
+export const maskHeader = (value: string) => {
+	const scheme = /^([A-Za-z][\w-]*) +\S/.exec(value)
+	return scheme ? `${scheme[1]} ***` : '***'
+}
+
+/** A receiver's answer may echo what it was sent. Header values are cut out before it is kept. */
+function redact(text: string, hook: WebhookConfig) {
+	let out = text
+	for (const value of Object.values(hook.headers ?? {})) if (value.length >= 4) out = out.replaceAll(value, '***')
+	return out
 }
 
 export function createWebhook(db: Database, fetcher: typeof fetch = globalThis.fetch) {
@@ -111,23 +159,25 @@ export function createWebhook(db: Database, fetcher: typeof fetch = globalThis.f
 		let status: number | null = null
 		let error: string | null = null
 		try {
+			// The extra headers go first, so they can replace the user agent but none of the headers the post
+			// and its signature need. Headers.set matches names without regard to case.
+			const headers = new Headers({ 'user-agent': 'factory-webhook' })
+			for (const [name, value] of Object.entries(hook.headers ?? {})) headers.set(name, value)
+			headers.set('content-type', 'application/json')
+			headers.set('x-factory-event', row.event)
+			headers.set('x-factory-delivery', row.id)
+			headers.set(SIGNATURE_HEADER, sign(hook.secret, row.payload))
 			const res = await fetcher(hook.url, {
 				method: 'POST',
-				headers: {
-					'content-type': 'application/json',
-					'user-agent': 'factory-webhook',
-					'x-factory-event': row.event,
-					'x-factory-delivery': row.id,
-					[SIGNATURE_HEADER]: sign(hook.secret, row.payload)
-				},
+				headers,
 				body: row.payload,
 				redirect: 'manual',
 				signal: AbortSignal.timeout(TIMEOUT_MS)
 			})
 			status = res.status
-			if (!res.ok) error = `answered ${res.status}: ${(await res.text().catch(() => '')).slice(0, 300)}`
+			if (!res.ok) error = `answered ${res.status}: ${redact(await res.text().catch(() => ''), hook).slice(0, 300)}`
 		} catch (e) {
-			error = (e as Error).message.slice(0, 300)
+			error = redact((e as Error).message, hook).slice(0, 300)
 		}
 		const attempts = row.attempts + 1
 		if (!error) {
@@ -194,14 +244,23 @@ export function createWebhook(db: Database, fetcher: typeof fetch = globalThis.f
 		return { id: row.id, event: row.event, state: row.state, attempts: row.attempts, lastStatus: row.last_status, lastError: row.last_error, body: JSON.parse(row.payload) }
 	}
 
-	/** The webhook as the MCP shows it: never the secret, which is shown only when it is set or rotated. */
+	/** The webhook as the MCP shows it: never the secret, which is shown only when it is set or rotated, and
+	 * the extra headers by name only, with their values masked. */
 	function view(limit = 20, issue?: string) {
 		const hook = config()
 		const recent = db
 			.query('select * from webhook_deliveries where $issue is null or issue_id = $issue order by created_at desc, rowid desc limit $limit')
 			.all({ limit, issue: issue ?? null }) as DeliveryRow[]
 		return {
-			webhook: hook ? { url: hook.url, events: hook.events, signatureHeader: SIGNATURE_HEADER, createdAt: hook.createdAt } : null,
+			webhook: hook
+				? {
+						url: hook.url,
+						events: hook.events,
+						headers: Object.fromEntries(Object.entries(hook.headers ?? {}).map(([name, value]) => [name, maskHeader(value)])),
+						signatureHeader: SIGNATURE_HEADER,
+						createdAt: hook.createdAt
+					}
+				: null,
 			available: WEBHOOK_EVENTS.filter((e) => e !== 'test'),
 			pending: (db.query(`select count(*) as n from webhook_deliveries where state = 'pending'`).get() as { n: number }).n,
 			recent: recent.map((r) => ({

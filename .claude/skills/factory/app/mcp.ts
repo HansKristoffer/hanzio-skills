@@ -407,7 +407,7 @@ export function factoryTools(api: FactoryApi): Tool[] {
 			name: 'get_webhook',
 			title: 'Get webhook',
 			description:
-				'The webhook the factory posts updates to, the events it takes, the events there are, and its latest 20 posts with whether they arrived. The signing secret is shown only by set_webhook, when it makes one.',
+				'The webhook the factory posts updates to, the events it takes, the extra headers it sends (names only, values masked, such as "Authorization": "Bearer ***"), the events there are, and its latest 20 posts with whether they arrived. The signing secret is shown only by set_webhook, when it makes one; header values are never shown.',
 			inputSchema: { type: 'object', properties: { issue: str("Only this issue's posts."), delivery: str('One post by its id, with the body that was sent.') } },
 			readOnly: true,
 			run: (args) => (args.delivery ? api.webhookPost(args.delivery as string) : api.webhook(args.issue as string | undefined))
@@ -416,14 +416,19 @@ export function factoryTools(api: FactoryApi): Tool[] {
 			name: 'set_webhook',
 			title: 'Set webhook',
 			description:
-				"Sets the URL the factory posts JSON to when something happens, or removes it with url: null. Events: decision (a decision blocks an issue until a person answers), stuck (a thread stopped answering, lost a message, or is gone, and a person has to open it), question (a provisional question the thread went on past), started, pr (a PR was opened or taken in), closed (shipped, dropped or closed), or * for all, including events added later. Default: decision and stuck. Each post is signed: the x-factory-signature-256 header is sha256=<hex HMAC-SHA256 of the body> with the secret. Give your own secret, or the service makes one and answers with it once, here. A post the receiver does not answer with 2xx is tried again for about four hours.",
+				"Sets the URL the factory posts JSON to when something happens, or removes it with url: null. Events: decision (a decision blocks an issue until a person answers), stuck (a thread stopped answering, lost a message, or is gone, and a person has to open it), question (a provisional question the thread went on past), started, pr (a PR was opened or taken in), closed (shipped, dropped or closed), or * for all, including events added later. Default: decision and stuck. Each post is signed: the x-factory-signature-256 header is sha256=<hex HMAC-SHA256 of the body> with the secret. Give your own secret, or the service makes one and answers with it once, here. headers adds headers to every post, such as the Authorization a receiver asks for; their values are kept as secrets and shown masked. A post the receiver does not answer with 2xx is tried again for about four hours.",
 			inputSchema: {
 				type: 'object',
 				properties: {
 					url: { type: ['string', 'null'], description: 'The http(s) URL to post to, or null to remove the webhook. Leave it out to keep the current one.' },
 					events: { type: 'array', items: { type: 'string' }, description: 'The events to post, or ["*"] for all.' },
 					secret: str('A signing secret of your own (16 characters or more), such as one the receiver already checks. Leave it out to keep the current one, or get a new one.'),
-					rotateSecret: { type: 'boolean', description: 'Make a new signing secret.' }
+					rotateSecret: { type: 'boolean', description: 'Make a new signing secret.' },
+					headers: {
+						type: 'object',
+						description:
+							'Headers to send with every post, as names and string values, such as { "Authorization": "Bearer <key>" }. They replace the ones set before; {} removes them, and leaving it out keeps them. Content-Type, Content-Length, Host and x-factory-* are the factory\'s own and refused, as are values with a line break.'
+					}
 				}
 			},
 			run: (args) => api.setWebhook(args)
