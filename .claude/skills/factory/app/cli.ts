@@ -77,6 +77,8 @@ Anywhere:
   drop <issue> [<reason | ->]   close an open issue as dropped, from outside its thread
   board
   history [--days <n>]
+  mcp                            the MCP server's addresses, on this machine and the tailnet, and the
+                                 commands that add it to Claude Code and Codex, with the webhook's state
   serve                          run the server in the foreground
   service install|uninstall      keep the server up across reboots`
 
@@ -499,6 +501,10 @@ async function main(argv: string[]) {
 				threadLink
 			}))
 			return print({ open: board.open, needsYou: board.needsYou, issues })
+		}
+		case 'mcp': {
+			await ensureServer()
+			return print(await call('GET', '/api/mcp'))
 		}
 		case 'history': {
 			const { values } = args(rest, { days: { type: 'string' } })

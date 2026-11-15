@@ -292,6 +292,7 @@ export const fromPerson = (item: Item) => item.comments.some((c) => counts(c) &&
 export type Blocker = {
 	code:
 		| 'no-pr'
+		| 'pr-not-open'
 		| 'draft'
 		| 'checks'
 		| 'conflict'
@@ -341,7 +342,7 @@ export function computeGate(input: GateInput): Gate {
 	if (!pr) return { ready: false, head: '', blockers: [{ code: 'no-pr', text: 'no PR synced yet: run factory pr sync' }] }
 	const blockers: Blocker[] = []
 	const add = (code: Blocker['code'], text: string) => blockers.push({ code, text })
-	if (pr.state !== 'open') add('no-pr', `the PR is ${pr.state}`)
+	if (pr.state !== 'open') add('pr-not-open', `the PR is ${pr.state}`)
 	if (pr.draft) add('draft', 'the PR is a draft: run factory pr ready')
 	if (pr.mergeable === 'conflicting') add('conflict', `the PR conflicts with ${pr.base}`)
 	if (!checksDone(pr)) {
