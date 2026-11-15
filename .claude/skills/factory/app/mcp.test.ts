@@ -34,14 +34,17 @@ const start = (thread: string, extra: Record<string, unknown> = {}) =>
 const ask = (thread: string, extra: Record<string, unknown> = {}) =>
 	h.as(thread)('POST', '/api/issue/ask', { kind: 'question', question: 'Keep the old CSV columns?', recommend: 'Yes', options: ['Yes', 'No'], ...extra })
 
-/** A webhook receiver that answers each post with the next status in `statuses`, then 200. */
-function receiver(statuses: number[] = []) {
+/** A webhook receiver that answers each post with the next status in `statuses`, then 200. With `bearer`, it
+ * answers 401 to a post without `Authorization: Bearer <bearer>`, as Cursor's automation webhooks do. */
+function receiver(statuses: number[] = [], bearer?: string) {
 	const posts: { headers: Headers; body: string }[] = []
 	const server = Bun.serve({
 		port: freePort(),
 		hostname: '127.0.0.1',
 		async fetch(req) {
 			posts.push({ headers: req.headers, body: await req.text() })
+			if (bearer && req.headers.get('authorization') !== `Bearer ${bearer}`)
+				return Response.json({ error: 'Missing Authorization header. Use Authorization: Bearer <key>.' }, { status: 401 })
 			return new Response('ok', { status: statuses.shift() ?? 200 })
 		}
 	})
@@ -255,6 +258,107 @@ describe('the webhook', () => {
 	test('a bad URL or event is refused', async () => {
 		expect((await tool('set_webhook', { url: 'ftp://x' })).error).toContain('not http')
 		expect((await tool('set_webhook', { url: 'https://x.example', events: ['everything'] })).error).toContain('not one of')
+	})
+
+	test('headers are sent with every post, the signature is unchanged, and get_webhook masks their values', async () => {
+		const hook = receiver([], 'cursor-key-0123456789')
+		try {
+			const set = await tool('set_webhook', { url: hook.url, events: ['*'], headers: { Authorization: 'Bearer cursor-key-0123456789', 'X-Team': 'factory-team' } })
+			expect(set.webhook.headers).toEqual({ Authorization: 'Bearer ***', 'X-Team': '***' })
+			expect(JSON.stringify(set)).not.toContain('cursor-key')
+
+			const tested = await tool('test_webhook')
+			expect(tested).toMatchObject({ state: 'sent', status: 200 })
+			await start('t1')
+			await h.server.webhook.flush()
+			expect(hook.posts).toHaveLength(2)
+			for (const post of hook.posts) {
+				expect(post.headers.get('authorization')).toBe('Bearer cursor-key-0123456789')
+				expect(post.headers.get('x-team')).toBe('factory-team')
+				expect(post.headers.get('content-type')).toBe('application/json')
+				expect(post.headers.get(SIGNATURE_HEADER)).toBe(sign(set.secret, post.body))
+			}
+
+			const view = await tool('get_webhook')
+			expect(view.webhook.headers).toEqual({ Authorization: 'Bearer ***', 'X-Team': '***' })
+			expect(JSON.stringify(view)).not.toContain('cursor-key')
+			// Leaving headers out keeps them.
+			expect((await tool('set_webhook', { events: ['decision'] })).webhook.headers).toEqual({ Authorization: 'Bearer ***', 'X-Team': '***' })
+		} finally {
+			hook.stop()
+		}
+	})
+
+	test('a receiver that wants a Bearer header refuses the post until set_webhook gives one', async () => {
+		const hook = receiver([], 'cursor-key-0123456789')
+		try {
+			await tool('set_webhook', { url: hook.url })
+			const refused = await tool('test_webhook')
+			expect(refused).toMatchObject({ state: 'pending', status: 401 })
+			expect(refused.error).toContain('Missing Authorization header')
+
+			await tool('set_webhook', { url: hook.url, headers: { Authorization: 'Bearer cursor-key-0123456789' } })
+			expect(await tool('test_webhook')).toMatchObject({ state: 'sent', status: 200, error: null })
+			// The refused test post is still retried as before, now with the header.
+			await h.server.webhook.flush(() => Date.now() + 60_000)
+			expect((await tool('get_webhook')).recent.map((r: { state: string }) => r.state)).toEqual(['sent', 'sent'])
+		} finally {
+			hook.stop()
+		}
+	})
+
+	test('retry_webhook sends the headers, and headers: {} clears them', async () => {
+		const hook = receiver([401, 401, 401, 401, 401, 401])
+		try {
+			await tool('set_webhook', { url: hook.url, events: ['started'], headers: { authorization: 'Bearer k-0123456789' } })
+			await start('t1')
+			const day = 24 * 60 * 60 * 1000
+			for (let i = 0; i < 6; i++) await h.server.webhook.flush(() => Date.now() + i * day)
+			const post = (await tool('get_webhook')).recent[0]
+			expect(post).toMatchObject({ state: 'failed', attempts: 6, lastStatus: 401 })
+			await tool('retry_webhook', { delivery: post.id })
+			await h.server.webhook.flush()
+			expect(hook.posts).toHaveLength(7)
+			expect(hook.posts.every((p) => p.headers.get('authorization') === 'Bearer k-0123456789')).toBe(true)
+			expect((await tool('get_webhook')).recent[0]).toMatchObject({ state: 'sent', lastStatus: 200 })
+
+			expect((await tool('set_webhook', { headers: {} })).webhook.headers).toEqual({})
+			await tool('test_webhook')
+			expect(hook.posts.at(-1)!.headers.get('authorization')).toBeNull()
+		} finally {
+			hook.stop()
+		}
+	})
+
+	test('a receiver that echoes the header back does not get its value into the post log', async () => {
+		const server = Bun.serve({
+			port: freePort(),
+			hostname: '127.0.0.1',
+			fetch: (req) => new Response(`bad key ${req.headers.get('authorization')}`, { status: 403 })
+		})
+		try {
+			await tool('set_webhook', { url: `http://127.0.0.1:${server.port}/hook`, headers: { Authorization: 'Bearer secret-0123456789' } })
+			const tested = await tool('test_webhook')
+			expect(tested.error).toBe('answered 403: bad key ***')
+		} finally {
+			server.stop(true)
+		}
+	})
+
+	test('reserved header names and values with a line break are refused, naming the header and never its value', async () => {
+		for (const name of ['Content-Type', 'content-length', 'Host', 'X-Factory-Signature-256', 'x-factory-event']) {
+			expect((await tool('set_webhook', { url: 'https://x.example', headers: { [name]: 'v' } })).error).toContain(`${name} is set by the factory itself`)
+		}
+		for (const value of ['Bearer a\r\nX-Evil: 1', 'Bearer a\nb', 'Bearer a\rb']) {
+			const error = (await tool('set_webhook', { url: 'https://x.example', headers: { Authorization: value } })).error
+			expect(error).toContain('the value of Authorization holds a line break')
+			expect(error).not.toContain('Bearer a')
+		}
+		expect((await tool('set_webhook', { url: 'https://x.example', headers: { 'Bad Name': 'v' } })).error).toContain('is not a header name')
+		expect((await tool('set_webhook', { url: 'https://x.example', headers: { A: 'x', a: 'y' } })).error).toContain('a is given twice')
+		expect((await tool('set_webhook', { url: 'https://x.example', headers: { A: 1 } })).error).toContain('must be a string')
+		expect((await tool('set_webhook', { url: 'https://x.example', headers: ['Authorization'] })).error).toContain('headers must be object')
+		expect((await tool('get_webhook')).webhook).toBeNull()
 	})
 
 	test('pending posts survive a restart', async () => {
