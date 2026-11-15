@@ -69,7 +69,7 @@ import {
 	type PrState
 } from './pr.ts'
 import { check, outcomeShape } from './results.ts'
-import { isWaiting, isWorking, showsMessage, threadSend, threadShow, threadStart } from './t3.ts'
+import { isWaiting, isWorking, projectList, showsMessage, threadSend, threadShow, threadStart, type T3Project } from './t3.ts'
 import { factoryTools, serveMcp } from './mcp.ts'
 import { createWebhook, parseWebhook, type WebhookEvent } from './webhook.ts'
 
@@ -2348,6 +2348,93 @@ export function startServer(options: ServerOptions) {
 	}
 
 	const knownRepos = () => (db.query('select distinct repo from issues order by repo').all() as { repo: string }[]).map((r) => r.repo)
+
+	/** What a T3 Code project's folder holds: whether it is there, whether it is a git checkout, and of which repository. */
+	function checkout(root: string) {
+		if (!existsSync(root)) return { exists: false, git: false, repo: null }
+		try {
+			const info = repoInfo(root)
+			return { exists: true, git: true, repo: info.hasOrigin ? info.repo : null }
+		} catch {
+			return { exists: true, git: false, repo: null }
+		}
+	}
+
+	/** T3 Code's projects on this machine, each with the repository it checks out and whether the factory works in it. */
+	function projects(archived: boolean) {
+		const factoryRepos = new Set(knownRepos())
+		return projectList()
+			.filter((p) => archived || !p.archived)
+			.map((p) => {
+				const folder = checkout(p.root)
+				return {
+					id: p.id,
+					title: p.title,
+					path: p.root,
+					repo: folder.repo,
+					git: folder.git,
+					factory: !!folder.repo && factoryRepos.has(folder.repo),
+					...(p.defaultModel && { defaultModel: p.defaultModel }),
+					...(p.archived && { archived: true }),
+					...(!folder.exists && { missing: 'T3 Code has this project, but its folder is gone' })
+				}
+			})
+	}
+
+	/** A project as an agent names it: its id, its title, its folder, or the owner/name its checkout has. */
+	function findProject(given: string): T3Project {
+		const all = projectList()
+		const name = given.trim().toLowerCase()
+		const path = given.trim().replace(/\/+$/, '')
+		const byId = all.find((p) => p.id === given.trim())
+		if (byId) return byId
+		const matches = all.filter((p) => p.title.toLowerCase() === name || p.root.replace(/\/+$/, '') === path)
+		const found = matches.length ? matches : all.filter((p) => checkout(p.root).repo === name)
+		if (found.length === 1) return found[0]!
+		if (found.length > 1) {
+			return fail(400, `ambiguous project ${given}: ${found.map((p) => `${p.title} (${p.id}, ${p.root})`).join(', ')}; give its id`)
+		}
+		return fail(404, `no project ${given}: T3 Code has ${all.filter((p) => !p.archived).map((p) => p.title).join(', ') || 'no projects'} on this machine`)
+	}
+
+	/**
+	 * Starts a plain T3 Code thread in one of its projects, with the caller's own message as its first turn. It is no
+	 * factory issue: the factory starts it and tracks nothing after, so it suits a small library outside the factory.
+	 */
+	async function startProjectThread(body: Record<string, unknown>) {
+		const project = findProject(text(body.project, 'project', { required: true, max: 500 })!)
+		const message = text(body.message, 'message', { required: true })!
+		const title = text(body.title, 'title', { max: 300 })
+		const branchGiven = text(body.branch, 'branch', { max: 200 })
+		const provider = text(body.provider, 'provider', { max: 100 })
+		const model = text(body.model, 'model', { max: 200 })
+		if (!!provider !== !!model) fail(400, 'give provider and model together, or neither for the project\'s default model')
+		const folder = checkout(project.root)
+		if (!folder.exists) fail(409, `project ${project.title}: its folder ${project.root} is gone`)
+		const worktree = body.worktree === undefined ? folder.git : body.worktree === true
+		if (worktree && !folder.git) fail(400, `project ${project.title}: ${project.root} is not a git repository, so there is no worktree to start; worktree: false works in the folder itself`)
+		if (branchGiven && !worktree) fail(400, 'branch names the new worktree\'s branch; leave it out with worktree: false')
+
+		let workspace: Record<string, unknown> = { worktree: false, path: project.root }
+		let base: string | undefined
+		let branch: string | undefined
+		if (worktree) {
+			const fetched = fetchDefault(project.root)
+			base = defaultRef(project.root)
+			branch = branchGiven ?? freeBranch(project.root, slugify(title ?? message.trim().split('\n')[0]!, 'thread'), 't3')
+			workspace = { worktree: true, base, branch, ...(!fetched && { offline: `the fetch of ${base} failed, so the worktree starts from the last ${base} this machine has` }) }
+		}
+		const started = await threadStart({ root: project.id, title, message, provider, model, worktree: base, branch })
+		const link = started.link ?? (await threadShow(started.threadId))?.link ?? null
+		return {
+			thread: started.threadId,
+			threadLink: link,
+			project: { id: project.id, title: project.title, path: project.root, repo: folder.repo },
+			workspace,
+			model: provider ? { provider, model } : (project.defaultModel ?? "the project's default in T3 Code"),
+			note: 'A plain T3 Code thread, not a factory issue: the factory does not follow it. Open threadLink to watch it.'
+		}
+	}
 	/** A repository the factory has worked in, or an error that names the ones it has. */
 	function knownRepo(repo: string) {
 		if (!knownRepos().includes(repo)) fail(404, `no repository ${repo}: the factory knows ${knownRepos().join(', ') || 'no repository yet'}`)
@@ -2568,6 +2655,8 @@ export function startServer(options: ServerOptions) {
 			return { ...putStore(name, body), before: before ?? 'not chosen (the file when the default branch has one, else this machine)' }
 		},
 		repos: () => knownRepos(),
+		projects,
+		startProjectThread,
 		history: (days, full, repo) => {
 			if (repo) knownRepo(repo.toLowerCase())
 			const all = history(days)

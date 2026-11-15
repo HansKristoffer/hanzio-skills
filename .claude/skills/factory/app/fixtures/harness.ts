@@ -1,5 +1,6 @@
 // Shared test setup: a temp FACTORY_HOME, a free port, a scratch repository with a bare origin,
 // and the fake `t3`. Tests never touch port 4400 or the machine's real T3 Code.
+import { Database } from 'bun:sqlite'
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -94,9 +95,12 @@ export function setup(options: Partial<ServerOptions> = {}) {
 	const ghLog = join(dir, 'gh.log')
 	const ghPr = join(dir, 'gh-pr.json')
 	const ghReply = join(dir, 'gh-reply.json')
+	const t3Home = join(dir, 't3-home')
 	writeFileSync(log, '')
 	writeFileSync(ghLog, '')
 	process.env.FACTORY_T3 = FAKE_T3
+	// T3 Code's projects are read from its database: a scratch one, never this machine's.
+	process.env.T3CODE_HOME = t3Home
 	process.env.FAKE_T3_LOG = log
 	process.env.FAKE_T3_REPLY = reply
 	process.env.FACTORY_GH = FAKE_GH
@@ -127,6 +131,21 @@ export function setup(options: Partial<ServerOptions> = {}) {
 		as,
 		replies(value: Record<string, unknown>) {
 			writeFileSync(reply, JSON.stringify(value))
+		},
+		/** The projects T3 Code has, written to its database as T3 Code keeps them. */
+		projects(rows: { id: string; title: string; root: string; archived?: boolean; deleted?: boolean; model?: Record<string, string> }[]) {
+			mkdirSync(join(t3Home, 'userdata'), { recursive: true })
+			const db = new Database(join(t3Home, 'userdata', 'statev2.sqlite'), { create: true })
+			db.run(`create table if not exists projection_projects (project_id text primary key, title text not null, workspace_root text not null,
+				scripts_json text not null, created_at text not null, updated_at text not null, deleted_at text, default_model_selection_json text, archived_at text)`)
+			db.run('delete from projection_projects')
+			const now = new Date().toISOString()
+			for (const row of rows) {
+				db.query('insert into projection_projects values (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
+					row.id, row.title, row.root, '[]', now, now, row.deleted ? now : null, row.model ? JSON.stringify(row.model) : null, row.archived ? now : null
+				)
+			}
+			db.close()
 		},
 		calls(): { args: string[]; stdin: string | null }[] {
 			return readFileSync(log, 'utf8')

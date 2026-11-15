@@ -70,23 +70,25 @@ export function readConfig(root: string, options: { fetch: boolean }): ConfigRea
 	return offline ? { ...read, offline } : read
 }
 
-/** The first of `factory/<slug>`, `-2`, `-3`... that origin does not have. */
-export function freeBranch(root: string, slug: string) {
-	const base = `factory/${slug}`
+/** The first of `<prefix>/<slug>`, `-2`, `-3`... that neither origin nor the checkout has. */
+export function freeBranch(root: string, slug: string, prefix = 'factory') {
+	const base = `${prefix}/${slug}`
 	const listed = git(root, ['ls-remote', '--heads', 'origin', `${base}*`])
-	const taken = new Set(
-		listed.ok ? listed.out.split('\n').map((line) => line.split('refs/heads/')[1]).filter(Boolean) : []
-	)
+	const local = git(root, ['for-each-ref', '--format=%(refname:short)', `refs/heads/${base}*`])
+	const taken = new Set([
+		...(listed.ok ? listed.out.split('\n').map((line) => line.split('refs/heads/')[1]) : []),
+		...(local.ok ? local.out.split('\n') : [])
+	].filter(Boolean))
 	if (!taken.has(base)) return base
 	for (let n = 2; ; n++) if (!taken.has(`${base}-${n}`)) return `${base}-${n}`
 }
 
-export function slugify(title: string) {
+export function slugify(title: string, fallback = 'issue') {
 	const slug = title
 		.toLowerCase()
 		.replace(/[^a-z0-9]+/g, '-')
 		.replace(/^-|-$/g, '')
 		.slice(0, 40)
 		.replace(/-$/, '')
-	return slug || 'issue'
+	return slug || fallback
 }

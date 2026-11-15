@@ -1,5 +1,6 @@
 // The factory as an MCP server, on the service's own port at /mcp, so an agent anywhere on the tailnet can
-// read every issue, answer what waits for the user, start issues and change the settings and the webhook.
+// read every issue, answer what waits for the user, start issues and change the settings and the webhook. It
+// also lists T3 Code's projects and starts plain threads in them, for work that does not go through the factory.
 // It speaks MCP's Streamable HTTP transport without sessions: each POST carries one JSON-RPC message (or a
 // batch) and is answered with JSON. No SDK, since a skill is installed as one folder with no dependencies.
 
@@ -33,6 +34,8 @@ export type FactoryApi = {
 	board: () => { issues: Json[]; done: Json[] } & Json
 	issueDetail: (id: string, events: number, settings: boolean, full: boolean) => Promise<Json>
 	repos: () => string[]
+	projects: (archived: boolean) => unknown
+	startProjectThread: (body: Json) => Promise<unknown>
 	refreshPr: (issue: string) => Promise<unknown>
 	newThread: (body: Json, loopback: boolean) => Promise<unknown>
 	answer: (decision: string, answer: string) => Promise<unknown>
@@ -60,6 +63,7 @@ export const INSTRUCTIONS = `The factory works issues (bugs and features) throug
 - Start with list_decisions: the questions waiting for an answer, each with its options and the thread's recommendation. Answer with answer_decision; the answer "recommended" takes the recommendation. A blocking one (provisional: false) stops its issue until answered; a provisional one only tells the thread whether you agree, since it went on with its recommendation.
 - list_issues and get_issue show every issue. needsYou: true means a person has to act: a decision waits, or the thread is stuck (it stopped answering, so open its threadLink in T3 Code; read_thread shows its latest messages).
 - create_issue starts a thread for a bug, a feature, or an open PR to review or build on, in a repository factory_info lists. A new repository is started once from the factory's own machine, with cwd.
+- list_projects lists T3 Code's projects on the factory's machine, the factory's or not; start_thread starts a plain thread in one of them with your message, for work that does not go through the factory, such as a small library. The factory does not follow that thread: open its threadLink.
 - wait_for_update returns as soon as something changes, with what changed and a cursor to pass back next time, instead of polling. The webhook (set_webhook) posts each change to a URL instead.
 - An issue's gate, blockers and warnings are written for its thread, so they name factory CLI commands the thread runs. refresh_pr reads the PR from GitHub again; message_thread tells the thread something.
 
@@ -103,6 +107,8 @@ function nextStep(message: string) {
 	if (/^ambiguous issue id/.test(message)) return 'give more of the id: one of the ones listed.'
 	if (/no settings for/.test(message)) return 'factory_info lists the repositories.'
 	if (/^no webhook post|is .*, not failed/.test(message)) return 'get_webhook lists the latest posts and their state.'
+	if (/^(no|ambiguous) project/.test(message)) return 'list_projects lists the projects, with their ids.'
+	if (/T3 Code's projects|T3 Code keeps no projects/.test(message)) return "T3 Code may not run on the factory's machine, or keeps its data elsewhere (T3CODE_HOME)."
 	if (/^no issue/.test(message)) return 'list_issues gives the ids of open issues; state: all includes the closed ones.'
 	if (/^no decision/.test(message)) return 'list_decisions gives the ones that wait; get_issue gives every decision of an issue.'
 	if (/already answered/.test(message)) return 'Nothing to do: get_decision shows the answer.'
@@ -284,6 +290,35 @@ export function factoryTools(api: FactoryApi): Tool[] {
 				const { repo, title, body, source, pr, merge, again, cwd } = args
 				return api.newThread({ repo, title, body, source, pr, merge, again, cwd }, loopback)
 			}
+		},
+		{
+			name: 'list_projects',
+			title: 'List projects',
+			description:
+				"T3 Code's projects on the factory's machine, including those the factory has never worked in: each with its id, title, folder, the repository its checkout has (repo, owner/name, null without an origin), whether it is a git checkout, whether the factory works in it (factory), and its default model when T3 Code sets one. start_thread starts a thread in one. Archived projects are left out unless asked for.",
+			inputSchema: { type: 'object', properties: { archived: { type: 'boolean', description: 'Include the archived projects.' } } },
+			readOnly: true,
+			run: (args) => ({ projects: api.projects(args.archived === true) })
+		},
+		{
+			name: 'start_thread',
+			title: 'Start thread',
+			description:
+				"Starts a plain T3 Code thread in one of list_projects' projects, with your message as its first turn, sent as you wrote it. It is not a factory issue: no stages, no decisions, no page; the factory starts it and does not follow it (create_issue is for that). By default a git project's thread works in a new worktree from the default branch, fetched first, on a branch t3/<slug of the title>; worktree: false works in the project's folder itself, beside whatever is there. The answer names the thread, its threadLink, the project, the worktree and the model.",
+			inputSchema: {
+				type: 'object',
+				properties: {
+					project: str("The project: its id, its title, its folder's path, or the owner/name of its repository, as list_projects gives them."),
+					message: str("The thread's first message: what to do, in the words the agent should read."),
+					title: str("The thread's title. Defaults to the message's first line."),
+					worktree: { type: 'boolean', description: "true (default for a git project): a new worktree from the default branch. false: the project's folder itself." },
+					branch: str('The new worktree\'s branch, instead of t3/<slug>. Only with a worktree.'),
+					provider: str("The provider instance, such as claudeAgent or codex. Give it with model; leave both out for the project's default."),
+					model: str('The model slug, such as claude-opus-5-5. Give it with provider.')
+				},
+				required: ['project', 'message']
+			},
+			run: (args) => api.startProjectThread(args)
 		},
 		{
 			name: 'drop_issue',
