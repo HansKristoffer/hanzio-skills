@@ -23,8 +23,9 @@ async function runWith(stage: string, result: unknown, extra: Record<string, unk
 	return { run, res }
 }
 
-const research = { kind: 'bug', size: 'S', route: 'implement', reproduction: { command: 'bun test x', base: 'ba5e123', observed: '1 fail' }, checks: [] }
+const research = { asked: 'Exports of large accounts time out', kind: 'bug', size: 'S', route: 'implement', reproduction: { command: 'bun test x', base: 'ba5e123', observed: '1 fail' }, checks: [] }
 const implement = (findings?: unknown[]) => ({
+	built: 'Exports of any size now finish',
 	prUrl: 'https://github.com/acme/api/pull/7',
 	commit: 'abc1234',
 	claims: [{ claim: 'Exports stream', evidence: 'IMPLEMENTER-CLAIM-TEXT' }],
@@ -122,6 +123,35 @@ test("review findings get ids; the next review lists them with their outcome and
 	expect(second).toContain("### Research's reproduction, red on the base")
 	expect(second).toContain('"command": "bun test x"')
 	expect(second).not.toContain('IMPLEMENTER-CLAIM-TEXT')
+})
+
+test('a later implement round is given the earlier result to return whole, without its finding outcomes', async () => {
+	const first = (await as('/api/issue/run', { stage: 'implement' })).body
+	expect(first.brief).not.toContain('Your result of the earlier round')
+	await h.as('child')('POST', `/api/runs/${first.run}/report`, { text: 'done', done: true, result: done(implement()) })
+	const [bug] = (await runWith('review', done(review([important])))).res.body.findings as string[]
+	await runWith('implement', done(implement([{ id: bug, outcome: 'fixed', commit: 'def5678' }])))
+	const brief = (await as('/api/issue/run', { stage: 'implement' })).body.brief as string
+	const earlier = brief.split('### Your result of the earlier round')[1]!.split('\n### ')[0]!
+	expect(earlier).toContain('IMPLEMENTER-CLAIM-TEXT')
+	expect(earlier).toContain('Exports of any size now finish')
+	expect(earlier).not.toContain('"findings"')
+})
+
+test("the risk of the PR is the widest any review round found, with every round's focus, on the page and in the PR's body", async () => {
+	await runWith('implement', done(implement()))
+	await as('/api/issue/update', { pr: 'https://github.com/acme/api/pull/7' })
+	await runWith('review', done(review([], { risk: { door: 'one-way', reach: 'data', unrelated: [], focus: ['The migration drops a column'] } })))
+	// The second round reads only the new commits, so its own verdict is narrower.
+	await runWith('review', done(review([], { commit: 'def5678', risk: { door: 'two-way', reach: 'local', unrelated: [], focus: ['src/export.ts:12'] } })), { head: 'def5678' })
+	expect((await as('/api/issue/status')).body.reviewRisk).toEqual({
+		door: 'one-way',
+		reach: 'data',
+		focus: ['The migration drops a column', 'src/export.ts:12'],
+		unrelated: []
+	})
+	const notes = (await as('/api/issue/pr/plan', { action: 'notes' })).body.sections as string
+	expect(notes).toContain('### Where to look first\n\n- The migration drops a column\n- src/export.ts:12')
 })
 
 test('a review brief carries no reproduction when research could not make one', async () => {

@@ -29,6 +29,8 @@ export type PrState = {
 	requested: string[]
 	rules: { approvals: number; resolveThreads: boolean; dismissStale: boolean } | null
 	mergedBy?: string
+	/** The lines the PR adds and deletes against its base, and in how many files. Absent in a state stored before this was read. */
+	size?: { added: number; deleted: number; files: number }
 	syncedAt: number
 }
 
@@ -228,6 +230,9 @@ export function normalize(raw: RawPr, settings: Settings, written: Set<string> =
 		requested: ((view.reviewRequests ?? []) as Record<string, any>[]).map((r) => String(r.login ?? r.slug ?? r.name ?? '')).filter(Boolean),
 		rules: rulesOf(raw),
 		...(view.mergedBy?.login && { mergedBy: String(view.mergedBy.login) }),
+		...(typeof view.additions === 'number' && {
+			size: { added: view.additions, deleted: Number(view.deletions ?? 0), files: Number(view.changedFiles ?? 0) }
+		}),
 		syncedAt: now
 	}
 	return { pr, items }
