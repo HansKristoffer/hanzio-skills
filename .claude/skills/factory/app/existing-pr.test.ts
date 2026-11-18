@@ -73,7 +73,7 @@ test('research may route a taken-in PR to review, and a review-only issue closes
 		done: true,
 		result: {
 			outcome: 'done',
-			result: { kind: 'feature', size: 'S', route: 'review', reproduction: { notPossible: 'nothing to reproduce' }, checks: [] }
+			result: { asked: 'A review of PR 34', kind: 'feature', size: 'S', route: 'review', reproduction: { notPossible: 'nothing to reproduce' }, checks: [] }
 		}
 	})
 	expect(reported.status).toBe(200)

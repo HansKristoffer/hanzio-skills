@@ -106,6 +106,9 @@ const MAX_LIMIT_MS = 8 * 24 * 60 * 60 * 1000
 /** Failed stage runs in this many issues within the last hour look like a provider outage. */
 const FAILING_WINDOW_MS = 60 * 60 * 1000
 const MISSING_LIMIT = 3
+/** How far a mistake reaches, narrowest first, as a review's `risk.reach` names it. */
+const REACH = ['local', 'module', 'app', 'data'] as const
+type Risk = { door: 'one-way' | 'two-way'; reach: (typeof REACH)[number]; focus?: string[]; unrelated?: string[] }
 const MAX_POKES = 3
 const POKE_EVERY_MS = 30 * 60 * 1000
 const MAX_ROUNDS = 3
@@ -318,6 +321,24 @@ export function startServer(options: ServerOptions) {
 		return null
 	}
 
+	/** The risk of the PR as a whole. A later review reads only the new commits, so its verdict alone understates
+	 * the change: a one-way door and the widest reach of any round stand, and every round's focus is kept. */
+	function prRisk(issueId: string) {
+		const rounds = runsOf(issueId).flatMap((r) => {
+			if (r.stage !== 'review' || r.subject !== 'pr' || r.state !== 'done' || !r.result) return []
+			const parsed = JSON.parse(r.result) as { outcome: string; result?: { risk?: Risk } }
+			return parsed.outcome === 'done' && parsed.result?.risk ? [parsed.result.risk] : []
+		})
+		if (!rounds.length) return null
+		const all = (key: 'focus' | 'unrelated') => [...new Set(rounds.flatMap((r) => r[key] ?? []))]
+		return {
+			door: rounds.some((r) => r.door === 'one-way') ? 'one-way' : 'two-way',
+			reach: REACH[Math.max(...rounds.map((r) => REACH.indexOf(r.reach)))] ?? 'local',
+			focus: all('focus'),
+			unrelated: all('unrelated')
+		}
+	}
+
 	// ---- evidence and the dev environment ----
 
 	/** A thread id is not always safe as a folder name. */
@@ -400,6 +421,8 @@ export function startServer(options: ServerOptions) {
 		deploy: i.deploy,
 		summary: i.summary,
 		prUrl: i.pr_url,
+		/** How large the change is: the lines its PR adds and deletes. null until the PR is read. */
+		size: (i.pr_state ? (JSON.parse(i.pr_state) as PrState).size : null) ?? null,
 		takenPr: i.pr_taken ? (JSON.parse(i.pr_taken) as TakenPr) : null,
 		configError: i.config_error,
 		needsYou: i.state === 'open' && needsYou(i),
@@ -544,6 +567,22 @@ export function startServer(options: ServerOptions) {
 		const issue = getIssue(id) ?? fail(404, `no factory issue for thread ${id}; run factory start first`)
 		if (issue.state !== 'open') fail(409, `issue ${id} is ${issue.state}`)
 		return issue
+	}
+
+	/** The issue whose captures a call may change: the caller's own, or the one whose stage the caller runs. A
+	 * stage's child is a thread of its own, known to the service from its first report on its run. */
+	function evidenceIssueOf(req: Request, action: unknown) {
+		const id = thread(req)
+		const child = ['add', 'list', 'remove'].includes(String(action)) && !getIssue(id)
+		const run = child
+			? (db.query(`select issue_id from runs where thread_id = $id and state = 'running' order by started_at desc limit 1`).get({ id }) as {
+					issue_id: string
+				} | null)
+			: null
+		const issue = run && getIssue(run.issue_id)
+		if (issue?.state === 'open') return issue
+		if (child) fail(404, `no factory issue for thread ${id}: a stage's child reports on its run first (factory report --run <run>), which ties its thread to the issue`)
+		return openIssueOf(req)
 	}
 
 	/** The store chosen for a project on the page, or null when nobody chose. */
@@ -694,6 +733,7 @@ export function startServer(options: ServerOptions) {
 			mergeHeld: decisions.some((d) => d.answer === null),
 			settings: parseResolved(issue).settings,
 			findings: findingsOf(issue.id).map(publicFinding),
+			reviewRisk: prRisk(issue.id),
 			evidence: evidenceOf(issue.id),
 			preview: previewOf(issue),
 			warnings: warningsOf(issue),
@@ -789,6 +829,13 @@ export function startServer(options: ServerOptions) {
 			if (plan) parts.push(json('The approved plan', plan.result))
 			if (questions) parts.push(questions)
 			if (issue.pr_url) parts.push(`### The PR\n\n${issue.pr_url}`)
+			// The result describes the PR, and the page and the PR's body show the newest one: a later round returns
+			// the earlier one with its own work in it, or the reviewer would read about the last fix alone.
+			const earlier = latestResult(issue.id, 'implement')?.result
+			if (earlier) {
+				const { findings: _outcomes, ...whole } = earlier
+				parts.push(json('Your result of the earlier round', whole))
+			}
 			const open = findings.filter((f) => f.subject === 'pr' && isOpenFinding(f))
 			const section = list(
 				'Review findings to act on',
@@ -1078,6 +1125,25 @@ export function startServer(options: ServerOptions) {
 		if (open.length) addEvent(decision.issue_id, 'answer', `Accepted with the merge: ${open.map((d) => d.id).join(', ')}`)
 	}
 
+	/** A plan up for approval was written on the recommendation of each question open beside it, so the questions
+	 * come first. Once the last one is answered, an answer other than its recommendation sends the plan back to
+	 * be written on the answers: the user's Change, said for them. */
+	function planFollowsAnswers(issueId: string, via: 'page' | 'thread') {
+		const all = decisionsOf(issueId)
+		const plan = all.find((d) => d.kind === 'plan' && d.answer === null)
+		if (!plan || all.some((d) => d.kind === 'question' && d.answer === null)) return
+		const differ = all.filter((d) => d.kind === 'question' && (d.answered_at ?? 0) >= plan.asked_at && d.answer !== d.recommendation)
+		if (!differ.length) return
+		db.query('update decisions set answer = $answer, answered_via = $via, delivery = $delivery, answered_at = $now where id = $id').run({
+			answer: `Change: write the plan again on the answers to ${differ.map((d) => d.id).join(', ')}, which differ from what it was built on`,
+			via,
+			delivery: via === 'page' ? 'held' : null,
+			now: Date.now(),
+			id: plan.id
+		})
+		addEvent(issueId, 'answer', `The plan goes back to be written again: ${differ.length === 1 ? 'an answer differs' : `${differ.length} answers differ`} from what it was built on`)
+	}
+
 	async function issueAnswer(issue: IssueRow, body: Record<string, unknown>) {
 		const decision = decisionOf(text(body.decision, 'decision', { required: true })!, issue.id)
 		const answer = text(body.text, 'text', { required: true, max: MAX_EVENT })!
@@ -1088,6 +1154,7 @@ export function startServer(options: ServerOptions) {
 		})
 		addEvent(issue.id, 'answer', `Answered in the thread: ${decision.question} → ${answer}`)
 		acceptWithMerge(decision, answer, 'thread')
+		planFollowsAnswers(issue.id, 'thread')
 		await deliver(issue.id)
 		return { ok: true }
 	}
@@ -1098,11 +1165,16 @@ export function startServer(options: ServerOptions) {
 		const issue = getIssue(decision.issue_id)!
 		if (issue.state !== 'open') fail(409, `issue ${issue.id} is ${issue.state}`)
 		const answer = text(body.answer, 'answer', { required: true, max: MAX_EVENT })!
+		if (decision.kind === 'plan') {
+			const open = decisionsOf(issue.id).filter((d) => d.kind === 'question' && d.answer === null).length
+			if (open) fail(409, `answer the ${open === 1 ? 'open question' : `${open} open questions`} of this issue first: the plan is built on ${open === 1 ? 'its answer' : 'their answers'}`)
+		}
 		db.query(
 			`update decisions set answer = $answer, answered_via = 'page', answered_from = $from, delivery = 'held', answered_at = $now where id = $id`
 		).run({ answer, from: from === 'mcp' ? 'mcp' : null, now: Date.now(), id: decisionId })
 		addEvent(issue.id, 'answer', `Answered ${from === 'mcp' ? 'through the MCP' : 'on the page'}: ${decision.question} → ${answer}`)
 		acceptWithMerge(decision, answer, 'page')
+		planFollowsAnswers(issue.id, 'page')
 		return deliver(issue.id)
 	}
 
@@ -1793,9 +1865,7 @@ export function startServer(options: ServerOptions) {
 					measured?: Measured
 			  }
 			| undefined
-		const review = latestResult(issue.id, 'review', 'pr')?.result as
-			| { commit?: string; reproductionOnHead?: string; risk?: { focus?: string[] } }
-			| undefined
+		const review = latestResult(issue.id, 'review', 'pr')?.result as { commit?: string; reproductionOnHead?: string } | undefined
 		const shown = evidenceMarkdown(evidenceOf(issue.id), repo) || built?.media?.trim()
 		const measured = measuredMarkdown(built?.measured, repo)
 		const order = ['low', 'medium', 'high']
@@ -1828,7 +1898,7 @@ export function startServer(options: ServerOptions) {
 			'### Not in this change',
 			list([...(built?.leftOut ?? []), ...later.map((slice) => `${slice.title} (a later slice of the plan)`)]),
 			'### Where to look first',
-			list(review?.risk?.focus ?? []),
+			list(prRisk(issue.id)?.focus ?? []),
 			'### Who did the work',
 			whoDidTheWork(issue),
 			'<!-- /factory:review-notes -->'
@@ -2747,7 +2817,11 @@ export function startServer(options: ServerOptions) {
 			if (parts[2] === 'start') return issueStart(req, input)
 			// A closed issue still answers `status`, and still hears that its dev environment was stopped.
 			const anyState = parts[2] === 'status' || (parts[2] === 'preview' && input.state === 'down')
-			const issue = anyState ? (getIssue(thread(req)) ?? fail(404, `no factory issue for thread ${thread(req)}; run factory start first`)) : openIssueOf(req)
+			const issue = anyState
+				? (getIssue(thread(req)) ?? fail(404, `no factory issue for thread ${thread(req)}; run factory start first`))
+				: parts[2] === 'evidence'
+					? evidenceIssueOf(req, input.action)
+					: openIssueOf(req)
 			switch (parts[2]) {
 				case 'status':
 					return issueStatus(issue)

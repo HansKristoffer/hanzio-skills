@@ -257,7 +257,7 @@ export function factoryTools(api: FactoryApi): Tool[] {
 			name: 'answer_decision',
 			title: 'Answer decision',
 			description:
-				"Answers a decision, as the page does, and passes the answer to the issue's thread. Give one of its options exactly, \"recommended\" to take the thread's recommendation, or your own words, which the thread reads. A merge decision is approved only by the exact answer Merge, which also accepts each open provisional recommendation the head was built on. While another blocking decision of the issue waits, the answer is kept and sent with the rest.",
+				"Answers a decision, as the page does, and passes the answer to the issue's thread. Give one of its options exactly, \"recommended\" to take the thread's recommendation, or your own words, which the thread reads. A merge decision is approved only by the exact answer Merge, which also accepts each open provisional recommendation the head was built on. A plan decision is refused while a question of its issue is open: answer those first, and an answer other than its recommendation sends the plan back to be written again. While another blocking decision of the issue waits, the answer is kept and sent with the rest.",
 			inputSchema: {
 				type: 'object',
 				properties: { decision: str('The decision id, such as d_1a2b3c4d.'), answer: str('One of its options, "recommended", or your own answer.') },

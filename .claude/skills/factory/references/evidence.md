@@ -48,7 +48,7 @@ A before picture, a baseline number and a base transcript all need the code as i
    factory evidence add /tmp/flow.mp4 --title "Marking three orders as paid"
    ```
 
-   Two captures under one title, labelled `before` and `after`, show side by side, each with its commit. The same title and label again replaces the capture, which is how a retake goes in. The note is one sentence on what to notice: for a pair, the result that differs. A video is made smaller for you, with a still frame and a short GIF for GitHub.
+   Your first report on your run ties this thread to the issue, so `evidence add` works from then on. Two captures under one title, labelled `before` and `after`, show side by side, each with its commit. The same title and label again replaces the capture, which is how a retake goes in. The note is one sentence on what to notice: for a pair, the result that differs. A video is made smaller for you, with a still frame and a short GIF for GitHub.
 5. **Look at each one** before you go on (read the PNG; for a video, a frame from its middle). Retake a capture that shows a spinner, a stray dialog, a development error overlay, or the wrong screen.
 
 ## Measurements

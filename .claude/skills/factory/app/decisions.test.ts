@@ -120,6 +120,40 @@ test('the answer Merge accepts the open provisional questions the head was built
 	expect(sent).toContain(`${how} ("Keep the alias?"): Keep it for one release`)
 })
 
+const plan = () => ask({ kind: 'plan', question: 'Approve the plan?', recommend: 'Approve', options: ['Approve', 'Change'] })
+const decision = async (id: string) =>
+	((await h.as('t1')('POST', '/api/issue/status', {})).body.decisions as { id: string; answer: string | null }[]).find((d) => d.id === id)!
+
+test('a plan opens for approval once the questions beside it are answered, and one message carries every answer', async () => {
+	const how = (await ask({ question: 'Blue or green?', provisional: true })).body.decision
+	const approval = (await plan()).body.decision
+	const early = await answer(approval, 'Approve')
+	expect(early.status).toBe(409)
+	expect(early.body.error).toContain('answer the open question of this issue first')
+	await answer(how, 'Blue')
+	expect((await decision(approval)).answer).toBeNull()
+	expect(sends()).toHaveLength(0)
+	await answer(approval, 'Approve')
+	expect(sends()).toHaveLength(1)
+	expect(sends()[0]!.stdin).toContain(`${how} ("Blue or green?"): Blue`)
+	expect(sends()[0]!.stdin).toContain(`${approval} ("Approve the plan?"): Approve`)
+})
+
+test('an answer other than the recommendation sends the plan back to be written on it', async () => {
+	const colour = (await ask({ question: 'Blue or green?', provisional: true })).body.decision
+	const shape = (await ask({ question: 'Round or square?', recommend: 'Round', provisional: true })).body.decision
+	const approval = (await plan()).body.decision
+	await answer(shape, 'Square')
+	// A question is still open, so the plan waits: the last answer decides whether it stands.
+	expect((await decision(approval)).answer).toBeNull()
+	await answer(colour, 'Blue')
+	expect((await decision(approval)).answer).toBe(`Change: write the plan again on the answers to ${shape}, which differ from what it was built on`)
+	expect(sends()).toHaveLength(1)
+	expect(sends()[0]!.stdin).toContain(`${shape} ("Round or square?"): Square`)
+	expect(sends()[0]!.stdin).toContain(`${approval} ("Approve the plan?"): Change: write the plan again`)
+	expect((await h.call('GET', '/api/board')).body.needsYou).toBe(0)
+})
+
 test('the answer Do not merge leaves the open questions open', async () => {
 	const how = (await ask({ question: 'Keep the alias?', provisional: true })).body.decision
 	const merge = (await ask({ kind: 'merge', question: 'Merge PR 7?', recommend: 'Merge', options: [], head: 'abc1234' })).body.decision

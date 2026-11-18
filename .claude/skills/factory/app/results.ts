@@ -35,6 +35,8 @@ const reviewFinding = (withFile: boolean) =>
 export const RESULT_SHAPES = {
 	research: obj(
 		{
+			/** What is asked, or what fails for whom, in plain words. The issue's page opens with it. */
+			asked: str,
 			kind: oneOf('bug', 'feature'),
 			size: oneOf('S', 'M', 'L'),
 			/** `review` only for an issue that took in a PR and asks nothing built on it. */
@@ -48,6 +50,10 @@ export const RESULT_SHAPES = {
 		['undecided', 'notes']
 	),
 	plan: obj({
+		/** What the person who approves the plan will get, and what waits for later, in plain words. */
+		planned: str,
+		/** The plan as at most seven one-line bullets in plain words. The page shows them on the approval, with the whole plan one click away. */
+		outline: list(str, 7),
 		plan: str,
 		criteria: list(str, 5),
 		proof: str,
@@ -57,6 +63,8 @@ export const RESULT_SHAPES = {
 	'review-plan': obj({ findings: list(reviewFinding(false)), upheld: list(str) }, ['upheld']),
 	implement: obj(
 		{
+			/** What the PR does for the person who asked, in plain words. The page shows it above the merge decision. */
+			built: str,
 			prUrl: str,
 			commit: str,
 			claims: list(obj({ claim: str, evidence: str })),

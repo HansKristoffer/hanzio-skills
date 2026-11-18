@@ -26,8 +26,8 @@ The service refuses `--provisional` on `plan`, `merge` and `blocked`.
 ## How to word one
 
 - One question per decision. Questions you can ask now go out together, one `factory ask` each, before you end the turn; the page sends their answers back in one message once no blocking one is left.
-- `--recommend` is worded so that accepting it is a whole answer: "Keep `total` as an alias of `amount` for one release", not "Yes". The page's first button is "Accept: <recommendation>".
-- Put the facts in the question: what you found, the options and what each costs. Never ask what the code, the docs or a command can tell you; look it up.
+- `--recommend` is worded so that accepting it is a whole answer: "Keep `total` as an alias of `amount` for one release", not "Yes". The page's first button is "Accept: <recommendation>". `--option` adds the other answers only, never the recommendation in other words: the service tells another answer from the recommendation by its text, and another answer sends a plan back to be written again.
+- The question is the first sentence, ending in its question mark: the page shows it as the headline, and it must be answerable alone. After it, at most two sentences on what the answer hangs on: what you found, and what each option costs. The page shows what was asked, what was built, the checks and the reviews beside the question, so repeat none of them. Never ask what the code, the docs or a command can tell you; look it up.
 - After a provisional ask, your message to the user says what is being built meanwhile, and that the answer holds only the merge.
 - The service writes every question with its answer, or its recommendation while unanswered, into the plan and implement briefs. Build on a recommendation as part of the change itself, in the commits the change needs anyway.
 

@@ -55,6 +55,7 @@ async function storeResults() {
 		result: {
 			outcome: 'done',
 			result: {
+				built: 'Exports of any size now finish',
 				prUrl: PR,
 				commit: HEAD,
 				claims: [],
@@ -102,6 +103,14 @@ test('two syncs over the same PR print the same work and change nothing', async 
 	expect(second.round).toEqual({ n: 1, pushes: 0 })
 	expect(first.needsAction[0].isNew).toBe(true)
 	expect(second.needsAction[0].isNew).toBe(false)
+})
+
+test("the board shows the lines an issue's PR adds and deletes once the PR is read", async () => {
+	const size = async () => (await h.call('GET', '/api/board')).body.issues[0].size
+	expect(await size()).toBeNull()
+	h.gh.pr(rawPr({ view: { additions: 412, deletions: 38, changedFiles: 9 } }))
+	await cli(['pr', 'sync'])
+	expect(await size()).toEqual({ added: 412, deleted: 38, files: 9 })
 })
 
 test('pr ready marks the PR ready without waiting for checks, and adds the reviewer notes to its body', async () => {

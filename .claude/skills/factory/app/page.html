@@ -97,7 +97,7 @@
 	.chip.bad { color: var(--bad); }
 	pre { margin: 0; padding: 12px; border-radius: 8px; background: var(--raised); font: 12px/18px var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 420px; overflow: auto; }
 	details summary { cursor: pointer; font-size: 13px; color: var(--ink2); }
-	details[open] summary { margin-bottom: 8px; }
+	details[open] > summary { margin-bottom: 8px; }
 	.notice { margin-top: 12px; padding: 12px 16px; border-radius: 10px; background: var(--warn-bg); color: var(--warn); font-size: 13px; box-shadow: inset 0 0 0 1px var(--warn-line); }
 	.notice.bad { background: var(--bad-bg); color: var(--bad); box-shadow: none; }
 	.empty { padding: 48px 20px; text-align: center; color: var(--ink2); }
@@ -132,18 +132,28 @@
 	@media (prefers-reduced-motion: reduce) { .st.now.running i::after { animation: none; opacity: 0; } }
 
 	/* Board list */
-	.lhead, .lrow { display: grid; grid-template-columns: minmax(0, 1fr) 280px 184px 148px; column-gap: 24px; align-items: center; padding: 0 20px; }
+	.lhead, .lrow { display: grid; grid-template-columns: minmax(0, 1fr) 88px 216px 200px 132px; column-gap: 24px; align-items: center; padding: 0 20px; }
 	.lhead { min-height: 44px; font-size: 12px; line-height: 16px; color: var(--muted); }
 	.lhead h2 { display: flex; align-items: baseline; gap: 8px; font-size: 14px; line-height: 20px; font-weight: 500; color: var(--ink); }
-	.stations { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); text-align: center; white-space: nowrap; }
 	.lrow { padding-top: 16px; padding-bottom: 16px; border-top: 1px solid var(--line); }
 	.title { font-size: 15px; line-height: 22px; font-weight: 500; text-decoration: none; overflow-wrap: anywhere; }
 	.title:hover { text-decoration: underline; text-underline-offset: 3px; }
 	.meta { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
-	.last { margin-top: 4px; font-size: 13px; color: var(--ink2); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
+	.last { margin-top: 4px; font-size: 13px; color: var(--ink2); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; overflow-wrap: anywhere; }
+	a.last { text-decoration: none; }
+	a.last:hover { color: var(--ink); }
+	.last b { margin-right: 8px; font-weight: 500; color: var(--warn); }
+	/* How large a change is: the lines its PR adds and deletes */
+	.size { display: inline-flex; gap: 8px; font: 500 13px/16px var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+	.size .add { color: var(--ok); }
+	.size .del { color: var(--bad); }
+	.cell-size, .lhead .lines { text-align: right; }
+	.size-m { display: none; }
 	time, .num { font-family: var(--mono); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 	.last time { margin-right: 8px; }
-	.stage-name { display: none; font-size: 13px; color: var(--ink2); }
+	.cell-track { display: flex; align-items: center; gap: 12px; }
+	.cell-track .track { flex: 1; }
+	.stage-name { flex: none; width: 72px; font-size: 13px; color: var(--ink2); }
 	.slabel { font-size: 13px; font-weight: 500; }
 	.t-warn > .slabel { color: var(--warn); }
 	.t-bad > .slabel { color: var(--bad); }
@@ -155,8 +165,11 @@
 		.lhead > :not(h2) { display: none; }
 		.lrow { grid-template-columns: 96px minmax(0, 1fr); column-gap: 12px; row-gap: 12px; }
 		.cell-main, .cell-act, .cell-status { grid-column: 1 / -1; }
+		.cell-size { display: none; }
+		.size-m { display: inline; }
+		.last { -webkit-line-clamp: 2; }
 		.cell-track { display: contents; }
-		.stage-name { display: block; }
+		.stage-name { width: auto; }
 		.cell-act { justify-content: flex-start; }
 	}
 
@@ -165,12 +178,14 @@
 	.needs .lhead h2 { color: var(--warn); }
 	.need { padding: 20px; border-top: 1px solid var(--line); }
 	.need-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; font-size: 13px; color: var(--muted); }
-	.need-top a { color: var(--ink2); font-weight: 500; text-underline-offset: 3px; }
 	.need-top time { margin-left: auto; }
 	.kind { font-weight: 500; color: var(--warn); }
 	.kind.bad { color: var(--bad); }
 	.question { max-width: 80ch; margin-top: 8px; font-size: 16px; line-height: 24px; font-weight: 500; overflow-wrap: anywhere; }
-	.need > .meta, .need > pre, .need > .answer, .need > .row { margin-top: 12px; }
+	.q-more { max-width: 80ch; margin-top: 4px; color: var(--ink2); overflow-wrap: anywhere; }
+	.need > .meta, .need > .md, .need > details, .need > .answer, .need > .row, .outline { margin-top: 12px; }
+	.outline { max-width: 80ch; padding-left: 20px; }
+	.outline li + li { margin-top: 4px; }
 	.need > .meta { max-width: 80ch; color: var(--ink2); }
 	.own { display: flex; gap: 8px; align-items: flex-end; max-width: 720px; margin-top: 12px; }
 	.own textarea { min-height: 36px; height: 36px; }
@@ -185,7 +200,7 @@
 	.imeta .slabel { color: var(--ink); }
 	.imeta.t-warn .slabel { color: var(--warn); }
 	.imeta.t-bad .slabel { color: var(--bad); }
-	.line { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin-top: 24px; padding: 20px 0; }
+	.line { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin-top: 20px; padding: 16px 0; }
 	.stn { min-width: 0; text-align: center; }
 	.stn .st { height: 24px; }
 	.stn .st::before { top: 11px; }
@@ -193,9 +208,41 @@
 	.stn.on .stn-name { color: var(--ink); }
 	.stn-sub { min-height: 16px; margin-top: 2px; padding: 0 4px; font: 12px/16px var(--mono); color: var(--muted); }
 	.stn-sub.bad { color: var(--bad); }
-	.igrid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 0 32px; align-items: start; }
-	@container (max-width: 980px) { .igrid { grid-template-columns: minmax(0, 1fr); } }
-	.igrid > div > .sec:first-child { margin-top: 32px; }
+	.ipage { max-width: 920px; margin: 0 auto; }
+	.doing { max-width: 80ch; margin-top: 4px; font-size: 13px; color: var(--ink2); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
+	.doing time { margin-right: 8px; }
+	/* In brief: what was asked, what was built and what stands behind it, before anything else */
+	.brief { margin-top: 16px; padding: 0 20px; }
+	.brow { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 4px 16px; padding: 16px 0; border-top: 1px solid var(--line); }
+	.brow:first-child { border-top: 0; }
+	.brow-l { font-size: 13px; line-height: 24px; color: var(--muted); }
+	.brow-t { max-width: 72ch; font-size: 15px; line-height: 24px; white-space: pre-line; overflow-wrap: anywhere; }
+	.brow .chip { min-height: 24px; }
+	.clamp { max-height: 144px; overflow: hidden; }
+	.clamp.cut { -webkit-mask-image: linear-gradient(#000 calc(100% - 48px), transparent); mask-image: linear-gradient(#000 calc(100% - 48px), transparent); }
+	@container (max-width: 640px) { .brow { grid-template-columns: minmax(0, 1fr); } }
+	/* The record: every part of the run, closed until someone wants it */
+	.folds > details { border-top: 1px solid var(--line); }
+	.folds > details:first-child { border-top: 0; }
+	.folds > details > summary { display: flex; align-items: center; gap: 12px; min-height: 48px; margin: 0; padding: 8px 20px; list-style: none; font-size: 14px; color: var(--ink); transition: background-color .15s var(--ease); }
+	.folds > details > summary::-webkit-details-marker { display: none; }
+	.folds > details > summary:hover { background: var(--raised); }
+	.folds > details:first-child > summary { border-radius: 11px 11px 0 0; }
+	.folds > details:last-child:not([open]) > summary { border-radius: 0 0 11px 11px; }
+	.folds > details:first-child:last-child:not([open]) > summary { border-radius: 11px; }
+	.folds > details > summary::before { content: ""; flex: none; width: 6px; height: 6px; margin: 0 3px 0 1px; border: solid var(--muted); border-width: 0 1.5px 1.5px 0; transform: rotate(-45deg); transition: transform .15s var(--ease); }
+	.folds > details[open] > summary::before { transform: rotate(45deg); }
+	.folds > details[open] > summary { border-bottom: 1px solid var(--line); }
+	.fold-t { flex: none; font-weight: 500; }
+	.fold-s { min-width: 0; margin-left: auto; font-size: 13px; color: var(--muted); text-align: right; overflow-wrap: anywhere; }
+	.fold-s.warn { color: var(--warn); }
+	.fold-s.bad { color: var(--bad); }
+	.fold-s.ok { color: var(--ok); }
+	.folds .panel { border: 0; border-radius: 0; background: none; box-shadow: none; }
+	.fold-h { padding: 16px 20px 0; font-size: 13px; line-height: 20px; font-weight: 500; color: var(--ink2); }
+	.fold-h + .panel > .item:first-child { padding-top: 8px; }
+	.folds .tl { margin: 12px 20px 12px 24px; }
+	.folds .tl > div::before { box-shadow: 0 0 0 3px var(--panel); }
 	.body { padding: 16px 20px; }
 	.body > * + * { margin-top: 12px; }
 	.gate { display: flex; align-items: center; gap: 8px; font-weight: 500; }
@@ -255,7 +302,6 @@
 	.tag { position: absolute; left: 8px; top: 8px; padding: 1px 8px; border-radius: 6px; background: var(--panel); color: var(--ink); font: 500 12px/18px var(--sans); box-shadow: 0 0 0 1px var(--line2); }
 	.play { position: absolute; left: 50%; top: 50%; display: grid; place-items: center; width: 48px; height: 48px; margin: -24px 0 0 -24px; border-radius: 50%; background: var(--ink); color: var(--bg); }
 	.play svg { width: 20px; height: 20px; margin-left: 2px; fill: currentColor; stroke: none; }
-	.shot-meta { margin-top: 6px; font: 12px/16px var(--mono); color: var(--muted); overflow-wrap: anywhere; }
 	.env { gap: 8px; }
 	.env i { width: 6px; height: 6px; border-radius: 50%; background: var(--passed); }
 	.env.ok i { background: var(--ok-dot); }
@@ -266,7 +312,6 @@
 	.claims-head { padding-bottom: 8px; font-size: 12px; line-height: 16px; color: var(--muted); }
 	.claim { border-top: 1px solid var(--line); overflow-wrap: anywhere; }
 	.proof { font: 12px/18px var(--mono); color: var(--ink2); white-space: pre-wrap; }
-	.claims + .body { border-top: 1px solid var(--line); }
 	.measures-head, .measure { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 1fr) minmax(0, 1fr); gap: 4px 24px; padding: 12px 20px; }
 	.measures-head { padding-bottom: 8px; font-size: 12px; line-height: 16px; color: var(--muted); }
 	.measure { border-top: 1px solid var(--line); overflow-wrap: anywhere; }
@@ -483,8 +528,24 @@ const mdTableStart = (lines, i) => lines[i].includes('|') && i + 1 < lines.lengt
 const mdBlockStart = (lines, i) => MD_FENCE.test(lines[i]) || MD_HEADING.test(lines[i]) || MD_RULE.test(lines[i]) || MD_QUOTE.test(lines[i]) || MD_ITEM.test(lines[i]) || mdTableStart(lines, i)
 const indentOf = (line) => line.match(/^\s*/)[0].length
 
+/**
+ * GitHub comments carry HTML comments and layout tags (a bot's markers, a folded section). Outside code they
+ * are dropped and their text kept, so a comment reads as its words.
+ */
+const MD_CODE = /(^ {0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^ {0,3}\2[`~]*[ \t]*$|(?![\s\S]))|`+[^`\n]+`+)/m
+const MD_HTML = /<!--[\s\S]*?-->|<\/?(?:details|summary|sub|sup|kbd|picture|img|a|relative-time|p|div|span|strong|b|em|i)(?:\s[^<>]*)?\/?>/gi
+function mdWords(text) {
+	const out = []
+	let rest = text
+	for (let m = rest.match(MD_CODE); m; m = rest.match(MD_CODE)) {
+		out.push(rest.slice(0, m.index).replace(/<br\s*\/?>/gi, '\n').replace(MD_HTML, ''), m[0])
+		rest = rest.slice(m.index + m[0].length)
+	}
+	return out.join('') + rest.replace(/<br\s*\/?>/gi, '\n').replace(MD_HTML, '')
+}
+
 function md(text) {
-	const lines = String(text ?? '').replace(/\r\n?/g, '\n').replaceAll('\t', '    ').split('\n')
+	const lines = mdWords(String(text ?? '').replace(/\r\n?/g, '\n')).replaceAll('\t', '    ').split('\n')
 	const blocks = []
 	let i = 0
 	while (i < lines.length) {
@@ -604,10 +665,12 @@ function statusOf(i) {
 	if (i.threadGone) return { tone: 'bad', label: 'Thread gone', note: ['T3 Code cannot find its thread'] }
 	if (i.undelivered) return { tone: 'bad', label: 'Message stuck', note: ["A factory message has not reached the idle thread: open it in T3 Code and resume its queue"] }
 	if (i.stuck) return { tone: 'bad', label: 'Stuck', note: ['No report after being asked to go on'] }
-	const open = (i.decisions || []).filter((d) => d.answer === null).length
-	if (open) {
-		const blocking = i.decisions.some((d) => d.answer === null && !d.provisional)
-		return { tone: 'warn', label: open === 1 ? 'Needs your answer' : `Needs ${open} answers`, note: [blocking ? 'Paused until you answer' : 'Work goes on, the merge waits'] }
+	const open = (i.decisions || []).filter((d) => d.answer === null)
+	if (open.length) {
+		const questions = open.filter((d) => d.kind === 'question').length
+		const has = (kind) => open.some((d) => d.kind === kind)
+		const what = [questions ? count(questions, 'question') : null, has('plan') ? 'plan to approve' : null, has('merge') ? 'merge to decide' : null, has('blocked') ? 'blocked' : null].filter(Boolean)
+		return { tone: 'warn', label: cap(what.join(', ')), note: open.some((d) => !d.provisional) ? ['Paused ', lasting(Math.min(...open.map((d) => d.askedAt)))] : ['Work goes on, the merge waits'] }
 	}
 	if (i.decisions && i.decisions.length) return { tone: 'warn', label: 'Answer not delivered' }
 	const w = i.waiting
@@ -636,8 +699,11 @@ function track(issue, status) {
 	}))
 }
 
-/** `own` is set on the issue's own page, where naming the issue again would repeat the title. */
-function decisionCard(issue, d, own = false) {
+/** What waits for the user in one issue, in the order to answer it: the questions, then what is built on their answers. */
+const inOrder = (decisions) => decisions.slice().sort((a, b) => (a.kind === 'question' ? 0 : 1) - (b.kind === 'question' ? 0 : 1) || a.askedAt - b.askedAt)
+
+/** One decision on its issue's page. `beside` is everything that waits in the same issue; `outline` is the latest plan's. */
+function decisionCard(issue, d, beside, outline) {
 	const error = h('div', { class: 'error' })
 	const words = h('textarea', { rows: 1, placeholder: 'Or answer in your own words', 'aria-label': 'Your answer', 'data-draft': d.id, oninput: () => drafts.set(d.id, words.value), onkeydown: (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) sendOwn() } }, drafts.get(d.id) || '')
 	const send = async (answer) => {
@@ -656,24 +722,34 @@ function decisionCard(issue, d, own = false) {
 		try { await api('POST', `/api/issues/${encodeURIComponent(issue.id)}/deliver`, {}) } catch (e) { error.textContent = e.message }
 	}
 	const answered = d.answer !== null
+	const [ask, more] = splitQuestion(d.question)
+	// A plan is written on the recommended answer of each question beside it, so the questions are answered first.
+	const plan = beside.find((o) => o.kind === 'plan' && o.answer === null)
+	const before = d.kind === 'plan' ? beside.filter((o) => o.kind === 'question' && o.answer === null).length : 0
 	// A merge decision, and one about going on past the round budget, take only their two answers.
 	const fixed = d.kind === 'merge' || d.round !== null
 	const card = h('div', { class: 'need' },
 		h('div', { class: 'need-top' },
 			h('span', { class: 'kind' }, d.provisional ? 'Provisional' : cap(d.kind)),
-			own ? null : h('a', { href: issueHref(issue) }, issue.title),
-			own ? null : h('span', {}, issue.repo),
-			!own && d.kind === 'merge' && issue.captures ? h('a', { href: issueHref(issue) }, `See what was built: ${count(issue.captures, 'capture')}`) : null,
 			when(d.askedAt)
 		),
-		h('p', { class: 'question' }, d.question),
-		d.provisional && !answered ? h('p', { class: 'meta' }, `The work went on with "${d.recommendation}". The merge waits for your answer.`) : null,
-		d.body ? h('pre', {}, d.body) : null,
+		h('p', { class: 'question' }, ask),
+		more ? h('p', { class: 'q-more' }, more) : null,
+		d.provisional && !answered ? h('p', { class: 'meta' }, plan
+			? 'The plan below is built on the first answer. Another answer has it written again before you approve it.'
+			: 'The work goes on with the first answer below. The merge waits for yours.') : null,
+		// A plan is long: its outline says what it holds, and the plan opens on demand. Any other body is what the answer hangs on.
+		d.kind === 'plan' ? [
+			outline?.length ? h('ul', { class: 'outline' }, ...outline.map((point) => h('li', {}, mdInline(point)))) : null,
+			d.body ? fold(`body:${d.id}`, 'Read the full plan', h('div', { class: 'md' }, md(d.body))) : null
+		] : d.body ? h('div', { class: 'md' }, md(d.body)) : null,
 		answered
 			? h('div', { class: 'answer' },
 				h('p', {}, `Answered: ${d.answer}`),
-				h('p', { class: 'meta' }, d.delivery === 'held' ? 'Held until the other questions are answered' : 'Not delivered to the thread yet'),
+				h('p', { class: 'meta' }, d.delivery === 'held' ? 'Goes to the thread once the rest here is answered' : 'Not delivered to the thread yet'),
 				d.delivery === 'failed' ? h('div', { class: 'row', style: 'margin-top:12px' }, h('button', { class: 'btn', onclick: retry }, 'Retry delivery')) : null)
+			: before
+				? h('p', { class: 'meta' }, `Opens for your approval once you have answered the ${before === 1 ? 'question' : `${before} questions`} above.`)
 			: fixed
 				? [
 					h('p', { class: 'meta' }, d.head ? `About commit ${d.head.slice(0, 7)}. Recommended: ${d.recommendation}` : `Recommended: ${d.recommendation}`),
@@ -701,68 +777,69 @@ function dropButton(issue, then) {
 	return [button, error]
 }
 
-function troubleCard(i) {
-	const why = i.threadGone
-		? ['Thread gone', 'T3 Code cannot find this thread any more. Drop the issue, or start it again.']
-		: ['Stuck', 'Asked to go on with no report. Look at the thread.']
-	return h('div', { class: 'need' },
-		h('div', { class: 'need-top' }, h('span', { class: 'kind bad' }, why[0]), h('a', { href: issueHref(i) }, i.title), h('span', {}, i.repo), i.lastEvent ? when(i.lastEvent.at) : null),
-		h('p', { class: 'question' }, why[1]),
-		h('div', { class: 'row' }, out(i.threadLink, 'Open in T3 Code', 'thread', 'btn'), dropButton(i))
-	)
-}
+/** The lines an issue's PR adds and deletes. */
+const sizeOf = (size) => size
+	? h('span', { class: 'size', title: `${count(size.files, 'file')} changed` }, h('span', { class: 'add' }, `+${size.added}`), h('span', { class: 'del' }, `−${size.deleted}`))
+	: null
+const prNumber = (url) => (url && url.match(/\/pull\/(\d+)/)?.[1]) || null
 
+/** One issue on the board: what it is, how large, where it stands and who acts next. Its page holds the rest. */
 function issueRow(i) {
 	const s = statusOf(i)
+	const next = inOrder(i.decisions).find((d) => d.answer === null)
+	const number = prNumber(i.prUrl)
 	return h('div', { class: 'lrow' },
 		h('div', { class: 'cell-main' },
 			h('a', { class: 'title', href: issueHref(i) }, i.title),
-			h('div', { class: 'meta' }, dotted(i.repo, i.kind, i.captures ? count(i.captures, 'capture') : null, i.preview === 'up' ? 'dev environment up' : null)),
-			i.lastEvent ? h('div', { class: 'last' }, when(i.lastEvent.at), i.lastEvent.text) : null
+			h('div', { class: 'meta' }, dotted(i.repo, i.kind, number ? `PR #${number}` : null, i.preview === 'up' ? 'dev environment up' : null),
+				// A narrow board has no column for the size.
+				i.size ? h('span', { class: 'size-m' }, ' · ', sizeOf(i.size)) : null),
+			// What waits for the user is the one thing to read; otherwise the newest line of the run.
+			next ? h('a', { class: 'last', href: issueHref(i) }, h('b', {}, 'Next'), splitQuestion(next.question)[0])
+				: i.lastEvent ? h('div', { class: 'last' }, when(i.lastEvent.at), i.lastEvent.text) : null
 		),
+		h('div', { class: 'cell-size' }, sizeOf(i.size)),
 		h('div', { class: 'cell-track' }, track(i, s), h('span', { class: 'stage-name' }, cap(i.stage))),
 		h('div', { class: `cell-status t-${s.tone}` },
 			h('div', { class: 'slabel' }, s.label),
 			s.note && s.note.length ? h('div', { class: 'snote' }, s.note) : null,
 			s.alarm ? h('div', { class: 'snote bad' }, s.alarm) : null
 		),
-		h('div', { class: 'cell-act' }, out(i.prUrl, 'PR', 'pr'), out(i.threadLink, 'Thread', 'thread', 'btn sm', 'Open in T3 Code'))
+		h('div', { class: 'cell-act' }, i.needsYou
+			? h('a', { class: 'btn primary', href: issueHref(i) }, next ? 'Answer' : 'Open')
+			: [out(i.prUrl, 'PR', 'pr'), out(i.threadLink, 'Thread', 'thread', 'btn sm', 'Open in T3 Code')])
 	)
 }
 
 function drawBoard() {
 	if (!loaded) return render()
-	const waiting = board.issues.flatMap((issue) => issue.decisions.map((d) => [issue, d]))
-	const trouble = board.issues.filter((i) => i.stuck || i.threadGone || i.undelivered)
-	const others = board.issues.filter((i) => i.waiting && !i.needsYou).length
+	const yours = board.issues.filter((i) => i.needsYou)
+	const rest = board.issues.filter((i) => !i.needsYou)
+	const others = rest.filter((i) => i.waiting).length
 	const stat = (label, value, cls, href) => h(href ? 'a' : 'div', { class: `stat${cls ? ` ${cls}` : ''}`, href }, h('div', { class: 'stat-l' }, label), h('div', { class: 'stat-n' }, value))
-	const needs = waiting.length + trouble.length
-	// Issues that wait for the user come first; the rest keep the order they came in.
-	const rows = [...board.issues.filter((i) => i.needsYou), ...board.issues.filter((i) => !i.needsYou)]
+	const list = (title, cls, rows) => h('section', { class: `panel${cls}`, style: 'margin-top:24px' },
+		h('div', { class: 'lhead' },
+			h('h2', {}, title, h('span', { class: 'count' }, rows.length)),
+			h('span', { class: 'lines' }, 'Lines'),
+			h('span', {}, 'Stage'),
+			h('span', {}, 'Status')
+		),
+		rows.map(issueRow)
+	)
 	render(
 		h('section', { class: 'panel stats', 'aria-label': 'Overview' },
-			stat('Needs you', board.needsYou, board.needsYou ? 'warn' : ''),
-			stat('Working', board.open - board.needsYou - others),
+			stat('Needs you', yours.length, yours.length ? 'warn' : ''),
+			stat('Working', rest.length - others),
 			stat('Waiting on others', others),
 			stat('Shipped, last 30 days', board.done.filter((i) => i.outcome === 'shipped').length, '', '#/done')
 		),
-		needs ? h('section', { class: 'panel needs', style: 'margin-top:24px' },
-			h('div', { class: 'lhead' }, h('h2', {}, 'Needs you')),
-			...waiting.map(([issue, d]) => decisionCard(issue, d)),
-			...trouble.map(troubleCard)
-		) : null,
-		h('section', { class: 'panel', style: 'margin-top:24px' },
-			h('div', { class: 'lhead' },
-				h('h2', {}, 'In work', h('span', { class: 'count' }, board.open)),
-				rows.length ? h('div', { class: 'stations' }, ...STAGES.map((stage) => h('span', {}, cap(stage)))) : null,
-				rows.length ? h('span', {}, 'Status') : null
-			),
-			rows.length ? rows.map(issueRow) : h('div', { class: 'empty', style: 'border-top:1px solid var(--line)' },
-				h('p', {}, 'No issues in work'),
-				h('p', {}, 'Start one here, or tell a T3 Code thread to work an issue with the factory skill'),
-				h('a', { class: 'btn', href: '#/new' }, 'New issue')
-			)
-		)
+		yours.length ? list('Needs you', ' needs', yours) : null,
+		rest.length ? list('In work', '', rest) : null,
+		board.issues.length ? null : h('section', { class: 'panel', style: 'margin-top:24px' }, h('div', { class: 'empty' },
+			h('p', {}, 'No issues in work'),
+			h('p', {}, 'Start one here, or tell a T3 Code thread to work an issue with the factory skill'),
+			h('a', { class: 'btn', href: '#/new' }, 'New issue')
+		))
 	)
 }
 
@@ -775,7 +852,7 @@ function drawDone() {
 				h('a', { class: 'title', href: issueHref(i) }, i.title),
 				chip(outcomeName(i.outcome), i.outcome === 'shipped' ? 'ok' : ''),
 				i.deploy && i.deploy !== 'none' ? chip(`deploy ${i.deploy}`, i.deploy === 'verified' ? 'ok' : 'warn') : null,
-				h('span', { class: 'end' }, out(i.prUrl, 'PR', 'pr'))
+				h('span', { class: 'end row' }, sizeOf(i.size), out(i.prUrl, 'PR', 'pr'))
 			),
 			i.summary ? h('p', { style: 'max-width:80ch;color:var(--ink2)' }, i.summary) : null,
 			h('div', { class: 'meta' }, dotted(i.repo, i.kind, when(i.closedAt)))
@@ -818,6 +895,71 @@ function runRow(r) {
 	)
 }
 
+/** A question as its headline, up to the first question mark, and what follows it. */
+function splitQuestion(text) {
+	const at = text.search(/\?(\s|$)/)
+	return at < 0 ? [text, ''] : [text.slice(0, at + 1), text.slice(at + 1).trim()]
+}
+
+/** A finding still to act on: no outcome yet, or declined and then upheld by a later review. */
+const isOpenFinding = (f) => f.outcome === null || f.outcome === 'upheld'
+const REACH = { local: 'reaches one place', module: 'reaches one module', app: 'reaches the whole app', data: 'reaches stored data' }
+
+/** What stands behind the change, from what the service holds: the checks, the reviews, the tests and the risk. */
+function checkedChips(data) {
+	const chips = []
+	const pr = data.pr
+	if (pr?.state === 'merged') chips.push(chip('merged', 'ok'))
+	else if (pr) {
+		const c = pr.checks
+		chips.push(c.state === 'passing' ? chip('CI passes', 'ok') : c.state === 'failing' ? chip(`CI fails: ${c.failing.join(', ')}`, 'bad') : c.state === 'absent' ? chip('no CI checks', 'warn') : chip(`CI ${c.state}`))
+	}
+	const reviews = data.runs.filter((r) => r.stage === 'review' && r.subject === 'pr' && r.result?.outcome === 'done').map((r) => r.result.result)
+	if (reviews.length) {
+		const found = (data.findings || []).filter((f) => f.subject === 'pr' && f.severity !== 'pre-existing')
+		const open = found.filter(isOpenFinding)
+		const tone = open.some((f) => f.severity === 'important') ? 'bad' : open.length ? 'warn' : 'ok'
+		chips.push(chip(`${count(reviews.length, 'review round')}: ${found.length ? `${count(found.length, 'finding')}, ${open.length || 'none'} open` : 'no findings'}`, tone))
+		const reproduced = reviews.findLast((r) => r.reproductionOnHead !== 'none')?.reproductionOnHead
+		if (reproduced) chips.push(reproduced === 'passes' ? chip('the reproduction passes now', 'ok') : chip('the reproduction still fails', 'bad'))
+		const proved = reviews.findLast((r) => r.testsFailWithoutFix !== 'no-new-tests')?.testsFailWithoutFix
+		if (proved !== undefined) chips.push(proved ? chip('new tests fail without the change', 'ok') : chip('new tests pass without the change', 'warn'))
+	}
+	if (pr) {
+		const needs = (data.items || []).filter((item) => item.needsAction).length
+		if (needs) chips.push(chip(`${count(needs, 'comment')} on GitHub to act on`, 'warn'))
+		chips.push(...pr.approvedBy.map((a) => chip(`approved by @${a.login}${a.commit && a.commit !== pr.head ? ' (older head)' : ''}`, 'ok')))
+		chips.push(...pr.changesRequestedBy.map((l) => chip(`changes requested by @${l}`, 'bad')))
+	}
+	const risk = data.reviewRisk
+	if (risk) chips.push(chip(`${risk.door} door`, risk.door === 'one-way' ? 'warn' : ''), chip(REACH[risk.reach], risk.reach === 'data' || risk.reach === 'app' ? 'warn' : ''))
+	return chips
+}
+
+/** The top of the page, for a reader who has not followed the run: each stage's own plain words, then the facts. */
+function briefPanel(data, result) {
+	const asked = result('research')?.asked
+	const built = result('implement')?.built
+	const planned = result('plan')?.planned
+	const chips = checkedChips(data)
+	const row = (label, ...body) => h('div', { class: 'brow' }, h('div', { class: 'brow-l' }, label), h('div', {}, ...body))
+	const text = (words) => h('p', { class: 'brow-t' }, words)
+	return h('section', { class: 'panel brief', 'aria-label': 'In brief' },
+		// An issue research has not read yet, or one from before stages wrote these lines, shows the start of its own text.
+		row('Asked', asked ? text(asked) : data.body ? h('div', { class: 'md clamp' }, md(data.body)) : h('p', { class: 'brow-t muted' }, '(no text)')),
+		built ? row('Built', text(built)) : planned ? row('Planned', text(planned)) : null,
+		chips.length ? row('Checked', h('div', { class: 'row' }, ...chips)) : null
+	)
+}
+
+/** One part of the record: its name, what it holds in a few words (in `tone` when that needs a look), and the rest once opened. */
+function part(key, title, { note, tone }, ...body) {
+	return h('details', { open: opened.has(key), ontoggle: (e) => (e.target.open ? opened.add(key) : opened.delete(key)) },
+		h('summary', {}, h('span', { class: 'fold-t' }, title), note ? h('span', { class: `fold-s${tone ? ` ${tone}` : ''}` }, note) : null),
+		...body
+	)
+}
+
 async function drawIssue(id) {
 	let data
 	try { data = await api('GET', `/api/issues/${encodeURIComponent(id)}`) } catch (e) { render(h('p', { class: 'error' }, e.message)); return }
@@ -829,9 +971,49 @@ async function drawIssue(id) {
 	const result = (stage, subject = null) => data.runs.findLast((r) => r.stage === stage && r.subject === subject && r.result?.outcome === 'done')?.result.result
 	const built = result('implement')
 	const shots = data.evidence || []
+	const latest = data.events.at(-1)
+	const key = (name) => `${name}:${id}`
 	if (data.preview?.state === 'up') probe(id)
 	else probes.delete(id)
-	render(
+
+	const claims = built?.claims || []
+	const aware = built ? awarePanel(built, data.reviewRisk, result('plan')?.later) : null
+	const findings = data.findings || []
+	const items = data.items || []
+	const openFindings = findings.filter(isOpenFinding).length
+	const needs = items.filter((item) => item.needsAction).length
+	const gate = data.gate
+	const answered = data.decisions.filter((d) => d.answer !== null).length
+	const running = data.runs.filter((r) => r.state === 'running').length
+	const record = [
+		claims.length ? part(key('proof'), 'Proof', { note: count(claims.length, 'claim') }, claimsTable(claims)) : null,
+		aware ? part(key('aware'), 'Be aware of', aware, aware.body) : null,
+		data.pr ? part(key('pr'), `Pull request #${data.pr.number}`,
+			data.pr.state !== 'open' ? { note: data.pr.state, tone: data.pr.state === 'merged' ? 'ok' : '' }
+				: gate.ready ? { note: 'merge gate ready', tone: 'ok' }
+				: { note: `merge gate blocked by ${count(gate.blockers.length, 'thing')}` },
+			prPanel(data)) : null,
+		findings.length || items.length ? part(key('reviews'), 'Reviews',
+			{
+				note: dotted(
+					findings.length ? `${count(findings.length, 'finding')}, ${openFindings || 'none'} open` : null,
+					items.length ? `${count(items.length, 'comment')} on GitHub, ${needs || 'none'} to act on` : null
+				),
+				tone: openFindings || needs ? 'warn' : ''
+			},
+			findings.length ? [h('h3', { class: 'fold-h' }, 'Internal review'), findingsList(findings)] : null,
+			items.length ? [h('h3', { class: 'fold-h' }, 'On GitHub'), reviewItems(items)] : null) : null,
+		data.decisions.length ? part(key('decisions'), 'Decisions',
+			{ note: dotted(answered ? `${answered} answered` : null, data.decisions.length - answered ? `${data.decisions.length - answered} open` : null) },
+			h('div', { class: 'panel' }, ...data.decisions.map(decisionRow))) : null,
+		data.runs.length ? part(key('runs'), 'Runs', { note: dotted(data.runs.length, running ? `${running} running` : null) }, h('div', { class: 'panel' }, ...data.runs.map(runRow))) : null,
+		data.events.length ? part(key('timeline'), 'Timeline', { note: [count(data.events.length, 'event'), ', latest ', when(latest.at)] },
+			h('div', { class: 'tl' }, ...data.events.slice().reverse().map((e) => h('div', {}, cap(e.text), h('time', {}, clock(e.at)))))) : null,
+		part(key('taken'), 'The issue as taken in', { note: i.source && !isUrl(i.source) ? i.source : '' },
+			data.body ? h('div', { class: 'body md' }, md(data.body)) : h('div', { class: 'body' }, h('p', { class: 'muted' }, '(no text)')))
+	]
+
+	render(h('div', { class: 'ipage' },
 		h('a', { class: 'back', href: i.state === 'open' ? '#/' : '#/done' }, icon('back'), i.state === 'open' ? 'Board' : 'Done'),
 		h('div', { class: 'ititle' },
 			h('h1', {}, i.title),
@@ -843,37 +1025,35 @@ async function drawIssue(id) {
 		h('div', { class: `imeta t-${status.tone}` },
 			h('span', { class: 'slabel' }, status.label),
 			status.note && status.note.length ? h('span', {}, status.note) : null,
-			h('span', {}, dotted(i.repo, i.kind, i.source && !isUrl(i.source) ? i.source : null, h('span', {}, 'started ', when(i.createdAt))))
+			h('span', {}, dotted(i.repo, i.kind, h('span', {}, 'started ', when(i.createdAt)), sizeOf(i.size)))
 		),
+		// While a stage works, its newest line says what it is doing; the rest of the lines are in the timeline.
+		status.running && latest ? h('p', { class: 'doing' }, when(latest.at), cap(latest.text)) : null,
 		stationLine(i, data.runs, status),
 		i.configError ? h('p', { class: 'notice bad' }, i.configError) : null,
 		i.threadGone ? h('p', { class: 'notice bad' }, 'T3 Code cannot find this thread any more.') : null,
 		status.alarm ? h('p', { class: 'notice bad' }, status.alarm) : null,
 		...(data.warnings || []).map((w) => h('p', { class: 'notice' }, w)),
+		// A closed issue's report is its brief: what happened, the fix and what to be aware of.
+		data.report ? section('Closing report', null, h('div', { class: 'panel body' }, h('div', { class: 'md' }, md(data.report)))) : briefPanel(data, result),
 		pending.length ? h('section', { class: 'panel needs', style: 'margin-top:24px' },
 			h('div', { class: 'lhead' }, h('h2', {}, 'Needs you')),
-			...pending.map((d) => decisionCard(i, d, true))
+			...inOrder(pending).map((d) => decisionCard(i, d, pending, result('plan')?.outline))
 		) : null,
-		h('div', { class: 'igrid' },
-			h('div', {},
-				data.report ? section('Closing report', null, h('div', { class: 'panel body md' }, md(data.report))) : null,
-				shots.length || built?.media ? section('What it looks like', shots.length, gallery(shots, built?.media, data.pr?.head)) : null,
-				built?.measured?.rows?.length ? section('Measured', null, measuredPanel(built.measured, data.pr?.head)) : null,
-				(i.state === 'open' && (built || data.preview)) || data.preview?.state === 'up' ? section('Try it', null, previewPanel(i, data.preview, built?.tryIt, data.pr?.head)) : null,
-				built ? section('What was built', null, builtPanel(built, result('review', 'pr'))) : null,
-				data.pr ? section('Pull request', `#${data.pr.number}`, prPanel(data)) : null,
-				data.items?.length ? section('Review on GitHub', data.items.length, reviewItems(data.items)) : null,
-				data.findings?.length ? section('Internal review findings', data.findings.length, findingsList(data.findings)) : null,
-				section('Runs', data.runs.length, data.runs.length ? h('div', { class: 'panel' }, ...data.runs.map(runRow)) : h('p', { class: 'muted' }, 'No runs yet')),
-				data.decisions.length ? section('Decisions', data.decisions.length, h('div', { class: 'panel' }, ...data.decisions.map((d) => h('div', { class: 'item' },
-					h('div', { class: 'item-head' }, chip(d.provisional ? `${d.kind}, provisional` : d.kind), h('span', { class: 'end' }, when(d.askedAt))),
-					h('p', {}, d.question),
-					h('p', { class: 'meta' }, d.answer === null ? `Recommended: ${d.recommendation}` : `Answer (${d.answeredVia}): ${d.answer}`)
-				)))) : null,
-				section('The issue as taken in', null, data.body ? h('div', { class: 'panel body md' }, md(data.body)) : h('p', { class: 'muted' }, '(no text)'))
-			),
-			h('div', {}, section('Timeline', null, h('div', { class: 'tl' }, ...data.events.slice().reverse().map((e) => h('div', {}, cap(e.text), h('time', {}, clock(e.at)))))))
-		)
+		shots.length || built?.media ? section('What it looks like', shots.length, gallery(shots, built?.media)) : null,
+		built?.measured?.rows?.length ? section('Measured', null, measuredPanel(built.measured, data.pr?.head)) : null,
+		(i.state === 'open' && (built || data.preview)) || data.preview?.state === 'up' ? section('Try it', null, previewPanel(i, data.preview, built?.tryIt, data.pr?.head)) : null,
+		section('The record', null, h('div', { class: 'panel folds' }, ...record.filter(Boolean)))
+	))
+	for (const el of main.querySelectorAll('.clamp')) el.classList.toggle('cut', el.scrollHeight > el.clientHeight)
+}
+
+/** A decision in the record: the question's headline and what was answered. */
+function decisionRow(d) {
+	return h('div', { class: 'item' },
+		h('div', { class: 'item-head' }, chip(d.provisional ? `${d.kind}, provisional` : d.kind), h('span', { class: 'end' }, when(d.askedAt))),
+		h('p', {}, splitQuestion(d.question)[0]),
+		h('p', { class: 'meta' }, d.answer === null ? `Recommended: ${d.recommendation}` : `Answer (${d.answeredVia}): ${d.answer}`)
 	)
 }
 
@@ -888,7 +1068,8 @@ function showViewer() {
 		: h('img', { src: item.url, alt: item.label ? `${cap(item.label)}: ${item.title}` : item.title })
 	viewer.el.replaceChildren(
 		h('div', { class: 'view-bar' },
-			h('div', { class: 'row' }, h('strong', {}, item.title), item.label ? chip(cap(item.label)) : null, many ? h('span', { class: 'num' }, `${viewer.at + 1} / ${viewer.items.length}`) : null),
+			h('div', { class: 'row' }, h('strong', {}, item.title), item.label ? chip(cap(item.label)) : null,
+				h('span', { class: 'num' }, dotted(many ? `${viewer.at + 1} / ${viewer.items.length}` : null, item.head ? `at ${short(item.head)}` : null, item.github ? 'on GitHub' : 'on this page only'))),
 			h('div', { class: 'row' },
 				many ? h('button', { class: 'btn sm', onclick: step(-1), title: 'Previous (left arrow)', 'aria-label': 'Previous' }, icon('prev')) : null,
 				many ? h('button', { class: 'btn sm', onclick: step(1), title: 'Next (right arrow)', 'aria-label': 'Next' }, icon('next')) : null,
@@ -918,7 +1099,7 @@ function openViewer(items, at) {
 }
 
 /** Captures under one title sit together; a before and an after sit side by side. */
-function gallery(shots, why, prHead) {
+function gallery(shots, why) {
 	if (!shots.length) return h('div', { class: 'panel body' }, h('p', { class: 'tryit' }, why))
 	// Before comes first, so the arrows in the viewer flip between the two.
 	const rank = { before: 0, after: 1 }
@@ -927,17 +1108,10 @@ function gallery(shots, why, prHead) {
 	const tile = (shot) => {
 		const still = shot.kind === 'video' ? shot.poster : shot.url
 		const name = `${shot.label ? `${cap(shot.label)}: ` : ''}${shot.title}`
-		return h('div', {},
-			h('button', { class: 'shot', onclick: () => openViewer(ordered, ordered.indexOf(shot)), 'aria-label': `${shot.kind === 'video' ? 'Play' : 'Open'} ${name}` },
-				still ? h('img', { src: still, alt: name, loading: 'lazy' }) : h('div', { class: 'blank' }, 'Video'),
-				shot.label ? h('span', { class: 'tag' }, cap(shot.label)) : null,
-				shot.kind === 'video' ? h('span', { class: 'play', 'aria-hidden': 'true' }, icon('play').firstChild) : null
-			),
-			h('div', { class: 'shot-meta' }, dotted(
-				shot.kind === 'video' ? 'video' : null,
-				shot.head ? `at ${short(shot.head)}${prHead && !sameCommit(shot.head, prHead) ? ', before the PR\'s last commit' : ''}` : null,
-				shot.github ? 'on GitHub' : 'on this page only'
-			))
+		return h('button', { class: 'shot', onclick: () => openViewer(ordered, ordered.indexOf(shot)), 'aria-label': `${shot.kind === 'video' ? 'Play' : 'Open'} ${name}` },
+			still ? h('img', { src: still, alt: name, loading: 'lazy' }) : h('div', { class: 'blank' }, 'Video'),
+			shot.label ? h('span', { class: 'tag' }, cap(shot.label)) : null,
+			shot.kind === 'video' ? h('span', { class: 'play', 'aria-hidden': 'true' }, icon('play').firstChild) : null
 		)
 	}
 	return h('div', { class: 'panel shots' }, ...titles.map((title) => {
@@ -1001,7 +1175,7 @@ function previewPanel(i, preview, tryIt, prHead) {
 	} else {
 		parts = [h('div', { class: 'row' }, start('Start the dev environment')), h('p', { class: 'meta' }, i.threadGone ? 'T3 Code cannot find the thread that would start it.' : 'The issue\'s thread starts it in its own checkout, on the branch of the PR. It takes a minute or two.')]
 	}
-	return h('div', { class: 'panel body' }, ...parts, error, tryIt ? h('p', { class: 'tryit' }, tryIt) : null)
+	return h('div', { class: 'panel body' }, ...parts, error, tryIt ? fold(`try:${i.id}`, 'Steps to try it', h('p', { class: 'tryit' }, tryIt)) : null)
 }
 
 /** The numbers of a change made to move one: the same run on the base commit and on the head. */
@@ -1016,29 +1190,32 @@ function measuredPanel(m, prHead) {
 	)
 }
 
-/** What the implementer says it proved, and what the reviewer model says to look at. */
-function builtPanel(built, reviewed) {
-	const list = (title, rows) => rows && rows.length ? h('div', {}, h('h3', { class: 'sub' }, title), h('ul', { class: 'plain' }, ...rows.map((r) => h('li', {}, r)))) : null
-	const order = ['low', 'medium', 'high']
-	const open = (built.decisions || []).slice().sort((a, b) => order.indexOf(a.confidence) - order.indexOf(b.confidence)).map((d) => `${d.decision} (${d.confidence} confidence)`)
-	const risk = reviewed?.risk
-	const rest = [
-		risk ? h('div', { class: 'row' }, chip(`${risk.door} door`, risk.door === 'one-way' ? 'warn' : ''), chip(`reaches the ${risk.reach}`, risk.reach === 'data' || risk.reach === 'app' ? 'warn' : '')) : null,
-		list('Where to look first', risk?.focus),
-		list('Not checked', built.notChecked),
-		list('Not in this change', built.leftOut),
-		list('Decided without you, least sure first', open),
-		list('Changed beyond what was asked', risk?.unrelated)
-	].filter(Boolean)
-	const claims = built.claims || []
-	return h('div', { class: 'panel' },
-		claims.length ? h('div', { class: 'claims' },
-			h('div', { class: 'claims-head' }, h('span', {}, 'Asked for'), h('span', {}, 'Proof')),
-			...claims.map((c) => h('div', { class: 'claim' }, h('div', {}, c.claim), h('div', { class: 'proof' }, c.evidence)))
-		) : null,
-		rest.length ? h('div', { class: 'body' }, ...rest) : null,
-		!claims.length && !rest.length ? h('div', { class: 'body' }, h('p', { class: 'muted' }, 'The implementer listed no claims')) : null
+/** What the implementer says it proved: each thing asked for, with what showed it. */
+function claimsTable(claims) {
+	return h('div', { class: 'claims' },
+		h('div', { class: 'claims-head' }, h('span', {}, 'Asked for'), h('span', {}, 'Proof')),
+		...claims.map((c) => h('div', { class: 'claim' }, h('div', {}, c.claim), h('div', { class: 'proof' }, c.evidence)))
 	)
+}
+
+/** What a merge leaves open: where the reviews say to look, and what the implementer did not check, left out or decided alone. */
+function awarePanel(built, risk, later) {
+	const order = ['low', 'medium', 'high']
+	const decided = (built.decisions || []).slice().sort((a, b) => order.indexOf(a.confidence) - order.indexOf(b.confidence)).map((d) => `${d.decision} (${d.confidence} confidence)`)
+	const left = [...(built.leftOut || []), ...(later || []).map((slice) => `${slice.title} (a later slice of the plan)`)]
+	const lists = [
+		['Changed beyond what was asked', risk?.unrelated, 'beyond what was asked'],
+		['Where to look first', risk?.focus],
+		['Not checked', built.notChecked, 'not checked'],
+		['Not in this change', left, 'left out'],
+		['Decided without you, least sure first', decided, 'decided without you']
+	].filter(([, rows]) => rows && rows.length)
+	if (!lists.length) return null
+	return {
+		note: dotted(...lists.filter(([, , word]) => word).map(([, rows, word]) => `${rows.length} ${word}`)),
+		tone: risk?.unrelated?.length ? 'warn' : '',
+		body: h('div', { class: 'body' }, ...lists.map(([title, rows]) => h('div', {}, h('h3', { class: 'sub' }, title), h('ul', { class: 'plain' }, ...rows.map((r) => h('li', {}, r))))))
+	}
 }
 
 function prPanel(data) {
@@ -1072,6 +1249,9 @@ function reviewItems(items) {
 	return h('div', { class: 'panel' }, ...items.slice().sort((a, b) => order(a) - order(b) || a.createdAt - b.createdAt).map((item) => {
 		const where = item.kind === 'thread' ? `${item.path || ''}${item.line ? `:${item.line}` : ''}` : item.kind
 		const outcome = item.handled ? `${item.handled}${item.handledCommit ? ` in ${item.handledCommit.slice(0, 7)}` : ''}` : null
+		const said = item.comments.map((c) => c.trusted || c.byFactory
+			? h('div', { class: 'quote md' }, h('div', { class: 'meta' }, `@${c.author}${c.authorKind === 'bot' ? ' (bot)' : ''}${c.byFactory ? ' (the factory)' : ''} · ${ago(c.createdAt)}`), md(c.body))
+			: h('div', { class: 'quote hidden' }, `Hidden: @${c.author} is outside the project, so the factory ignores this comment.`))
 		return h('div', { class: 'item' },
 			h('div', { class: 'item-head' },
 				item.needsAction ? chip('needs action', 'warn') : null,
@@ -1082,10 +1262,8 @@ function reviewItems(items) {
 				item.truncated ? h('span', { class: 'meta' }, 'over 100 comments: read the rest on GitHub') : null,
 				h('span', { class: 'end' }, safeLink(item.url, 'Open on GitHub'))
 			),
-			...item.comments.map((c) => c.trusted || c.byFactory
-				? h('div', { class: 'quote md' }, h('div', { class: 'meta' }, `@${c.author}${c.authorKind === 'bot' ? ' (bot)' : ''}${c.byFactory ? ' (the factory)' : ''} · ${ago(c.createdAt)}`), md(c.body))
-				: h('div', { class: 'quote hidden' }, `Hidden: @${c.author} is outside the project, so the factory ignores this comment.`)),
-			item.handledNote ? h('div', { class: 'meta' }, `Factory: ${item.handledNote}`) : null
+			item.handledNote ? h('div', { class: 'meta' }, `Factory: ${item.handledNote}`) : null,
+			item.needsAction || item.blocksMerge ? said : fold(`item:${item.id}`, `${count(said.length, 'comment')} by ${[...new Set(item.comments.map((c) => `@${c.author}`))].join(', ')}`, ...said)
 		)
 	}))
 }
@@ -1098,8 +1276,10 @@ function findingsList(findings) {
 			chip(f.outcome || 'open', f.outcome === 'fixed' ? 'ok' : f.outcome === 'upheld' ? 'bad' : ''),
 			h('span', { class: 'mono muted' }, dotted(f.subject, f.file ? `${f.file}${f.line ? `:${f.line}` : ''}` : null, f.id))
 		),
-		h('div', {}, f.title ? h('strong', { style: 'font-weight:500' }, `${f.title}. `) : null, f.text),
-		f.outcomeNote ? h('div', { class: 'meta' }, f.outcomeNote) : null
+		// A settled finding is history: its title and what became of it, with the text one click away.
+		f.title && !isOpenFinding(f)
+			? [h('div', {}, h('strong', { style: 'font-weight:500' }, f.title), f.outcomeNote ? h('span', { class: 'meta' }, ` · ${f.outcomeNote}`) : null), fold(`finding:${f.id}`, 'What it said', h('p', {}, f.text))]
+			: [h('div', {}, f.title ? h('strong', { style: 'font-weight:500' }, `${f.title}. `) : null, f.text), f.outcomeNote ? h('div', { class: 'meta' }, f.outcomeNote) : null]
 	)))
 }
 

@@ -56,6 +56,22 @@ describe('captures', () => {
 		expect(readdirSync(join(h.home, 'evidence', 't1'))).toHaveLength(2)
 	})
 
+	test("a stage's child adds captures to the issue whose run it reports on, while that run is open", async () => {
+		const run = (await as('/api/issue/run', { stage: 'implement' })).body.run
+		const child = (body: Record<string, unknown>) => h.as('child-thread')('POST', '/api/issue/evidence', body)
+		const capture = { action: 'add', path: shot('orders.png'), title: 'Orders page', label: 'before' }
+		const unknown = await child(capture)
+		expect(unknown.status).toBe(404)
+		expect(unknown.body.error).toContain("a stage's child reports on its run first")
+		await h.as('child-thread')('POST', `/api/runs/${run}/report`, { text: 'started' })
+		expect((await child(capture)).status).toBe(200)
+		expect((await as('/api/issue/status')).body.evidence).toHaveLength(1)
+		// Pushing captures to GitHub stays the issue's own thread's.
+		expect((await child({ action: 'plan' })).status).toBe(404)
+		await h.as('child-thread')('POST', `/api/runs/${run}/report`, { text: 'gave up', failed: true })
+		expect((await child(capture)).status).toBe(404)
+	})
+
 	test('what is not a capture is refused, and a file outside the evidence folder is never served', async () => {
 		const text = join(h.dir, 'notes.txt')
 		writeFileSync(text, 'x')
@@ -80,7 +96,7 @@ describe('captures', () => {
 })
 
 describe('on GitHub', () => {
-	const implement = { prUrl: 'https://github.com/acme/api/pull/7', commit: 'abc1234', claims: [], notChecked: ['Safari'], leftOut: [], decisions: [] }
+	const implement = { built: 'The orders page shows a selection bar', prUrl: 'https://github.com/acme/api/pull/7', commit: 'abc1234', claims: [], notChecked: ['Safari'], leftOut: [], decisions: [] }
 	async function built(extra: Record<string, unknown> = {}) {
 		const run = (await as('/api/issue/run', { stage: 'implement' })).body.run
 		const res = await h.as('child')('POST', `/api/runs/${run}/report`, { text: 'done', done: true, result: { outcome: 'done', result: { ...implement, ...extra } } })
@@ -126,7 +142,7 @@ describe('on GitHub', () => {
 	test('the body shows how the problem was reproduced, what was measured, what was left out and which model did each stage', async () => {
 		const research = (await as('/api/issue/run', { stage: 'research' })).body.run
 		const reproduction = { command: 'bun test src/export.test.ts', base: 'ba5e1234567890', observed: '1 fail: the export times out after 30 s.' }
-		const researched = { kind: 'bug', size: 'S', route: 'implement', reproduction, checks: [] }
+		const researched = { asked: 'The export fails', kind: 'bug', size: 'S', route: 'implement', reproduction, checks: [] }
 		expect((await h.as('child')('POST', `/api/runs/${research}/report`, { text: 'x', done: true, result: { outcome: 'done', result: researched } })).status).toBe(200)
 		const measured = {
 			how: 'A copy of the demo database, 5 runs each, the median.',
@@ -154,7 +170,7 @@ describe('on GitHub', () => {
 
 	async function researched(reproduction: Record<string, string>) {
 		const run = (await as('/api/issue/run', { stage: 'research' })).body.run
-		const result = { kind: 'bug', size: 'S', route: 'implement', reproduction, checks: [] }
+		const result = { asked: 'The export fails', kind: 'bug', size: 'S', route: 'implement', reproduction, checks: [] }
 		expect((await h.as('child')('POST', `/api/runs/${run}/report`, { text: 'x', done: true, result: { outcome: 'done', result } })).status).toBe(200)
 	}
 

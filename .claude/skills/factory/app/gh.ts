@@ -41,7 +41,7 @@ export function parsePrUrl(url: string): PrRef {
 }
 
 export const VIEW_FIELDS =
-	'number,url,state,isDraft,headRefOid,baseRefName,author,mergeable,mergeStateStatus,reviewDecision,statusCheckRollup,latestReviews,reviewRequests,mergedAt,mergedBy'
+	'number,url,state,isDraft,headRefOid,baseRefName,author,mergeable,mergeStateStatus,reviewDecision,statusCheckRollup,latestReviews,reviewRequests,mergedAt,mergedBy,additions,deletions,changedFiles'
 
 const PAGED = (connection: string, size: number, nodes: string) => `query($owner: String!, $name: String!, $pr: Int!, $endCursor: String) {
   repository(owner: $owner, name: $name) { pullRequest(number: $pr) {
