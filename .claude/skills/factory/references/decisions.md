@@ -25,8 +25,8 @@ The service refuses `--provisional` on `plan`, `merge` and `blocked`.
 
 ## How to word one
 
-- One question per decision. Questions you can ask now go out together, one `factory ask` each, before you end the turn; the page sends their answers back in one message once no blocking one is left.
-- `--recommend` is worded so that accepting it is a whole answer: "Keep `total` as an alias of `amount` for one release", not "Yes". The page's first button is "Accept: <recommendation>". `--option` adds the other answers only, never the recommendation in other words: the service tells another answer from the recommendation by its text, and another answer sends a plan back to be written again.
+- One question per decision. Questions you can ask now go out together, one `factory ask` each, before you end the turn; the page submits them together and sends their answers back in one message once no blocking one is left. When a revision replaces an earlier open question, pass `--replaces <old-id>` so the stale question leaves `Needs you`.
+- `--recommend` and `--option` are short, scannable choice labels (roughly 4 to 14 words): "Keep `total` as an alias for one release", not "Yes" and not a 40-word paragraph. Put the tradeoffs and rationale in `--question` after the question mark, not stuffed into the option text. `--option` lists the alternative answers only, never the recommendation in other words: the service tells another answer from the recommendation by its text, and another answer sends a plan back to be written again.
 - The question is the first sentence, ending in its question mark: the page shows it as the headline, and it must be answerable alone. After it, at most two sentences on what the answer hangs on: what you found, and what each option costs. The page shows what was asked, what was built, the checks and the reviews beside the question, so repeat none of them. Never ask what the code, the docs or a command can tell you; look it up.
 - After a provisional ask, your message to the user says what is being built meanwhile, and that the answer holds only the merge.
 - The service writes every question with its answer, or its recommendation while unanswered, into the plan and implement briefs. Build on a recommendation as part of the change itself, in the commits the change needs anyway.
@@ -34,5 +34,5 @@ The service refuses `--provisional` on `plan`, `merge` and `blocked`.
 ## When the answer comes
 
 1. `factory status` shows every decision with its answer.
-2. For a provisional answer that differs from the recommendation, rework what you built on the guess before anything is merged. The gate stays blocked by `decisions` while any decision has no answer. The answer Merge to a `merge` decision also answers every provisional question asked before it with its recommendation.
+2. For a provisional answer that differs from the recommendation, rework what you built on the guess before anything is merged. The gate stays blocked by `decisions` while any decision has no answer. The answer Merge to a `merge` decision also answers every provisional question asked before it with its recommendation. An answer starting with `Do not merge:` carries the user's requested changes before merging: act on them, push, re-check, and ask Merge again on the new head.
 3. A message that lists only ids you already acted on changes nothing.

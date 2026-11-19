@@ -209,7 +209,10 @@ export const MIGRATIONS = [
 	);
 	create index webhook_deliveries_due on webhook_deliveries (next_at) where state = 'pending';`,
 	// Who answered a decision held for the thread: the page, or an agent through the MCP server.
-	`alter table decisions add column answered_from text;`
+	`alter table decisions add column answered_from text;`,
+	// A later revision can supersede an open question, and a person approving a plan can opt into auto-ship once CI and reviews pass.
+	`alter table decisions add column superseded_by text;
+	alter table issues add column auto_ship integer not null default 0;`
 ]
 
 export const MAX_EVENT = 2000
@@ -256,6 +259,8 @@ export type IssueRow = {
 	/** When the usage limit that stopped a stage resets; the service wakes the thread then. */
 	limit_until: number | null
 	limit_note: string | null
+	/** Set by the user on plan approval to skip the final merge confirmation once CI and reviews pass. */
+	auto_ship: number
 }
 
 /** A message the service gave a thread, until it shows in the thread's messages. */
@@ -383,6 +388,8 @@ export type DecisionRow = {
 	round: number | null
 	/** `mcp` for an answer an agent gave through the MCP server; null for the page or the thread. */
 	answered_from: string | null
+	/** Another decision that replaced this open question before it was answered. */
+	superseded_by: string | null
 }
 
 export type EventRow = { id: number; issue_id: string; run_id: string | null; at: number; kind: string; text: string }

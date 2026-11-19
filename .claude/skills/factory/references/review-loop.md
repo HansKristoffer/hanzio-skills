@@ -93,13 +93,13 @@ It syncs, then prints `ready` or the blockers, each in words.
 
 - `ready`: go to `land.md`.
 - Blocked by `checks`, `bots`, `approval`, `changes-requested`, `threads` or `merge-setting` with merge `never`: wait. `factory wait --on checks|bots|review|merge --note "<who or what>"`, keep the PR watched, and end the turn. The issue shows under Waiting on others, is never nudged as stuck, and the service reads the PR every ten minutes and messages you when something needs you.
-- Blocked by `risk`, by `merge-setting` with merge `ask`, or by `internal-review` after the user answered to go on without one: once nothing else blocks but `decisions` for provisional questions, ask a `merge` decision about this head and end the turn. After the question, one sentence on why it waits for the user (the blocker in plain words) and one on what merging sets off beyond the deploy (an item closed, a person emailed, a release). The answer Merge accepts the recommendation of every provisional question still open, since the head was built on them, and the page says so under the question:
+- Blocked by `risk`, by `merge-setting` with merge `ask`, or by `internal-review` after the user answered to go on without one: once nothing else blocks but `decisions` for provisional questions, ask a `merge` decision about this head and end the turn. (When the user opted into auto-ship on plan approval, `autoShip: true` clears `merge: ask` and planned risks automatically once checks, bots, internal review and decisions are clean with no `unrelated` changes.) After the question, one sentence on why it waits for the user (the blocker in plain words) and one on what merging sets off beyond the deploy (an item closed, a person emailed, a release). The answer Merge accepts the recommendation of every provisional question still open, since the head was built on them, and the page says so under the question:
 
   ```bash
   factory ask --kind merge --head <sha> --question "Merge PR #<n>? <why it waits for you>. <what merging sets off>." --recommend "<Merge, or what to change first>"
   ```
 
-  Only the answer Merge on that head clears it; a push since means asking again.
+  Only the answer Merge on that head clears it; a push since means asking again. An answer starting with `Do not merge:` gives changes the user wants before merging: make those changes (in this worktree for a few lines, or one implement run), push, re-verify, and ask Merge again on the new head.
 - Blocked by `items`, `risk-unchecked`, or `internal-review` on a head no review was tried on: steps 3 and 4.
 - Blocked by `decisions`: answer what came back, or wait for it.
 - Something you cannot fix: a `blocked` decision with what you tried.

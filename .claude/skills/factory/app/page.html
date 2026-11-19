@@ -64,6 +64,8 @@
 	.btn.primary:hover { background: color-mix(in srgb, var(--ink) 86%, var(--bg)); }
 	.btn.sm { height: 28px; padding: 0 8px; color: var(--ink2); }
 	.btn.sm:hover { color: var(--ink); }
+	.btn.primary.sm { color: var(--bg); }
+	.btn.primary.sm:hover { color: var(--bg); }
 	.btn.quiet { border-color: transparent; background: transparent; color: var(--ink2); }
 	.btn.quiet:hover { background: var(--raised); color: var(--bad); }
 	.btn.long { height: auto; min-height: 32px; padding: 6px 12px; justify-content: flex-start; text-align: left; white-space: normal; }
@@ -106,13 +108,25 @@
 
 	/* Overview figures */
 	.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; overflow: hidden; background: linear-gradient(var(--line), var(--line)), var(--panel); }
-	.stat { padding: 16px 20px; background: var(--panel); text-decoration: none; }
-	a.stat { transition: background-color .15s var(--ease); }
-	a.stat:hover { background: var(--raised); }
+	.stat { position: relative; display: block; width: 100%; border: 0; padding: 16px 20px; background: var(--panel); color: inherit; font: inherit; text-align: left; text-decoration: none; }
+	a.stat, button.stat { cursor: pointer; transition: background-color .15s var(--ease); }
+	a.stat:hover, button.stat:hover { background: var(--raised); }
+	.stat.active { background: var(--raised); box-shadow: inset 0 -2px 0 var(--ink); }
+	.stat.warn.active { box-shadow: inset 0 -2px 0 var(--warn); }
 	.stat-l { font-size: 13px; color: var(--ink2); }
 	.stat-n { margin-top: 8px; font-size: 28px; line-height: 32px; font-weight: 500; font-variant-numeric: tabular-nums; }
 	.stat.warn .stat-l, .stat.warn .stat-n { color: var(--warn); }
 	@container (max-width: 640px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+	/* Board filters */
+	.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 16px; }
+	.pills { display: flex; flex-wrap: wrap; gap: 4px; }
+	.pill { height: 28px; padding: 0 10px; border: 1px solid var(--line2); border-radius: 8px; background: var(--panel); color: var(--ink2); font: 13px/20px var(--sans); cursor: pointer; transition: background-color .15s var(--ease), color .15s var(--ease), border-color .15s var(--ease); }
+	.pill:hover { background: var(--raised); color: var(--ink); }
+	.pill.on { border-color: var(--ink); background: var(--ink); color: var(--bg); font-weight: 500; }
+	.search { margin-left: auto; width: 220px; height: 28px; padding: 0 10px; font-size: 13px; }
+	@container (max-width: 640px) { .search { margin-left: 0; width: 100%; } }
+	.kbd { display: inline-flex; align-items: center; padding: 1px 5px; border-radius: 4px; background: color-mix(in srgb, currentColor 12%, transparent); font: 11px/14px var(--mono); opacity: .75; }
 
 	/* The line: five stations, the one an issue is at lit in its status colour */
 	.t-idle { --tone: var(--ink); }
@@ -173,44 +187,110 @@
 		.cell-act { justify-content: flex-start; }
 	}
 
-	/* Needs you */
+	/* Needs you & Decision workbench */
 	.needs { border-color: var(--warn-line); }
 	.needs .lhead h2 { color: var(--warn); }
+	.lhead-end { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+	.wb-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding: 14px 20px; border-bottom: 1px solid var(--line); background: var(--warn-bg); border-radius: 11px 11px 0 0; }
+	.wb-head h2 { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--warn); }
+	.wb-plan { padding: 16px 20px; border-bottom: 1px solid var(--line); }
+	.wb-plan-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+	.wb-plan-top h3 { font-size: 14px; font-weight: 500; }
+	.wb-plan .outline { margin-top: 10px; }
+	.wb-plan .wb-facts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 	.need { padding: 20px; border-top: 1px solid var(--line); }
-	.need-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; font-size: 13px; color: var(--muted); }
+	.need:first-child { border-top: 0; }
+	.need.blocking { box-shadow: inset 3px 0 0 var(--warn-dot); }
+	.need-top { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 12px; color: var(--muted); }
 	.need-top time { margin-left: auto; }
+	.q-num { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 6px; background: var(--raised); color: var(--ink2); font: 500 12px/1 var(--mono); }
 	.kind { font-weight: 500; color: var(--warn); }
 	.kind.bad { color: var(--bad); }
-	.question { max-width: 80ch; margin-top: 8px; font-size: 16px; line-height: 24px; font-weight: 500; overflow-wrap: anywhere; }
-	.q-more { max-width: 80ch; margin-top: 4px; color: var(--ink2); overflow-wrap: anywhere; }
+	.kind.quiet { color: var(--muted); font-weight: 400; }
+	.question { max-width: 80ch; margin-top: 8px; font-size: 15px; line-height: 22px; font-weight: 500; overflow-wrap: anywhere; }
+	.q-more { max-width: 80ch; margin-top: 4px; font-size: 13px; line-height: 20px; color: var(--ink2); overflow-wrap: anywhere; }
 	.need > .meta, .need > .md, .need > details, .need > .answer, .need > .row, .outline { margin-top: 12px; }
 	.outline { max-width: 80ch; padding-left: 20px; }
-	.outline li + li { margin-top: 4px; }
+	.outline li + li { margin-top: 6px; }
 	.need > .meta { max-width: 80ch; color: var(--ink2); }
+	/* Radio-style selectable option cards */
+	.opt-list { display: grid; gap: 8px; margin-top: 12px; max-width: 78ch; }
+	.opt-card { display: flex; align-items: flex-start; gap: 10px; width: 100%; padding: 10px 12px; border: 1px solid var(--line2); border-radius: 10px; background: var(--panel); color: var(--ink); font: 13px/20px var(--sans); text-align: left; cursor: pointer; transition: border-color .15s var(--ease), background-color .15s var(--ease), box-shadow .15s var(--ease); }
+	.opt-card:hover { background: var(--raised); }
+	.opt-card.picked { border-color: var(--ink); background: var(--raised); box-shadow: inset 0 0 0 1px var(--ink); }
+	.opt-card .radio { flex: none; width: 16px; height: 16px; margin-top: 2px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--line2); transition: box-shadow .15s var(--ease); }
+	.opt-card.picked .radio { box-shadow: inset 0 0 0 5px var(--ink); }
+	.opt-card .opt-body { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+	.opt-card .opt-rec { display: inline-flex; margin-left: 8px; padding: 0 6px; border-radius: 4px; background: var(--panel); box-shadow: inset 0 0 0 1px var(--line2); color: var(--ink2); font-size: 11px; line-height: 18px; vertical-align: 1px; }
+	.opt-card.custom-toggle { color: var(--ink2); border-style: dashed; }
+	.opt-custom-box { margin-top: 8px; }
+	.opt-custom-box textarea { min-height: 56px; font-size: 13px; }
+	.answered-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; padding: 12px 20px; border-top: 1px solid var(--line); font-size: 13px; color: var(--ink2); }
+	.answered-row .ok-mark { color: var(--ok); font-weight: 600; }
+	.answered-row .ans-val { color: var(--ink); font-weight: 500; }
+	.wb-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 16px; padding: 14px 20px; border-top: 1px solid var(--line); background: var(--raised); border-radius: 0 0 11px 11px; }
+	.wb-bar-meta { display: grid; gap: 4px; min-width: 0; }
+	.wb-status { font-size: 13px; color: var(--ink2); }
+	.wb-status.warn { color: var(--warn); font-weight: 500; }
+	.wb-auto { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink2); cursor: pointer; user-select: none; }
+	.wb-auto input { width: 15px; height: 15px; margin: 0; accent-color: var(--ink); cursor: pointer; }
+	.wb-feedback { padding: 12px 20px; border-top: 1px solid var(--line); background: var(--panel); }
+	.wb-feedback textarea { min-height: 64px; font-size: 13px; }
 	.own { display: flex; gap: 8px; align-items: flex-end; max-width: 720px; margin-top: 12px; }
 	.own textarea { min-height: 36px; height: 36px; }
-	.need .error { margin-top: 8px; }
+	.need .error, .wb-bar .error { margin-top: 4px; }
 
 	/* Issue page */
+	.itop { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
 	.back { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--muted); text-decoration: none; }
 	.back:hover { color: var(--ink); }
+	.triage-nav { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink2); }
+	.triage-nav .count { padding: 2px 8px; border-radius: 6px; background: var(--warn-bg); color: var(--warn); box-shadow: inset 0 0 0 1px var(--warn-line); }
+	.banner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin-top: 12px; padding: 10px 14px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line2); font-size: 13px; }
+	.banner strong { font-weight: 500; color: var(--ok); }
 	.ititle { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px 24px; margin-top: 12px; }
-	.ititle h1 { flex: 1 1 320px; }
+	.ititle h1 { flex: 1 1 320px; font-size: 22px; line-height: 30px; }
 	.imeta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 8px; font-size: 13px; color: var(--muted); }
 	.imeta .slabel { color: var(--ink); }
 	.imeta.t-warn .slabel { color: var(--warn); }
 	.imeta.t-bad .slabel { color: var(--bad); }
-	.line { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin-top: 20px; padding: 16px 0; }
-	.stn { min-width: 0; text-align: center; }
-	.stn .st { height: 24px; }
-	.stn .st::before { top: 11px; }
-	.stn-name { margin-top: 8px; font-size: 13px; font-weight: 500; color: var(--muted); }
+	/* Compact interactive stage rail */
+	.rail { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin-top: 16px; padding: 10px 8px; }
+	.stn { min-width: 0; display: flex; flex-direction: column; align-items: center; padding: 4px; border: 0; border-radius: 8px; background: transparent; color: inherit; font: inherit; text-align: center; cursor: pointer; transition: background-color .15s var(--ease); }
+	.stn:hover { background: var(--raised); }
+	.stn .st { width: 100%; height: 18px; }
+	.stn .st::before { top: 8px; }
+	.stn-row { display: inline-flex; flex-wrap: wrap; align-items: baseline; justify-content: center; gap: 4px 6px; margin-top: 4px; }
+	.stn-name { font-size: 12px; font-weight: 500; color: var(--muted); }
 	.stn.on .stn-name { color: var(--ink); }
-	.stn-sub { min-height: 16px; margin-top: 2px; padding: 0 4px; font: 12px/16px var(--mono); color: var(--muted); }
+	.stn-sub { font: 11px/16px var(--mono); color: var(--muted); }
 	.stn-sub.bad { color: var(--bad); }
-	.ipage { max-width: 920px; margin: 0 auto; }
-	.doing { max-width: 80ch; margin-top: 4px; font-size: 13px; color: var(--ink2); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
-	.doing time { margin-right: 8px; }
+	.ipage { max-width: 960px; margin: 0 auto; }
+	/* Live activity while working */
+	.live-feed { margin-top: 16px; padding: 14px 20px; }
+	.live-feed-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: 13px; }
+	.live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok-dot); flex: none; }
+	.live-feed-list { margin: 10px 0 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+	.live-feed-list li { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 8px; font-size: 13px; color: var(--ink2); overflow-wrap: anywhere; }
+	.live-feed-list li:first-child { color: var(--ink); }
+	/* Inline heads-up before merge */
+	.headsup { margin-top: 16px; padding: 14px 20px; border-color: var(--warn-line); }
+	.headsup h3 { font-size: 13px; font-weight: 600; color: var(--warn); }
+	.headsup-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px 20px; margin-top: 10px; }
+	.headsup-col h4 { font-size: 12px; font-weight: 500; color: var(--ink2); margin-bottom: 4px; }
+	.headsup-col ul { margin: 0; padding-left: 16px; font-size: 13px; color: var(--ink); }
+	.headsup-col li + li { margin-top: 2px; }
+	/* Quick steer / note box */
+	.steer { margin-top: 16px; padding: 12px 16px; }
+	.steer-row { display: flex; gap: 8px; align-items: flex-end; }
+	.steer-row textarea { min-height: 36px; height: 36px; font-size: 13px; }
+	.asked-sub { margin-top: 3px; font-size: 13px; color: var(--ink2); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; overflow-wrap: anywhere; }
+	/* Segmented control for New issue */
+	.seg { display: inline-flex; padding: 3px; border-radius: 10px; background: var(--raised); border: 1px solid var(--line); gap: 2px; }
+	.seg button { height: 28px; padding: 0 12px; border: 0; border-radius: 7px; background: transparent; color: var(--ink2); font: 500 13px/20px var(--sans); cursor: pointer; transition: background-color .15s var(--ease), color .15s var(--ease); }
+	.seg button.on { background: var(--panel); color: var(--ink); box-shadow: var(--shadow); }
+	.fetch-row { display: flex; gap: 8px; }
+	.fetch-row input { flex: 1; }
 	/* In brief: what was asked, what was built and what stands behind it, before anything else */
 	.brief { margin-top: 16px; padding: 0 20px; }
 	.brow { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 4px 16px; padding: 16px 0; border-top: 1px solid var(--line); }
@@ -327,8 +407,18 @@
 	.view-bar strong { font-size: 15px; font-weight: 500; overflow-wrap: anywhere; }
 	.view-stage { display: grid; place-items: center; min-height: 0; padding: 16px; }
 	.view-stage img, .view-stage video { max-width: 100%; max-height: 100%; min-height: 0; border-radius: 8px; box-shadow: 0 0 0 1px var(--line2); background: var(--raised); object-fit: contain; }
+	.view-stage.side { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: stretch; }
+	.view-pane { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 8px; min-height: 0; min-width: 0; }
+	.view-pane-head { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+	.view-pane img { justify-self: center; align-self: center; }
 	.view-note { max-width: 80ch; margin: 0 auto; padding: 0 16px 16px; text-align: center; color: var(--ink2); overflow-wrap: anywhere; }
 	.view-note:empty { display: none; }
+	/* Full plan reading sheet */
+	dialog.plan-view { width: min(860px, 100vw); max-width: 100vw; height: 100dvh; max-height: 100dvh; margin: 0 0 0 auto; padding: 0; border: 0; border-left: 1px solid var(--line); background: var(--panel); color: var(--ink); }
+	dialog.plan-view::backdrop { background: rgba(0, 0, 0, .42); }
+	dialog.plan-view[open] { display: grid; grid-template-rows: auto minmax(0, 1fr); }
+	.plan-body { overflow-y: auto; padding: 24px 28px 64px; }
+	.plan-body .md { max-width: 74ch; }
 
 	/* Settings */
 	.sgrid { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 32px; align-items: start; margin-top: 24px; }
@@ -421,15 +511,27 @@ const ICONS = {
 	prev: '<path d="m15 18-6-6 6-6"/>',
 	next: '<path d="m9 18 6-6-6-6"/>',
 	close: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
-	out: '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>'
+	out: '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
+	doc: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h6"/>',
+	split: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/>'
 }
 const main = document.getElementById('main')
 let board = { issues: [], done: [], open: 0, needsYou: 0 }
+let allRepos = []
 let loaded = false
 let settingsScope = 'global'
-/** What the user typed and opened survives the redraw each live change causes. */
+/** What the user typed, picked and opened survives the redraw each live change causes. */
 const drafts = new Map()
+const selections = new Map()
+const autoShipDraft = new Map()
+const planChangeOpen = new Set()
+const mergeChangeOpen = new Set()
 const opened = new Set()
+let justSubmitted = null
+const boardFilter = { status: 'all', repo: '', query: '' }
+const doneFilter = { repo: '', outcome: '', query: '' }
+let newMode = 'issue'
+const newDraft = { repo: '', title: '', pr: '', source: '', body: '', merge: '' }
 
 function h(tag, attrs, ...children) {
 	const el = document.createElement(tag)
@@ -665,7 +767,7 @@ function statusOf(i) {
 	if (i.threadGone) return { tone: 'bad', label: 'Thread gone', note: ['T3 Code cannot find its thread'] }
 	if (i.undelivered) return { tone: 'bad', label: 'Message stuck', note: ["A factory message has not reached the idle thread: open it in T3 Code and resume its queue"] }
 	if (i.stuck) return { tone: 'bad', label: 'Stuck', note: ['No report after being asked to go on'] }
-	const open = (i.decisions || []).filter((d) => d.answer === null)
+	const open = (i.decisions || []).filter(isOpenDec)
 	if (open.length) {
 		const questions = open.filter((d) => d.kind === 'question').length
 		const has = (kind) => open.some((d) => d.kind === kind)
@@ -699,11 +801,295 @@ function track(issue, status) {
 	}))
 }
 
-/** What waits for the user in one issue, in the order to answer it: the questions, then what is built on their answers. */
-const inOrder = (decisions) => decisions.slice().sort((a, b) => (a.kind === 'question' ? 0 : 1) - (b.kind === 'question' ? 0 : 1) || a.askedAt - b.askedAt)
+/** What waits for the user in one issue: blocking questions first, then provisional questions, then plan/merge/blocked. */
+const inOrder = (decisions) => decisions.slice().sort((a, b) => {
+	const rank = (d) => (d.kind === 'question' ? (d.provisional ? 1 : 0) : d.kind === 'plan' ? 2 : d.kind === 'blocked' ? 3 : 4)
+	return rank(a) - rank(b) || a.askedAt - b.askedAt
+})
 
-/** One decision on its issue's page. `beside` is everything that waits in the same issue; `outline` is the latest plan's. */
-function decisionCard(issue, d, beside, outline) {
+const isOpenDec = (d) => d.answer === null && !d.supersededBy
+
+/** Returns the current chosen answer for an open question (provisional questions default to their recommendation). */
+function pickedFor(d) {
+	const saved = selections.get(d.id)
+	if (saved) return saved
+	if (d.provisional) return { mode: 'option', value: d.recommendation }
+	return null
+}
+
+function answerValueOf(d) {
+	const p = pickedFor(d)
+	if (!p) return ''
+	return p.mode === 'custom' ? (drafts.get(`custom:${d.id}`) || '').trim() : p.value
+}
+
+/** Full plan reading sheet outside <main>, so live SSE updates never close or scroll-jump it. */
+const planSheet = { el: null }
+function openPlanSheet(title, markdown) {
+	if (!planSheet.el) {
+		planSheet.el = h('dialog', { class: 'plan-view', 'aria-label': 'Full plan', onclick: (e) => { if (e.target === planSheet.el) planSheet.el.close() }, onclose: () => planSheet.el.replaceChildren() })
+		document.body.append(planSheet.el)
+	}
+	planSheet.el.replaceChildren(
+		h('div', { class: 'view-bar' },
+			h('strong', {}, title),
+			h('button', { class: 'btn sm', onclick: () => planSheet.el.close(), 'aria-label': 'Close' }, icon('close'), 'Close', h('span', { class: 'kbd' }, 'Esc'))
+		),
+		h('div', { class: 'plan-body' }, h('div', { class: 'md' }, md(markdown)))
+	)
+	planSheet.el.showModal()
+}
+
+/** Unified Decision Workbench for plan approval and/or open questions (with single atomic submit). */
+function decisionWorkbench(data, pending, planRes) {
+	const issue = data.issue
+	const held = pending.filter((d) => d.answer !== null)
+	const openQuestions = inOrder(pending.filter((d) => isOpenDec(d) && d.kind === 'question'))
+	const openPlan = pending.find((d) => isOpenDec(d) && d.kind === 'plan') || null
+	const openBlocked = pending.filter((d) => isOpenDec(d) && d.kind === 'blocked')
+	const openMerge = pending.find((d) => isOpenDec(d) && d.kind === 'merge') || null
+	const retry = async (errEl) => {
+		try { await api('POST', `/api/issues/${encodeURIComponent(issue.id)}/deliver`, {}) } catch (e) { errEl.textContent = e.message }
+	}
+	const cards = []
+
+	// Already answered on the page, waiting for delivery or remaining blocking items: one compact row each.
+	const heldRow = (d) => {
+		const err = h('span', { class: 'error' })
+		return h('div', { class: 'answered-row' },
+			h('span', { class: 'ok-mark' }, '✓'),
+			h('span', {}, splitQuestion(d.question)[0]),
+			h('span', { class: 'ans-val' }, d.answer),
+			h('span', { class: 'meta' }, d.delivery === 'failed' ? 'Delivery failed' : 'Held until the rest is answered'),
+			d.delivery === 'failed' ? h('button', { class: 'btn sm', onclick: () => retry(err) }, 'Retry') : null,
+			err
+		)
+	}
+
+	// 1. Plan + Questions unified workbench
+	if (openPlan || openQuestions.length) {
+		const box = h('section', { class: 'panel needs', style: 'margin-top:20px' })
+		const rebuild = () => {
+			const errorEl = h('div', { class: 'error' })
+			const unselectedBlocking = openQuestions.filter((d) => !answerValueOf(d))
+			const differing = openPlan ? openQuestions.filter((d) => { const v = answerValueOf(d); return v && v !== d.recommendation }) : []
+			const fbKey = `plan-fb:${issue.id}`
+			const fbOpen = planChangeOpen.has(issue.id) || differing.length > 0
+			const fbText = (drafts.get(fbKey) || '').trim()
+			const willRevise = !!openPlan && (differing.length > 0 || planChangeOpen.has(issue.id))
+			const planText = openPlan?.body || planRes?.plan || ''
+
+			const submitAll = async () => {
+				if (unselectedBlocking.length) return
+				const answers = openQuestions.map((d) => ({ decision: d.id, answer: answerValueOf(d) }))
+				if (openPlan) {
+					const planAns = willRevise ? (fbText ? `Change: ${fbText}` : 'Change') : 'Approve'
+					answers.push({ decision: openPlan.id, answer: planAns })
+				}
+				for (const b of box.querySelectorAll('button')) b.disabled = true
+				errorEl.textContent = ''
+				try {
+					const res = await api('POST', `/api/issues/${encodeURIComponent(issue.id)}/answers`, {
+						answers,
+						autoShip: !!openPlan && !willRevise && !!autoShipDraft.get(issue.id)
+					})
+					for (const d of openQuestions) { selections.delete(d.id); drafts.delete(`custom:${d.id}`) }
+					drafts.delete(fbKey)
+					planChangeOpen.delete(issue.id)
+					autoShipDraft.delete(issue.id)
+					if (res.error) { errorEl.textContent = `Saved, but not delivered: ${res.error}`; for (const b of box.querySelectorAll('button')) b.disabled = false; return }
+					justSubmitted = { issueId: issue.id, label: openPlan ? (willRevise ? 'Sent choices to revise the plan' : 'Plan approved, implementation starting') : 'Answers sent to thread' }
+					await refreshBoard()
+					draw()
+				} catch (e) {
+					errorEl.textContent = e.message
+					for (const b of box.querySelectorAll('button')) b.disabled = false
+				}
+			}
+
+			const hasUnpicked = openQuestions.some((d) => !pickedFor(d))
+			const pickAllRec = () => {
+				for (const d of openQuestions) selections.set(d.id, { mode: 'option', value: d.recommendation })
+				rebuild()
+			}
+
+			const titleText = openPlan
+				? (openQuestions.length ? `Review plan & ${count(openQuestions.length, 'choice')}` : 'Approve the plan')
+				: count(openQuestions.length, 'decision')
+
+			const head = h('div', { class: 'wb-head' },
+				h('h2', {}, titleText),
+				h('div', { class: 'row' },
+					hasUnpicked ? h('button', { class: 'btn sm', onclick: pickAllRec }, 'Select recommended for all') : null,
+					planText ? h('button', { class: 'btn sm', onclick: () => openPlanSheet(`Plan: ${issue.title}`, planText) }, icon('doc'), 'Read full plan') : null
+				)
+			)
+
+			let planBlock = null
+			if (openPlan) {
+				const outline = planRes?.outline || []
+				const criteria = planRes?.criteria || []
+				const later = planRes?.later || []
+				const [ask, more] = splitQuestion(openPlan.question)
+				planBlock = h('div', { class: 'wb-plan' },
+					h('div', { class: 'wb-plan-top' },
+						h('h3', {}, ask),
+						when(openPlan.askedAt)
+					),
+					more ? h('p', { class: 'q-more' }, more) : null,
+					outline.length
+						? h('ul', { class: 'outline' }, ...outline.map((point) => h('li', {}, mdInline(point))))
+						: (!more && planRes?.planned ? h('p', { class: 'q-more', style: 'margin-top:8px' }, planRes.planned) : null),
+					(criteria.length || later.length) ? h('div', { class: 'wb-facts' },
+						criteria.length ? chip(criteria.length === 1 ? '1 acceptance criterion' : `${criteria.length} acceptance criteria`) : null,
+						later.length ? chip(`${count(later.length, 'later slice')} deferred`) : null
+					) : null
+				)
+			}
+
+			const qCards = openQuestions.map((d, idx) => {
+				const [ask, more] = splitQuestion(d.question)
+				const picked = pickedFor(d)
+				const opts = [d.recommendation, ...(d.options || []).filter((o) => o && o !== d.recommendation)]
+				const isCustom = picked?.mode === 'custom'
+				const customInput = isCustom ? h('textarea', {
+					rows: 2,
+					placeholder: 'Write your answer',
+					'aria-label': `Custom answer for ${ask}`,
+					'data-draft': `custom:${d.id}`,
+					oninput: (e) => { drafts.set(`custom:${d.id}`, e.target.value); updateBarState() },
+					onkeydown: (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submitAll() } }
+				}, drafts.get(`custom:${d.id}`) || '') : null
+
+				return h('div', { class: `need${!d.provisional ? ' blocking' : ''}` },
+					h('div', { class: 'need-top' },
+						openQuestions.length > 1 ? h('span', { class: 'q-num' }, idx + 1) : null,
+						h('span', { class: `kind${d.provisional ? ' quiet' : ''}` }, d.provisional ? 'Default selected · override if needed' : 'Decision required'),
+						when(d.askedAt)
+					),
+					h('p', { class: 'question' }, ask),
+					more ? h('p', { class: 'q-more' }, more) : null,
+					d.body ? h('div', { class: 'md' }, md(d.body)) : null,
+					h('div', { class: 'opt-list', role: 'radiogroup', 'aria-label': ask },
+						...opts.map((opt, n) => {
+							const on = picked?.mode === 'option' && picked.value === opt
+							return h('button', {
+								type: 'button',
+								class: `opt-card${on ? ' picked' : ''}`,
+								role: 'radio',
+								'aria-checked': on ? 'true' : 'false',
+								onclick: () => { selections.set(d.id, { mode: 'option', value: opt }); rebuild() }
+							},
+								h('span', { class: 'radio' }),
+								h('span', { class: 'opt-body' }, opt, n === 0 ? h('span', { class: 'opt-rec' }, 'Recommended') : null)
+							)
+						}),
+						h('button', {
+							type: 'button',
+							class: `opt-card custom-toggle${isCustom ? ' picked' : ''}`,
+							role: 'radio',
+							'aria-checked': isCustom ? 'true' : 'false',
+							onclick: () => {
+								selections.set(d.id, { mode: 'custom', value: '' })
+								rebuild()
+								const el = box.querySelector(`[data-draft="${CSS.escape(`custom:${d.id}`)}"]`)
+								if (el) el.focus()
+							}
+						}, h('span', { class: 'radio' }), h('span', { class: 'opt-body' }, 'Answer in your own words...')),
+						isCustom ? h('div', { class: 'opt-custom-box' }, customInput) : null
+					)
+				)
+			})
+
+			const statusEl = h('span', { class: 'wb-status' })
+			const submitBtn = h('button', { type: 'button', class: 'btn primary', onclick: submitAll })
+			const updateBarState = () => {
+				const missingNow = openQuestions.filter((d) => !answerValueOf(d))
+				const diffNow = openPlan ? openQuestions.filter((d) => { const v = answerValueOf(d); return v && v !== d.recommendation }) : []
+				const reviseNow = !!openPlan && (diffNow.length > 0 || planChangeOpen.has(issue.id))
+				submitBtn.disabled = missingNow.length > 0
+				statusEl.className = `wb-status${missingNow.length ? ' warn' : ''}`
+				if (missingNow.length) {
+					statusEl.textContent = `${count(missingNow.length, 'decision')} still needs a selection`
+				} else if (openPlan && reviseNow) {
+					statusEl.textContent = diffNow.length
+						? `${count(diffNow.length, 'choice')} differs from the plan: sending back to revise`
+						: 'Will send your notes back to revise the plan'
+				} else if (openPlan) {
+					statusEl.textContent = openQuestions.length
+						? `All ${count(openQuestions.length, 'choice')} ready · plan will start implementing`
+						: 'Approving starts implementation immediately'
+				} else {
+					statusEl.textContent = `Ready to send ${count(openQuestions.length, 'answer')} to the thread`
+				}
+				const label = openPlan
+					? (reviseNow ? 'Send choices & revise plan' : 'Approve plan & build')
+					: (openQuestions.length === 1 ? 'Send answer' : `Send ${openQuestions.length} answers`)
+				submitBtn.replaceChildren(label, h('span', { class: 'kbd' }, '⌘↵'))
+			}
+			updateBarState()
+
+			const fbBox = fbOpen && openPlan ? h('div', { class: 'wb-feedback' },
+				field(differing.length ? 'Optional notes for the planner' : 'What should change in the plan?',
+					h('textarea', {
+						rows: 2,
+						placeholder: 'Tell the planner what to adjust',
+						'data-draft': fbKey,
+						oninput: (e) => { drafts.set(fbKey, e.target.value); updateBarState() },
+						onkeydown: (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submitAll() } }
+					}, drafts.get(fbKey) || '')
+				)
+			) : null
+
+			const autoCheck = openPlan && !willRevise && data.merge !== 'never' ? h('label', { class: 'wb-auto' },
+				h('input', {
+					type: 'checkbox',
+					checked: !!autoShipDraft.get(issue.id),
+					onchange: (e) => autoShipDraft.set(issue.id, e.target.checked)
+				}),
+				'Auto-merge once CI & reviews are green'
+			) : null
+
+			const bar = h('div', { class: 'wb-bar' },
+				h('div', { class: 'wb-bar-meta' }, statusEl, autoCheck, errorEl),
+				h('div', { class: 'row' },
+					openPlan && !differing.length ? h('button', {
+						type: 'button',
+						class: 'btn',
+						onclick: () => {
+							if (planChangeOpen.has(issue.id)) planChangeOpen.delete(issue.id)
+							else planChangeOpen.add(issue.id)
+							rebuild()
+							const el = box.querySelector(`[data-draft="${CSS.escape(fbKey)}"]`)
+							if (el) el.focus()
+						}
+					}, planChangeOpen.has(issue.id) ? 'Cancel changes' : 'Request changes') : null,
+					submitBtn
+				)
+			)
+
+			box.onkeydown = (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !submitBtn.disabled) { e.preventDefault(); submitAll() } }
+			box.replaceChildren(head, ...held.filter((d) => d.kind === 'question').map(heldRow), planBlock, ...qCards, fbBox, bar)
+		}
+		rebuild()
+		cards.push(box)
+	} else if (held.length) {
+		cards.push(h('section', { class: 'panel needs', style: 'margin-top:20px' },
+			h('div', { class: 'wb-head' }, h('h2', {}, 'Pending delivery')),
+			...held.map(heldRow)
+		))
+	}
+
+	// 2. Blocked decisions (provider wall, config error, review round budget)
+	for (const d of openBlocked) cards.push(singleDecisionCard(issue, d))
+
+	// 3. Merge decision (shown with Merge + Request changes with notes)
+	if (openMerge) cards.push(mergeDecisionCard(issue, openMerge, openQuestions.filter((d) => !d.provisional).length))
+
+	return cards
+}
+
+function singleDecisionCard(issue, d) {
 	const error = h('div', { class: 'error' })
 	const words = h('textarea', { rows: 1, placeholder: 'Or answer in your own words', 'aria-label': 'Your answer', 'data-draft': d.id, oninput: () => drafts.set(d.id, words.value), onkeydown: (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) sendOwn() } }, drafts.get(d.id) || '')
 	const send = async (answer) => {
@@ -711,60 +1097,121 @@ function decisionCard(issue, d, beside, outline) {
 		try {
 			const result = await api('POST', `/api/decisions/${encodeURIComponent(d.id)}/answer`, { answer })
 			drafts.delete(d.id)
-			if (result.error) error.textContent = `Saved, but not delivered: ${result.error}`
+			if (result.error) { error.textContent = `Saved, but not delivered: ${result.error}`; for (const b of card.querySelectorAll('button')) b.disabled = false; return }
+			justSubmitted = { issueId: issue.id, label: 'Answer sent to thread' }
+			await refreshBoard()
+			draw()
 		} catch (e) {
 			error.textContent = e.message
 			for (const b of card.querySelectorAll('button')) b.disabled = false
 		}
 	}
 	const sendOwn = () => words.value.trim() && send(words.value.trim())
-	const retry = async () => {
-		try { await api('POST', `/api/issues/${encodeURIComponent(issue.id)}/deliver`, {}) } catch (e) { error.textContent = e.message }
-	}
-	const answered = d.answer !== null
 	const [ask, more] = splitQuestion(d.question)
-	// A plan is written on the recommended answer of each question beside it, so the questions are answered first.
-	const plan = beside.find((o) => o.kind === 'plan' && o.answer === null)
-	const before = d.kind === 'plan' ? beside.filter((o) => o.kind === 'question' && o.answer === null).length : 0
-	// A merge decision, and one about going on past the round budget, take only their two answers.
-	const fixed = d.kind === 'merge' || d.round !== null
-	const card = h('div', { class: 'need' },
-		h('div', { class: 'need-top' },
-			h('span', { class: 'kind' }, d.provisional ? 'Provisional' : cap(d.kind)),
-			when(d.askedAt)
-		),
-		h('p', { class: 'question' }, ask),
-		more ? h('p', { class: 'q-more' }, more) : null,
-		d.provisional && !answered ? h('p', { class: 'meta' }, plan
-			? 'The plan below is built on the first answer. Another answer has it written again before you approve it.'
-			: 'The work goes on with the first answer below. The merge waits for yours.') : null,
-		// A plan is long: its outline says what it holds, and the plan opens on demand. Any other body is what the answer hangs on.
-		d.kind === 'plan' ? [
-			outline?.length ? h('ul', { class: 'outline' }, ...outline.map((point) => h('li', {}, mdInline(point)))) : null,
-			d.body ? fold(`body:${d.id}`, 'Read the full plan', h('div', { class: 'md' }, md(d.body))) : null
-		] : d.body ? h('div', { class: 'md' }, md(d.body)) : null,
-		answered
-			? h('div', { class: 'answer' },
-				h('p', {}, `Answered: ${d.answer}`),
-				h('p', { class: 'meta' }, d.delivery === 'held' ? 'Goes to the thread once the rest here is answered' : 'Not delivered to the thread yet'),
-				d.delivery === 'failed' ? h('div', { class: 'row', style: 'margin-top:12px' }, h('button', { class: 'btn', onclick: retry }, 'Retry delivery')) : null)
-			: before
-				? h('p', { class: 'meta' }, `Opens for your approval once you have answered the ${before === 1 ? 'question' : `${before} questions`} above.`)
-			: fixed
+	const fixed = d.round !== null
+	const card = h('section', { class: 'panel needs', style: 'margin-top:20px' },
+		h('div', { class: 'wb-head' }, h('h2', {}, d.round !== null ? `Review round ${d.round} budget reached` : 'Blocked'), when(d.askedAt)),
+		h('div', { class: 'need' },
+			h('p', { class: 'question', style: 'margin-top:0' }, ask),
+			more ? h('p', { class: 'q-more' }, more) : null,
+			d.body ? h('div', { class: 'md' }, md(d.body)) : null,
+			fixed
 				? [
-					h('p', { class: 'meta' }, d.head ? `About commit ${d.head.slice(0, 7)}. Recommended: ${d.recommendation}` : `Recommended: ${d.recommendation}`),
+					h('p', { class: 'meta' }, `Recommended: ${d.recommendation}`),
 					h('div', { class: 'row' }, ...d.options.map((o, n) => h('button', { class: `btn long${n === 0 ? ' primary' : ''}`, onclick: () => send(o) }, o)))
 				]
 				: [
 					h('div', { class: 'row' },
-						h('button', { class: 'btn long primary', onclick: () => send(d.recommendation) }, `Accept: ${d.recommendation}`),
+						h('button', { class: 'btn long primary', onclick: () => send(d.recommendation) }, d.recommendation),
 						...(d.options || []).filter((o) => o !== d.recommendation).map((o) => h('button', { class: 'btn long', onclick: () => send(o) }, o))
 					),
 					h('div', { class: 'own' }, words, h('button', { class: 'btn', onclick: sendOwn }, 'Send'))
 				],
-		error
+			error
+		)
 	)
 	return card
+}
+
+function mergeDecisionCard(issue, d, blockingBefore = 0) {
+	const box = h('section', { class: 'panel needs', style: 'margin-top:20px' })
+	const rebuild = () => {
+		const error = h('div', { class: 'error' })
+		const noteKey = `merge-note:${d.id}`
+		const requesting = mergeChangeOpen.has(d.id)
+		const [ask, more] = splitQuestion(d.question)
+		const number = prNumber(issue.prUrl)
+		const send = async (answer) => {
+			for (const b of box.querySelectorAll('button')) b.disabled = true
+			error.textContent = ''
+			try {
+				const result = await api('POST', `/api/decisions/${encodeURIComponent(d.id)}/answer`, { answer })
+				drafts.delete(noteKey)
+				mergeChangeOpen.delete(d.id)
+				if (result.error) { error.textContent = `Saved, but not delivered: ${result.error}`; for (const b of box.querySelectorAll('button')) b.disabled = false; return }
+				justSubmitted = { issueId: issue.id, label: result.held ? 'Saved, waiting for the remaining blocking decision above' : answer === 'Merge' ? 'Merge approved, landing now' : 'Feedback sent to thread' }
+				await refreshBoard()
+				draw()
+			} catch (e) {
+				error.textContent = e.message
+				for (const b of box.querySelectorAll('button')) b.disabled = false
+			}
+		}
+		const sendHold = () => {
+			const notes = (drafts.get(noteKey) || '').trim()
+			send(notes ? `Do not merge: ${notes}` : 'Do not merge')
+		}
+		const noteArea = requesting ? h('div', { class: 'wb-feedback' },
+			field('What should change before merging? (optional)',
+				h('textarea', {
+					rows: 2,
+					placeholder: 'Describe what to fix or adjust; leave blank to simply hold the PR',
+					'data-draft': noteKey,
+					oninput: (e) => drafts.set(noteKey, e.target.value),
+					onkeydown: (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); sendHold() } }
+				}, drafts.get(noteKey) || '')
+			)
+		) : null
+
+		box.replaceChildren(
+			h('div', { class: 'wb-head' },
+				h('h2', {}, number ? `Ready to merge PR #${number}` : 'Ready to merge'),
+				h('span', { class: 'num' }, dotted(d.head ? `commit ${d.head.slice(0, 7)}` : null, when(d.askedAt)))
+			),
+			h('div', { class: 'need' },
+				h('p', { class: 'question', style: 'margin-top:0' }, ask),
+				more ? h('p', { class: 'q-more' }, more) : null,
+				d.body ? h('div', { class: 'md' }, md(d.body)) : null
+			),
+			noteArea,
+			h('div', { class: 'wb-bar' },
+				h('div', { class: 'wb-bar-meta' },
+					h('span', { class: `wb-status${blockingBefore ? ' warn' : ''}` }, blockingBefore
+						? `Also answer the ${count(blockingBefore, 'blocking decision')} above so everything goes to the thread together`
+						: `Recommended: ${d.recommendation}`),
+					error
+				),
+				h('div', { class: 'row' },
+					requesting
+						? [
+							h('button', { type: 'button', class: 'btn', onclick: () => { mergeChangeOpen.delete(d.id); rebuild() } }, 'Cancel'),
+							h('button', { type: 'button', class: 'btn primary', onclick: sendHold }, 'Hold & send notes')
+						]
+						: [
+							h('button', { type: 'button', class: 'btn', onclick: () => {
+								mergeChangeOpen.add(d.id)
+								rebuild()
+								const el = box.querySelector(`[data-draft="${CSS.escape(noteKey)}"]`)
+								if (el) el.focus()
+							} }, 'Do not merge / Request changes'),
+							h('button', { type: 'button', class: 'btn primary', onclick: () => send('Merge') }, number ? `Merge PR #${number}` : 'Merge')
+						]
+				)
+			)
+		)
+	}
+	rebuild()
+	return box
 }
 
 function dropButton(issue, then) {
@@ -783,15 +1230,35 @@ const sizeOf = (size) => size
 	: null
 const prNumber = (url) => (url && url.match(/\/pull\/(\d+)/)?.[1]) || null
 
+/** Context-aware button label on a waiting board row. */
+function actionLabelOf(i) {
+	const open = (i.decisions || []).filter(isOpenDec)
+	if (open.some((d) => d.kind === 'plan')) return 'Review plan'
+	if (open.some((d) => d.kind === 'merge')) return 'Review & merge'
+	if (open.some((d) => d.kind === 'blocked')) return 'Unblock'
+	if (open.length) return 'Decide'
+	return 'Open'
+}
+
 /** One issue on the board: what it is, how large, where it stands and who acts next. Its page holds the rest. */
 function issueRow(i) {
 	const s = statusOf(i)
-	const next = inOrder(i.decisions).find((d) => d.answer === null)
+	const next = inOrder(i.decisions || []).find(isOpenDec)
 	const number = prNumber(i.prUrl)
+	const subtitle = i.built || i.asked
+	const showSubtitle = subtitle && subtitle.toLowerCase() !== i.title.toLowerCase()
 	return h('div', { class: 'lrow' },
 		h('div', { class: 'cell-main' },
 			h('a', { class: 'title', href: issueHref(i) }, i.title),
-			h('div', { class: 'meta' }, dotted(i.repo, i.kind, number ? `PR #${number}` : null, i.preview === 'up' ? 'dev environment up' : null),
+			showSubtitle ? h('div', { class: 'asked-sub' }, subtitle) : null,
+			h('div', { class: 'meta' }, dotted(
+				i.repo,
+				i.kind,
+				number ? `PR #${number}` : null,
+				i.captures ? count(i.captures, 'capture') : null,
+				i.preview === 'up' ? 'dev env up' : null,
+				i.autoShip ? 'auto-ship' : null
+			),
 				// A narrow board has no column for the size.
 				i.size ? h('span', { class: 'size-m' }, ' · ', sizeOf(i.size)) : null),
 			// What waits for the user is the one thing to read; otherwise the newest line of the run.
@@ -806,48 +1273,129 @@ function issueRow(i) {
 			s.alarm ? h('div', { class: 'snote bad' }, s.alarm) : null
 		),
 		h('div', { class: 'cell-act' }, i.needsYou
-			? h('a', { class: 'btn primary', href: issueHref(i) }, next ? 'Answer' : 'Open')
+			? h('a', { class: 'btn primary', href: issueHref(i) }, actionLabelOf(i))
 			: [out(i.prUrl, 'PR', 'pr'), out(i.threadLink, 'Thread', 'thread', 'btn sm', 'Open in T3 Code')])
 	)
 }
 
 function drawBoard() {
 	if (!loaded) return render()
-	const yours = board.issues.filter((i) => i.needsYou)
-	const rest = board.issues.filter((i) => !i.needsYou)
-	const others = rest.filter((i) => i.waiting).length
-	const stat = (label, value, cls, href) => h(href ? 'a' : 'div', { class: `stat${cls ? ` ${cls}` : ''}`, href }, h('div', { class: 'stat-l' }, label), h('div', { class: 'stat-n' }, value))
-	const list = (title, cls, rows) => h('section', { class: `panel${cls}`, style: 'margin-top:24px' },
+	const allOpen = board.issues
+	const allYours = allOpen.filter((i) => i.needsYou)
+	const allRest = allOpen.filter((i) => !i.needsYou)
+	const allOthers = allRest.filter((i) => i.waiting).length
+	const repos = [...new Set(allOpen.map((i) => i.repo))].sort()
+	if (boardFilter.repo && !repos.includes(boardFilter.repo)) boardFilter.repo = ''
+
+	const q = boardFilter.query.trim().toLowerCase()
+	const matches = (i) => {
+		if (boardFilter.repo && i.repo !== boardFilter.repo) return false
+		if (q && !`${i.title} ${i.asked || ''} ${i.built || ''} ${i.repo}`.toLowerCase().includes(q)) return false
+		if (boardFilter.status === 'needs') return i.needsYou
+		if (boardFilter.status === 'working') return !i.needsYou && !i.waiting
+		if (boardFilter.status === 'waiting') return !i.needsYou && !!i.waiting
+		return true
+	}
+	const filtered = allOpen.filter(matches)
+	const yours = filtered.filter((i) => i.needsYou)
+	const rest = filtered.filter((i) => !i.needsYou)
+
+	const toggleStatus = (key) => {
+		boardFilter.status = boardFilter.status === key ? 'all' : key
+		drawBoard()
+	}
+	const statBtn = (key, label, value, cls) => h('button', {
+		type: 'button',
+		class: `stat${cls ? ` ${cls}` : ''}${boardFilter.status === key ? ' active' : ''}`,
+		'aria-pressed': boardFilter.status === key ? 'true' : 'false',
+		onclick: () => toggleStatus(key)
+	}, h('div', { class: 'stat-l' }, label), h('div', { class: 'stat-n' }, value))
+
+	const list = (title, cls, rows, extraHead) => h('section', { class: `panel${cls}`, style: 'margin-top:20px' },
 		h('div', { class: 'lhead' },
 			h('h2', {}, title, h('span', { class: 'count' }, rows.length)),
 			h('span', { class: 'lines' }, 'Lines'),
 			h('span', {}, 'Stage'),
-			h('span', {}, 'Status')
+			h('span', {}, 'Status'),
+			extraHead || h('span', {})
 		),
 		rows.map(issueRow)
 	)
+
+	const toolbar = allOpen.length > 1 ? h('div', { class: 'toolbar' },
+		repos.length > 1 ? h('div', { class: 'pills', role: 'group', 'aria-label': 'Filter by repository' },
+			h('button', { type: 'button', class: `pill${!boardFilter.repo ? ' on' : ''}`, onclick: () => { boardFilter.repo = ''; drawBoard() } }, 'All repos'),
+			...repos.map((r) => h('button', { type: 'button', class: `pill${boardFilter.repo === r ? ' on' : ''}`, onclick: () => { boardFilter.repo = r; drawBoard() } }, r.split('/').pop()))
+		) : null,
+		boardFilter.status !== 'all' ? h('button', { type: 'button', class: 'pill', onclick: () => { boardFilter.status = 'all'; drawBoard() } }, 'Clear filter') : null,
+		h('input', {
+			type: 'search',
+			class: 'search',
+			placeholder: 'Filter issues...',
+			'aria-label': 'Filter issues',
+			'data-draft': 'board-search',
+			value: boardFilter.query,
+			oninput: (e) => { boardFilter.query = e.target.value; drawBoard() }
+		})
+	) : null
+
 	render(
 		h('section', { class: 'panel stats', 'aria-label': 'Overview' },
-			stat('Needs you', yours.length, yours.length ? 'warn' : ''),
-			stat('Working', rest.length - others),
-			stat('Waiting on others', others),
-			stat('Shipped, last 30 days', board.done.filter((i) => i.outcome === 'shipped').length, '', '#/done')
+			statBtn('needs', 'Needs you', allYours.length, allYours.length ? 'warn' : ''),
+			statBtn('working', 'Working', allRest.length - allOthers),
+			statBtn('waiting', 'Waiting on others', allOthers),
+			h('a', { class: 'stat', href: '#/done' }, h('div', { class: 'stat-l' }, 'Shipped, last 30 days'), h('div', { class: 'stat-n' }, board.done.filter((i) => i.outcome === 'shipped').length))
 		),
-		yours.length ? list('Needs you', ' needs', yours) : null,
+		toolbar,
+		yours.length ? list('Needs you', ' needs', yours,
+			yours.length > 1 ? h('div', { class: 'lhead-end' }, h('a', { class: 'btn sm primary', href: issueHref(yours[0]) }, `Start triaging (${yours.length})`)) : h('span', {})
+		) : null,
 		rest.length ? list('In work', '', rest) : null,
-		board.issues.length ? null : h('section', { class: 'panel', style: 'margin-top:24px' }, h('div', { class: 'empty' },
+		!allOpen.length ? h('section', { class: 'panel', style: 'margin-top:20px' }, h('div', { class: 'empty' },
 			h('p', {}, 'No issues in work'),
 			h('p', {}, 'Start one here, or tell a T3 Code thread to work an issue with the factory skill'),
 			h('a', { class: 'btn', href: '#/new' }, 'New issue')
-		))
+		)) : !filtered.length ? h('section', { class: 'panel', style: 'margin-top:20px' }, h('div', { class: 'empty' },
+			h('p', {}, 'No matching issues'),
+			h('button', { type: 'button', class: 'btn', onclick: () => { boardFilter.status = 'all'; boardFilter.repo = ''; boardFilter.query = ''; drawBoard() } }, 'Reset filters')
+		)) : null
 	)
 }
 
 function drawDone() {
 	if (!loaded) return render()
+	const repos = [...new Set(board.done.map((i) => i.repo))].sort()
+	const outcomes = [...new Set(board.done.map((i) => i.outcome).filter(Boolean))].sort()
+	const q = doneFilter.query.trim().toLowerCase()
+	const rows = board.done.filter((i) => {
+		if (doneFilter.repo && i.repo !== doneFilter.repo) return false
+		if (doneFilter.outcome && i.outcome !== doneFilter.outcome) return false
+		if (q && !`${i.title} ${i.summary || ''} ${i.repo}`.toLowerCase().includes(q)) return false
+		return true
+	})
+	const toolbar = board.done.length > 1 ? h('div', { class: 'toolbar' },
+		outcomes.length > 1 ? h('div', { class: 'pills' },
+			h('button', { type: 'button', class: `pill${!doneFilter.outcome ? ' on' : ''}`, onclick: () => { doneFilter.outcome = ''; drawDone() } }, 'All'),
+			...outcomes.map((o) => h('button', { type: 'button', class: `pill${doneFilter.outcome === o ? ' on' : ''}`, onclick: () => { doneFilter.outcome = o; drawDone() } }, outcomeName(o)))
+		) : null,
+		repos.length > 1 ? h('div', { class: 'pills' },
+			h('button', { type: 'button', class: `pill${!doneFilter.repo ? ' on' : ''}`, onclick: () => { doneFilter.repo = ''; drawDone() } }, 'All repos'),
+			...repos.map((r) => h('button', { type: 'button', class: `pill${doneFilter.repo === r ? ' on' : ''}`, onclick: () => { doneFilter.repo = r; drawDone() } }, r.split('/').pop()))
+		) : null,
+		h('input', {
+			type: 'search',
+			class: 'search',
+			placeholder: 'Filter closed...',
+			'aria-label': 'Filter closed issues',
+			'data-draft': 'done-search',
+			value: doneFilter.query,
+			oninput: (e) => { doneFilter.query = e.target.value; drawDone() }
+		})
+	) : null
 	render(
 		h('h1', {}, 'Closed in the last 30 days'),
-		h('section', { class: 'panel', style: 'margin-top:24px' }, board.done.length ? board.done.map((i) => h('div', { class: 'item' },
+		toolbar,
+		h('section', { class: 'panel', style: 'margin-top:20px' }, rows.length ? rows.map((i) => h('div', { class: 'item' },
 			h('div', { class: 'item-head' },
 				h('a', { class: 'title', href: issueHref(i) }, i.title),
 				chip(outcomeName(i.outcome), i.outcome === 'shipped' ? 'ok' : ''),
@@ -856,26 +1404,33 @@ function drawDone() {
 			),
 			i.summary ? h('p', { style: 'max-width:80ch;color:var(--ink2)' }, i.summary) : null,
 			h('div', { class: 'meta' }, dotted(i.repo, i.kind, when(i.closedAt)))
-		)) : h('div', { class: 'empty' }, h('p', {}, 'Nothing closed yet')))
+		)) : h('div', { class: 'empty' }, h('p', {}, board.done.length ? 'No matching closed issues' : 'Nothing closed yet')))
 	)
 }
 
-function stationLine(issue, runs, status) {
+function stationLine(issue, runs, status, onPickStage) {
 	const closed = issue.state !== 'open'
 	const at = issue.outcome === 'shipped' ? STAGES.length : STAGES.indexOf(issue.stage)
-	return h('section', { class: `panel line t-${status.tone}`, 'aria-label': 'Stages' }, ...STAGES.map((stage, n) => {
+	return h('section', { class: `panel rail t-${status.tone}`, 'aria-label': 'Stages' }, ...STAGES.map((stage, n) => {
 		const mine = runs.filter((r) => r.stage === stage)
 		const last = mine.at(-1)
 		const now = n === at && !closed
 		const state = now ? `now${status.running ? ' running' : ''}` : n <= at ? (mine.length ? 'done' : 'skip') : ''
-		const sub = !last ? (n < at ? 'skipped' : '')
+		const sub = !last ? (n < at ? 'skip' : '')
 			: last.state === 'running' ? since(last.startedAt)
 			: last.state === 'failed' ? 'failed'
 			: span(last.endedAt - last.startedAt)
-		return h('div', { class: `stn${now ? ' on' : ''}` },
+		return h('button', {
+			type: 'button',
+			class: `stn${now ? ' on' : ''}`,
+			title: mine.length ? `${cap(stage)}: ${count(mine.length, 'run')}` : cap(stage),
+			onclick: () => onPickStage && onPickStage(stage)
+		},
 			h('div', { class: `st ${state}` }, h('i')),
-			h('div', { class: 'stn-name' }, cap(stage)),
-			h('div', { class: `stn-sub${last && last.state === 'failed' ? ' bad' : ''}` }, dotted(sub, mine.length > 1 ? `${mine.length} runs` : null))
+			h('div', { class: 'stn-row' },
+				h('span', { class: 'stn-name' }, cap(stage)),
+				sub ? h('span', { class: `stn-sub${last && last.state === 'failed' ? ' bad' : ''}` }, dotted(sub, mine.length > 1 ? `×${mine.length}` : null)) : null
+			)
 		)
 	}))
 }
@@ -933,6 +1488,7 @@ function checkedChips(data) {
 	}
 	const risk = data.reviewRisk
 	if (risk) chips.push(chip(`${risk.door} door`, risk.door === 'one-way' ? 'warn' : ''), chip(REACH[risk.reach], risk.reach === 'data' || risk.reach === 'app' ? 'warn' : ''))
+	if (data.autoShip && data.issue.state === 'open') chips.push(chip('auto-ship on', 'ok'))
 	return chips
 }
 
@@ -952,9 +1508,80 @@ function briefPanel(data, result) {
 	)
 }
 
+/** Inline heads-up surfaced before a merge decision so caveats are visible without opening an accordion. */
+function headsupPanel(built, risk) {
+	const low = (built?.decisions || []).filter((d) => d.confidence === 'low').map((d) => d.decision)
+	const cols = [
+		['Changed beyond ask', risk?.unrelated],
+		['Where to look first', risk?.focus],
+		['Not checked', built?.notChecked],
+		['Low-confidence choices', low]
+	].filter(([, rows]) => rows && rows.length)
+	if (!cols.length) return null
+	return h('section', { class: 'panel headsup', 'aria-label': 'Heads up before merging' },
+		h('h3', {}, 'Heads up before merging'),
+		h('div', { class: 'headsup-grid' }, ...cols.map(([title, rows]) =>
+			h('div', { class: 'headsup-col' }, h('h4', {}, title), h('ul', {}, ...rows.map((r) => h('li', {}, r))))
+		))
+	)
+}
+
+/** Live progress feed while a stage is actively running. */
+function liveActivityPanel(run, events) {
+	const recent = events.filter((e) => !run || e.run_id === run.id || e.at >= run.startedAt).slice(-5).reverse()
+	return h('section', { class: 'panel live-feed', 'aria-label': 'Live activity' },
+		h('div', { class: 'live-feed-head' },
+			h('span', { class: 'live-dot' }),
+			h('strong', { style: 'font-weight:500' }, `${run.subject === 'plan' ? 'Plan review' : cap(run.stage)} running`),
+			run.model ? h('span', { class: 'mono muted' }, run.model) : null,
+			h('span', { class: 'muted' }, since(run.startedAt))
+		),
+		recent.length ? h('ul', { class: 'live-feed-list' }, ...recent.map((e) =>
+			h('li', {}, when(e.at), h('span', {}, cap(e.text)))
+		)) : null
+	)
+}
+
+/** Quick note bar to steer an open issue's thread without leaving the factory page. */
+function steerBox(issue) {
+	const key = `steer:${issue.id}`
+	const error = h('div', { class: 'error' })
+	const status = h('span', { class: 'meta' })
+	const input = h('textarea', {
+		rows: 1,
+		placeholder: 'Send a note or steering instruction to this issue\'s thread...',
+		'aria-label': 'Message thread',
+		'data-draft': key,
+		oninput: () => drafts.set(key, input.value),
+		onkeydown: (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send() } }
+	}, drafts.get(key) || '')
+	const btn = h('button', { type: 'button', class: 'btn', onclick: () => send() }, 'Send note')
+	const send = async () => {
+		const message = input.value.trim()
+		if (!message) return
+		btn.disabled = true
+		error.textContent = ''
+		status.textContent = ''
+		try {
+			await api('POST', `/api/issues/${encodeURIComponent(issue.id)}/message`, { message })
+			drafts.delete(key)
+			input.value = ''
+			status.textContent = 'Sent to thread'
+		} catch (e) {
+			error.textContent = e.message
+		}
+		btn.disabled = false
+	}
+	return h('section', { class: 'panel steer', 'aria-label': 'Message thread' },
+		h('div', { class: 'steer-row' }, input, btn),
+		error,
+		status
+	)
+}
+
 /** One part of the record: its name, what it holds in a few words (in `tone` when that needs a look), and the rest once opened. */
 function part(key, title, { note, tone }, ...body) {
-	return h('details', { open: opened.has(key), ontoggle: (e) => (e.target.open ? opened.add(key) : opened.delete(key)) },
+	return h('details', { id: `fold-${key.replace(/[^a-z0-9_-]/gi, '-')}`, open: opened.has(key), ontoggle: (e) => (e.target.open ? opened.add(key) : opened.delete(key)) },
 		h('summary', {}, h('span', { class: 'fold-t' }, title), note ? h('span', { class: `fold-s${tone ? ` ${tone}` : ''}` }, note) : null),
 		...body
 	)
@@ -965,26 +1592,51 @@ async function drawIssue(id) {
 	try { data = await api('GET', `/api/issues/${encodeURIComponent(id)}`) } catch (e) { render(h('p', { class: 'error' }, e.message)); return }
 	if (route().id !== id) return
 	const i = data.issue
-	const pending = data.decisions.filter((d) => d.answer === null || (d.answeredVia === 'page' && d.delivery !== 'sent'))
-	const status = statusOf({ ...i, decisions: pending, waiting: data.waiting, run: data.runs.findLast((r) => r.state === 'running') })
-	const section = (title, count, ...body) => [h('div', { class: 'sec' }, h('h2', {}, title), count ? h('span', { class: 'count' }, count) : null), ...body]
+	const pending = data.decisions.filter((d) => isOpenDec(d) || (d.answeredVia === 'page' && d.delivery !== 'sent'))
+	const activeRun = data.runs.findLast((r) => r.state === 'running')
+	const status = statusOf({ ...i, decisions: pending, waiting: data.waiting, run: activeRun })
+	const section = (title, cnt, ...body) => [h('div', { class: 'sec' }, h('h2', {}, title), cnt ? h('span', { class: 'count' }, cnt) : null), ...body]
 	const result = (stage, subject = null) => data.runs.findLast((r) => r.stage === stage && r.subject === subject && r.result?.outcome === 'done')?.result.result
 	const built = result('implement')
+	const planRes = result('plan')
 	const shots = data.evidence || []
 	const latest = data.events.at(-1)
 	const key = (name) => `${name}:${id}`
 	if (data.preview?.state === 'up') probe(id)
 	else probes.delete(id)
 
+	// Triage queue navigation across waiting issues.
+	const waitingIssues = board.issues.filter((item) => item.needsYou)
+	const idxInQueue = waitingIssues.findIndex((item) => item.id === id)
+	const otherWaiting = waitingIssues.filter((item) => item.id !== id)
+	const prevWaiting = idxInQueue > 0 ? waitingIssues[idxInQueue - 1] : null
+	const nextWaiting = idxInQueue >= 0 && idxInQueue + 1 < waitingIssues.length ? waitingIssues[idxInQueue + 1] : otherWaiting[0] || null
+	const triageNav = waitingIssues.length > 1 || (idxInQueue < 0 && otherWaiting.length > 0) ? h('div', { class: 'triage-nav' },
+		idxInQueue >= 0 ? h('span', { class: 'count' }, `Needs you ${idxInQueue + 1} / ${waitingIssues.length}`) : h('span', { class: 'count' }, `${otherWaiting.length} waiting`),
+		prevWaiting ? h('a', { class: 'btn sm', href: issueHref(prevWaiting), title: prevWaiting.title }, icon('prev'), 'Prev') : null,
+		nextWaiting ? h('a', { class: 'btn sm', href: issueHref(nextWaiting), title: nextWaiting.title }, 'Next', icon('next')) : null
+	) : null
+
+	const submittedBanner = justSubmitted && justSubmitted.issueId === id ? h('div', { class: 'banner' },
+		h('span', {}, h('strong', {}, '✓ '), justSubmitted.label),
+		h('div', { class: 'row' },
+			otherWaiting.length ? h('a', { class: 'btn sm primary', href: issueHref(otherWaiting[0]), onclick: () => { justSubmitted = null } }, `Review next (${otherWaiting.length} left)`) : null,
+			h('button', { type: 'button', class: 'btn sm quiet', onclick: () => { justSubmitted = null; draw() } }, 'Dismiss')
+		)
+	) : null
+
 	const claims = built?.claims || []
-	const aware = built ? awarePanel(built, data.reviewRisk, result('plan')?.later) : null
+	const aware = built ? awarePanel(built, data.reviewRisk, planRes?.later) : null
 	const findings = data.findings || []
 	const items = data.items || []
 	const openFindings = findings.filter(isOpenFinding).length
 	const needs = items.filter((item) => item.needsAction).length
 	const gate = data.gate
 	const answered = data.decisions.filter((d) => d.answer !== null).length
+	const openCount = data.decisions.filter(isOpenDec).length
+	const supersededCount = data.decisions.filter((d) => d.supersededBy).length
 	const running = data.runs.filter((r) => r.state === 'running').length
+	const runsFoldKey = key('runs')
 	const record = [
 		claims.length ? part(key('proof'), 'Proof', { note: count(claims.length, 'claim') }, claimsTable(claims)) : null,
 		aware ? part(key('aware'), 'Be aware of', aware, aware.body) : null,
@@ -1004,21 +1656,46 @@ async function drawIssue(id) {
 			findings.length ? [h('h3', { class: 'fold-h' }, 'Internal review'), findingsList(findings)] : null,
 			items.length ? [h('h3', { class: 'fold-h' }, 'On GitHub'), reviewItems(items)] : null) : null,
 		data.decisions.length ? part(key('decisions'), 'Decisions',
-			{ note: dotted(answered ? `${answered} answered` : null, data.decisions.length - answered ? `${data.decisions.length - answered} open` : null) },
+			{ note: dotted(answered ? `${answered} answered` : null, openCount ? `${openCount} open` : null, supersededCount ? `${supersededCount} superseded` : null) },
 			h('div', { class: 'panel' }, ...data.decisions.map(decisionRow))) : null,
-		data.runs.length ? part(key('runs'), 'Runs', { note: dotted(data.runs.length, running ? `${running} running` : null) }, h('div', { class: 'panel' }, ...data.runs.map(runRow))) : null,
+		data.runs.length ? part(runsFoldKey, 'Runs', { note: dotted(data.runs.length, running ? `${running} running` : null) }, h('div', { class: 'panel' }, ...data.runs.map(runRow))) : null,
 		data.events.length ? part(key('timeline'), 'Timeline', { note: [count(data.events.length, 'event'), ', latest ', when(latest.at)] },
 			h('div', { class: 'tl' }, ...data.events.slice().reverse().map((e) => h('div', {}, cap(e.text), h('time', {}, clock(e.at)))))) : null,
 		part(key('taken'), 'The issue as taken in', { note: i.source && !isUrl(i.source) ? i.source : '' },
 			data.body ? h('div', { class: 'body md' }, md(data.body)) : h('div', { class: 'body' }, h('p', { class: 'muted' }, '(no text)')))
 	]
 
+	const jumpToRuns = () => {
+		opened.add(runsFoldKey)
+		const el = document.getElementById(`fold-${runsFoldKey.replace(/[^a-z0-9_-]/gi, '-')}`)
+		if (el) { el.open = true; el.scrollIntoView({ behavior: 'smooth', block: 'start' }) }
+	}
+
+	// On a merge review, show visual proof, measurements, caveats and Try-it BEFORE the Merge button.
+	const hasOpenMerge = pending.some((d) => isOpenDec(d) && d.kind === 'merge')
+	const hasVisualSection = shots.length || built?.media
+	const hasMeasured = !!built?.measured?.rows?.length
+	const hasTryIt = (i.state === 'open' && (built || data.preview)) || data.preview?.state === 'up'
+	const visualBlocks = [
+		hasVisualSection ? section('What it looks like', shots.length, gallery(shots, built?.media)) : null,
+		hasMeasured ? section('Measured', null, measuredPanel(built.measured, data.pr?.head)) : null,
+		hasOpenMerge && built ? headsupPanel(built, data.reviewRisk) : null,
+		hasTryIt ? section('Try it', null, previewPanel(i, data.preview, built?.tryIt, data.pr?.head)) : null
+	]
+	const decisionBlocks = pending.length ? decisionWorkbench(data, pending, planRes) : []
+
 	render(h('div', { class: 'ipage' },
-		h('a', { class: 'back', href: i.state === 'open' ? '#/' : '#/done' }, icon('back'), i.state === 'open' ? 'Board' : 'Done'),
+		h('div', { class: 'itop' },
+			h('a', { class: 'back', href: i.state === 'open' ? '#/' : '#/done' }, icon('back'), i.state === 'open' ? 'Board' : 'Done'),
+			triageNav
+		),
+		submittedBanner,
 		h('div', { class: 'ititle' },
 			h('h1', {}, i.title),
 			h('div', { class: 'row' },
-				out(i.prUrl, 'PR', 'pr', 'btn'), out(i.threadLink, 'Open in T3 Code', 'thread', 'btn'), out(i.source, 'Source', 'source', 'btn'),
+				out(i.prUrl, prNumber(i.prUrl) ? `PR #${prNumber(i.prUrl)}` : 'PR', 'pr', 'btn'),
+				out(i.threadLink, 'Open in T3 Code', 'thread', 'btn'),
+				out(i.source, 'Source', 'source', 'btn'),
 				i.state === 'open' ? dropButton(i, () => draw()) : null
 			)
 		),
@@ -1027,66 +1704,106 @@ async function drawIssue(id) {
 			status.note && status.note.length ? h('span', {}, status.note) : null,
 			h('span', {}, dotted(i.repo, i.kind, h('span', {}, 'started ', when(i.createdAt)), sizeOf(i.size)))
 		),
-		// While a stage works, its newest line says what it is doing; the rest of the lines are in the timeline.
-		status.running && latest ? h('p', { class: 'doing' }, when(latest.at), cap(latest.text)) : null,
-		stationLine(i, data.runs, status),
+		stationLine(i, data.runs, status, jumpToRuns),
 		i.configError ? h('p', { class: 'notice bad' }, i.configError) : null,
 		i.threadGone ? h('p', { class: 'notice bad' }, 'T3 Code cannot find this thread any more.') : null,
 		status.alarm ? h('p', { class: 'notice bad' }, status.alarm) : null,
 		...(data.warnings || []).map((w) => h('p', { class: 'notice' }, w)),
 		// A closed issue's report is its brief: what happened, the fix and what to be aware of.
 		data.report ? section('Closing report', null, h('div', { class: 'panel body' }, h('div', { class: 'md' }, md(data.report)))) : briefPanel(data, result),
-		pending.length ? h('section', { class: 'panel needs', style: 'margin-top:24px' },
-			h('div', { class: 'lhead' }, h('h2', {}, 'Needs you')),
-			...inOrder(pending).map((d) => decisionCard(i, d, pending, result('plan')?.outline))
-		) : null,
-		shots.length || built?.media ? section('What it looks like', shots.length, gallery(shots, built?.media)) : null,
-		built?.measured?.rows?.length ? section('Measured', null, measuredPanel(built.measured, data.pr?.head)) : null,
-		(i.state === 'open' && (built || data.preview)) || data.preview?.state === 'up' ? section('Try it', null, previewPanel(i, data.preview, built?.tryIt, data.pr?.head)) : null,
+		// Live activity while a stage is working and nothing waits on the user.
+		status.running && activeRun && !pending.length ? liveActivityPanel(activeRun, data.events) : null,
+		// Merge decision comes AFTER proof & caveats; plan & questions come FIRST.
+		...(hasOpenMerge ? [...visualBlocks, ...decisionBlocks] : [...decisionBlocks, ...visualBlocks]),
+		i.state === 'open' && !i.threadGone ? steerBox(i) : null,
 		section('The record', null, h('div', { class: 'panel folds' }, ...record.filter(Boolean)))
 	))
 	for (const el of main.querySelectorAll('.clamp')) el.classList.toggle('cut', el.scrollHeight > el.clientHeight)
 }
 
-/** A decision in the record: the question's headline and what was answered. */
+/** A decision in the record: the question's headline and what was answered or superseded. */
 function decisionRow(d) {
 	return h('div', { class: 'item' },
-		h('div', { class: 'item-head' }, chip(d.provisional ? `${d.kind}, provisional` : d.kind), h('span', { class: 'end' }, when(d.askedAt))),
+		h('div', { class: 'item-head' },
+			chip(d.provisional ? `${d.kind}, provisional` : d.kind),
+			d.supersededBy ? chip('superseded') : null,
+			h('span', { class: 'end' }, when(d.askedAt))
+		),
 		h('p', {}, splitQuestion(d.question)[0]),
-		h('p', { class: 'meta' }, d.answer === null ? `Recommended: ${d.recommendation}` : `Answer (${d.answeredVia}): ${d.answer}`)
+		h('p', { class: 'meta' }, d.supersededBy
+			? `Replaced by a newer question (${d.supersededBy})`
+			: d.answer === null ? `Recommended: ${d.recommendation}` : `Answer (${d.answeredVia}): ${d.answer}`)
 	)
 }
 
 /** The viewer sits outside <main>, so a live redraw never closes it or restarts a video. */
-const viewer = { el: null, items: [], at: 0 }
+const viewer = { el: null, items: [], at: 0, sideBySide: false }
+function pairFor(item) {
+	if (!item || item.kind !== 'image' || (item.label !== 'before' && item.label !== 'after')) return null
+	const before = viewer.items.find((s) => s.title === item.title && s.kind === 'image' && s.label === 'before')
+	const after = viewer.items.find((s) => s.title === item.title && s.kind === 'image' && s.label === 'after')
+	return before && after ? [before, after] : null
+}
 function showViewer() {
 	const item = viewer.items[viewer.at]
 	const many = viewer.items.length > 1
+	const pair = pairFor(item)
+	const showSide = !!(pair && viewer.sideBySide)
 	const step = (by) => () => { viewer.at = (viewer.at + by + viewer.items.length) % viewer.items.length; showViewer() }
-	const stage = item.kind === 'video'
-		? h('video', { src: item.url, poster: item.poster, controls: true, autoplay: true, playsinline: true })
-		: h('img', { src: item.url, alt: item.label ? `${cap(item.label)}: ${item.title}` : item.title })
+	const flipPair = () => {
+		if (!pair) return
+		const other = item === pair[0] ? pair[1] : pair[0]
+		viewer.at = viewer.items.indexOf(other)
+		showViewer()
+	}
+	const stage = showSide
+		? h('div', { class: 'view-stage side' },
+			...pair.map((p) => h('div', { class: 'view-pane' },
+				h('div', { class: 'view-pane-head' }, chip(cap(p.label)), p.head ? h('span', { class: 'num' }, `at ${short(p.head)}`) : null),
+				h('img', { src: p.url, alt: `${cap(p.label)}: ${p.title}` })
+			))
+		)
+		: h('div', { class: 'view-stage' },
+			item.kind === 'video'
+				? h('video', { src: item.url, poster: item.poster, controls: true, autoplay: true, playsinline: true })
+				: h('img', { src: item.url, alt: item.label ? `${cap(item.label)}: ${item.title}` : item.title })
+		)
+	const noteText = showSide ? [...new Set(pair.map((p) => p.note).filter(Boolean))].join(' ') : (item.note || '')
 	viewer.el.replaceChildren(
 		h('div', { class: 'view-bar' },
-			h('div', { class: 'row' }, h('strong', {}, item.title), item.label ? chip(cap(item.label)) : null,
-				h('span', { class: 'num' }, dotted(many ? `${viewer.at + 1} / ${viewer.items.length}` : null, item.head ? `at ${short(item.head)}` : null, item.github ? 'on GitHub' : 'on this page only'))),
 			h('div', { class: 'row' },
+				h('strong', {}, item.title),
+				!showSide && item.label ? chip(cap(item.label)) : null,
+				showSide ? chip('Before / After') : null,
+				h('span', { class: 'num' }, dotted(many && !showSide ? `${viewer.at + 1} / ${viewer.items.length}` : null, !showSide && item.head ? `at ${short(item.head)}` : null, item.github ? 'on GitHub' : 'on this page only'))
+			),
+			h('div', { class: 'row' },
+				pair ? h('button', { class: 'btn sm', onclick: () => { viewer.sideBySide = !viewer.sideBySide; showViewer() } }, icon('split'), viewer.sideBySide ? 'Single (Space to flip)' : 'Side by side') : null,
+				pair && !showSide ? h('button', { class: 'btn sm', onclick: flipPair, title: 'Swap before/after (Space)' }, 'Flip ', h('span', { class: 'kbd' }, 'Space')) : null,
 				many ? h('button', { class: 'btn sm', onclick: step(-1), title: 'Previous (left arrow)', 'aria-label': 'Previous' }, icon('prev')) : null,
 				many ? h('button', { class: 'btn sm', onclick: step(1), title: 'Next (right arrow)', 'aria-label': 'Next' }, icon('next')) : null,
 				out(new URL(item.url, location.href).href, 'Original', 'out'),
 				h('button', { class: 'btn sm', onclick: () => viewer.el.close(), 'aria-label': 'Close' }, icon('close'), 'Close')
 			)
 		),
-		h('div', { class: 'view-stage' }, stage),
-		h('p', { class: 'view-note' }, item.note || '')
+		stage,
+		h('p', { class: 'view-note' }, noteText)
 	)
 }
 function openViewer(items, at) {
 	if (!viewer.el) {
 		viewer.el = h('dialog', { class: 'view', 'aria-label': 'Capture', onkeydown: (e) => {
-			if (viewer.items.length < 2 || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return
-			// The arrows scrub a video that has the focus; they change capture everywhere else.
 			if (e.target.tagName === 'VIDEO') return
+			if (e.key === ' ' && pairFor(viewer.items[viewer.at])) {
+				e.preventDefault()
+				if (viewer.sideBySide) { viewer.sideBySide = false; showViewer(); return }
+				const pair = pairFor(viewer.items[viewer.at])
+				const other = viewer.items[viewer.at] === pair[0] ? pair[1] : pair[0]
+				viewer.at = viewer.items.indexOf(other)
+				showViewer()
+				return
+			}
+			if (viewer.items.length < 2 || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return
 			viewer.at = (viewer.at + (e.key === 'ArrowLeft' ? -1 : 1) + viewer.items.length) % viewer.items.length
 			showViewer()
 		}, onclose: () => viewer.el.replaceChildren() })
@@ -1094,6 +1811,7 @@ function openViewer(items, at) {
 	}
 	viewer.items = items
 	viewer.at = at
+	viewer.sideBySide = !!(pairFor(items[at]) && window.innerWidth >= 900)
 	showViewer()
 	viewer.el.showModal()
 }
@@ -1548,32 +2266,96 @@ function settingsEditor(scope, layer, resolved, locked) {
 
 async function drawNew() {
 	if (!loaded) return render()
-	const repos = [...new Set([...board.issues, ...board.done].map((i) => i.repo))].sort()
+	try {
+		const res = await api('GET', '/api/repos')
+		allRepos = res.repos || []
+	} catch {}
+	const repos = [...new Set([...allRepos, ...board.issues.map((i) => i.repo), ...board.done.map((i) => i.repo)])].sort()
+	if (repos.length && !repos.includes(newDraft.repo)) newDraft.repo = repos[0]
 	const error = h('span', { class: 'error' })
-	const repo = h('select', {}, ...repos.map((r) => h('option', { value: r }, r)))
-	const title = h('input', { placeholder: 'What should be fixed or built' })
-	const pr = h('input', { placeholder: 'https://github.com/owner/repo/pull/34' })
-	const source = h('input', { placeholder: 'https://github.com/owner/repo/issues/12' })
-	const body = h('textarea', { style: 'min-height:136px' })
+	const fetchStatus = h('span', { class: 'fhint' })
+	const repo = h('select', { onchange: (e) => { newDraft.repo = e.target.value } }, ...repos.map((r) => h('option', { value: r, selected: r === newDraft.repo }, r)))
+	const title = h('input', { value: newDraft.title, placeholder: newMode === 'pr' ? 'Leave empty to use the PR title' : 'What should be fixed or built', oninput: (e) => { newDraft.title = e.target.value } })
+	const pr = h('input', { value: newDraft.pr, placeholder: 'https://github.com/owner/repo/pull/34', oninput: (e) => { newDraft.pr = e.target.value } })
+	const source = h('input', { value: newDraft.source, placeholder: 'https://github.com/owner/repo/issues/12', oninput: (e) => { newDraft.source = e.target.value } })
+	const merge = h('select', { onchange: (e) => { newDraft.merge = e.target.value } },
+		h('option', { value: '', selected: newDraft.merge === '' }, 'Project default'),
+		h('option', { value: 'ask', selected: newDraft.merge === 'ask' }, 'Ask before merging'),
+		h('option', { value: 'never', selected: newDraft.merge === 'never' }, 'Never merge (a person merges)')
+	)
+	const body = h('textarea', {
+		style: 'min-height:136px',
+		placeholder: newMode === 'pr' ? 'What to do with this PR (leave empty for a review only)' : 'Context, steps to reproduce, acceptance criteria or links',
+		oninput: (e) => { newDraft.body = e.target.value }
+	}, newDraft.body)
+	const fetchUrl = async (urlInput, btn) => {
+		const url = urlInput.value.trim()
+		if (!url) return
+		btn.disabled = true
+		error.textContent = ''
+		fetchStatus.textContent = 'Reading from GitHub...'
+		try {
+			const item = await api('POST', '/api/github/fetch', { url })
+			if (repos.includes(item.repo)) { newDraft.repo = item.repo; repo.value = item.repo }
+			if (item.title && !newDraft.title.trim()) { newDraft.title = item.title; title.value = item.title }
+			if (item.body && !newDraft.body.trim()) { newDraft.body = item.body; body.value = item.body }
+			if (item.kind === 'pr') {
+				newDraft.pr = item.url
+				pr.value = item.url
+				if (newMode !== 'pr') { newMode = 'pr'; drawNew(); return }
+			} else {
+				newDraft.source = item.url
+				source.value = item.url
+			}
+			fetchStatus.textContent = `Loaded ${item.repo} #${item.number}${item.state ? ` (${item.state.toLowerCase()})` : ''}`
+		} catch (err) {
+			fetchStatus.textContent = ''
+			error.textContent = err.message
+		}
+		btn.disabled = false
+	}
 	const start = async (e) => {
 		e.target.disabled = true
 		error.textContent = ''
 		try {
-			const result = await api('POST', '/api/threads', { repo: repo.value, title: title.value || undefined, body: body.value, source: source.value || undefined, pr: pr.value.trim() || undefined })
+			const payload = {
+				repo: repo.value,
+				title: title.value.trim() || undefined,
+				body: body.value,
+				source: newMode === 'issue' ? (source.value.trim() || undefined) : undefined,
+				pr: newMode === 'pr' ? (pr.value.trim() || undefined) : undefined,
+				merge: merge.value || undefined
+			}
+			const result = await api('POST', '/api/threads', payload)
 			if (result.duplicateOf) error.textContent = `Already open: ${result.duplicateOf.title}`
 			else if (result.closed) error.textContent = 'The factory already closed this item. Start it from a thread with --again to reopen it.'
-			else location.hash = `#/issue/${encodeURIComponent(result.issue)}`
+			else {
+				Object.assign(newDraft, { title: '', pr: '', source: '', body: '', merge: '' })
+				location.hash = `#/issue/${encodeURIComponent(result.issue)}`
+			}
 		} catch (err) { error.textContent = err.message }
 		e.target.disabled = false
 	}
+	const urlInput = newMode === 'pr' ? pr : source
+	const fetchBtn = h('button', { type: 'button', class: 'btn', onclick: () => fetchUrl(urlInput, fetchBtn) }, 'Fetch')
 	render(
 		h('h1', {}, 'New issue'),
 		repos.length
-			? h('section', { class: 'panel narrow', style: 'margin-top:24px' }, h('div', { class: 'part stack' },
-				field('Repository', repo), field('Title', title, 'Optional with a pull request: it takes the PR\'s title'),
-				field('Pull request', pr, 'Optional: an open PR to review or build on. Details then say what to do with it; leave them empty for a review'),
-				field('Source', source, 'Optional: the issue, error or feedback item this comes from'), field('Details', body),
-				h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: start }, 'Start a thread'), error)
+			? h('section', { class: 'panel narrow', style: 'margin-top:20px' }, h('div', { class: 'part stack' },
+				h('div', { class: 'seg', role: 'tablist', 'aria-label': 'Start from' },
+					h('button', { type: 'button', role: 'tab', 'aria-selected': newMode === 'issue' ? 'true' : 'false', class: newMode === 'issue' ? 'on' : '', onclick: () => { newMode = 'issue'; drawNew() } }, 'Bug or feature'),
+					h('button', { type: 'button', role: 'tab', 'aria-selected': newMode === 'pr' ? 'true' : 'false', class: newMode === 'pr' ? 'on' : '', onclick: () => { newMode = 'pr'; drawNew() } }, 'Existing PR')
+				),
+				h('div', { class: 'fields' },
+					field('Repository', repo),
+					field('Who merges', merge)
+				),
+				newMode === 'pr'
+					? field('Pull request URL', h('div', { class: 'fetch-row' }, pr, fetchBtn), fetchStatus)
+					: field('GitHub issue or source URL (optional)', h('div', { class: 'fetch-row' }, source, fetchBtn), fetchStatus),
+				field('Title', title, newMode === 'pr' ? 'Optional: defaults to the PR title' : null),
+				field(newMode === 'pr' ? 'What to do with this PR' : 'Details', body),
+				h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn primary', onclick: start }, newMode === 'pr' ? 'Take in PR' : 'Start issue'), error)
 			))
 			: h('p', { class: 'lede' }, 'The factory starts threads in repositories it has seen. Start one issue from a T3 Code thread in the repository first.')
 	)
@@ -1618,8 +2400,23 @@ setInterval(() => {
 	for (const el of document.querySelectorAll('[data-since]')) el.textContent = span(Date.now() - Number(el.dataset.since))
 }, 20000)
 
+window.addEventListener('keydown', (e) => {
+	if (e.metaKey || e.ctrlKey || e.altKey) return
+	if (document.querySelector('dialog[open]')) return
+	const tag = document.activeElement?.tagName
+	if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+	const { page } = route()
+	if (e.key === '/' && (page === 'board' || page === 'done')) {
+		const el = main.querySelector('.search')
+		if (el) { e.preventDefault(); el.focus() }
+	} else if (e.key === 'n' && page === 'board') {
+		e.preventDefault()
+		location.hash = '#/new'
+	}
+})
+
 document.getElementById('new').append(icon('plus'), 'New issue')
-window.addEventListener('hashchange', () => { window.scrollTo(0, 0); draw() })
+window.addEventListener('hashchange', () => { justSubmitted = null; window.scrollTo(0, 0); draw() })
 refreshBoard().then(draw)
 connect()
 </script>

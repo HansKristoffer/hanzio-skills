@@ -326,6 +326,10 @@ export type GateInput = {
 	openDecisions: number
 	/** A merge decision about the current head was answered Merge. */
 	mergeApproved: boolean
+	/** The user opted into auto-merging once CI and reviews pass (set on plan approval; never overrides merge: never). */
+	autoShip?: boolean
+	/** Internal review reported changes outside what the issue asked for. */
+	hasUnrelated?: boolean
 	riskHead: string | null
 	riskRule: string | null
 	roundBudget: string | null
@@ -381,10 +385,11 @@ export function computeGate(input: GateInput): Gate {
 	}
 	if (!input.internalCovered) add('internal-review', `the head ${pr.head.slice(0, 7)} has no clean internal review and no approval on it`)
 	if (input.openDecisions) add('decisions', `${input.openDecisions} decision${input.openDecisions === 1 ? ' waits' : 's wait'} for an answer`)
+	const autoMergeAllowed = input.autoShip === true && !input.hasUnrelated
 	if (input.riskHead !== pr.head) add('risk-unchecked', `the leave-open rules were not checked on ${pr.head.slice(0, 7)}: run factory risk`)
-	else if (input.riskRule && !input.mergeApproved) add('risk', `a leave-open rule holds: ${input.riskRule}`)
+	else if (input.riskRule && !input.mergeApproved && !autoMergeAllowed) add('risk', `a leave-open rule holds: ${input.riskRule}`)
 	if (input.merge === 'never') add('merge-setting', 'merge is never: a person merges this PR')
-	else if (input.merge === 'ask' && !input.mergeApproved) add('merge-setting', 'merge is ask: a merge decision on this head must be answered Merge')
+	else if (input.merge === 'ask' && !input.mergeApproved && !autoMergeAllowed) add('merge-setting', 'merge is ask: a merge decision on this head must be answered Merge')
 	if (input.roundBudget) add('round-budget', input.roundBudget)
 	return { ready: blockers.length === 0, head: pr.head, blockers }
 }
