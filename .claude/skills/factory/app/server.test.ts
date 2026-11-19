@@ -188,3 +188,25 @@ test('a machine without Tailscale runs the server on loopback only', () => {
 		process.env.PATH = path
 	}
 })
+
+test('page message sends a note to the thread, repos lists known repos, and board exposes plain summaries', async () => {
+	await start('t1')
+	const research = (await h.as('t1')('POST', '/api/issue/run', { stage: 'research' })).body.run
+	await h.as('child')('POST', `/api/runs/${research}/report`, {
+		text: 'done',
+		done: true,
+		result: { outcome: 'done', result: { asked: 'Large account exports time out', kind: 'bug', size: 'S', route: 'implement', checks: [] } }
+	})
+	const board = (await h.call('GET', '/api/board')).body
+	expect(board.issues[0].asked).toBe('Large account exports time out')
+	expect(board.issues[0].autoShip).toBe(false)
+
+	expect((await h.call('GET', '/api/repos')).body.repos).toEqual(['acme/api'])
+	expect((await h.call('POST', '/api/github/fetch', { url: 'https://example.com/not-github' })).status).toBe(400)
+
+	h.replies({ showByThread: { t1: { code: 0, out: JSON.stringify({ thread: { status: 'completed', pendingRequestCount: 0 } }) } } })
+	const msg = await h.call('POST', '/api/issues/t1/message', { message: 'Please also check mobile layout' })
+	expect(msg.status).toBe(200)
+	const sends = h.calls().filter((c) => c.args[1] === 'send')
+	expect(sends.at(-1)!.stdin).toContain('Please also check mobile layout')
+})

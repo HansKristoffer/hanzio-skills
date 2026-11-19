@@ -21,7 +21,7 @@ Issue commands (inside a T3 Code thread; the thread is the issue):
   start --pr <url> [--title <t>] [--body-file <path>] [--source <id>]
       Takes in an open PR: puts this worktree's branch on its head, with the PR's branch as its upstream.
       The title defaults to the PR's, the source to its URL, and the body is what to do with it.
-  status
+  status [--full]
   run --stage research|plan|implement|review|land [--on plan|pr] [--context-file <path>] [--head <sha>] [--fallback]
       Prints the run, its target, and the task to hand the child, which names the file the brief is in.
       The service adds what the stage needs from stored results; a review takes no --context-file.
@@ -31,9 +31,10 @@ Issue commands (inside a T3 Code thread; the thread is the issue):
   finding <id> --fixed <commit> | --declined - | --filed <url>
   update [--kind bug|feature] [--title <t>] [--pr <url>] [--merge ask|never]
   ask --kind plan|question|blocked|merge --question <q> --recommend <text>
-      [--provisional] [--body-file <path>] [--option <label>]... [--head <sha>] [--round]
+      [--provisional] [--body-file <path>] [--option <label>]... [--replaces <id>]... [--head <sha>] [--round]
       A merge decision needs --head and has the options Merge and Do not merge. --round asks about
-      going on past the review round budget.
+      going on past the review round budget. --replaces supersedes an open question. For --kind plan,
+      --body-file may be omitted to attach the latest stored plan automatically.
   answer <decision> <text | ->
   close --outcome shipped|reviewed|not-a-bug|duplicate|already-fixed|dropped [--deploy verified|unverified|none]
         [--report-file <path>] <summary | ->
@@ -348,9 +349,11 @@ async function main(argv: string[]) {
 				})
 			)
 		}
-		case 'status':
+		case 'status': {
+			const { values } = args(rest, { full: { type: 'boolean' } })
 			await ensureServer()
-			return print(await call('POST', '/api/issue/status', {}))
+			return print(await call('POST', '/api/issue/status', { full: values.full }))
+		}
 		case 'settings':
 			await ensureServer()
 			return print(await call('POST', '/api/settings/resolve', { cwd: process.cwd() }))
@@ -382,6 +385,7 @@ async function main(argv: string[]) {
 				provisional: { type: 'boolean' },
 				'body-file': { type: 'string' },
 				option: { type: 'string', multiple: true },
+				replaces: { type: 'string', multiple: true },
 				head: { type: 'string' },
 				round: { type: 'boolean' }
 			})
@@ -395,6 +399,7 @@ async function main(argv: string[]) {
 					provisional: values.provisional,
 					body,
 					options: values.option ?? [],
+					replaces: values.replaces ?? [],
 					head: values.head,
 					round: values.round
 				})

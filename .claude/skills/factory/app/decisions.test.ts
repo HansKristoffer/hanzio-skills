@@ -162,3 +162,83 @@ test('the answer Do not merge leaves the open questions open', async () => {
 	expect(status.decisions.find((d: { id: string }) => d.id === how).answer).toBeNull()
 	expect(status.mergeHeld).toBe(true)
 })
+
+test('replaces supersedes an open question so it leaves Needs you and no longer blocks plan approval', async () => {
+	const oldQ = (await ask({ question: 'Use public bucket?', recommend: 'Public bucket', provisional: true })).body.decision
+	const newQ = (await ask({ question: 'Use private bucket?', recommend: 'Private bucket', replaces: [oldQ] })).body.decision
+	expect((await answer(oldQ, 'Public bucket')).status).toBe(409)
+	const board = (await h.call('GET', '/api/board')).body
+	expect(board.issues[0].decisions.map((d: { id: string }) => d.id)).toEqual([newQ])
+	const approval = (await plan()).body.decision
+	await answer(newQ, 'Private bucket')
+	const approved = await answer(approval, 'Approve')
+	expect(approved.status).toBe(200)
+	expect((await h.call('GET', '/api/board')).body.needsYou).toBe(0)
+})
+
+test('a plan decision attaches the latest stored plan automatically when body is omitted', async () => {
+	const run = (await h.as('t1')('POST', '/api/issue/run', { stage: 'plan' })).body.run
+	await h.as('planner')('POST', `/api/runs/${run}/report`, {
+		text: 'planned',
+		done: true,
+		result: {
+			outcome: 'done',
+			result: {
+				planned: 'Add green theme.',
+				outline: ['Adds green button'],
+				plan: '# Full Plan\n\nDetailed steps here.',
+				criteria: ['bun test passes'],
+				proof: 'unit test',
+				undecided: [],
+				later: []
+			}
+		}
+	})
+	const approval = (await plan()).body.decision
+	const detail = (await h.call('GET', '/api/issues/t1')).body
+	expect(detail.decisions.find((d: { id: string }) => d.id === approval).body).toContain('# Full Plan')
+})
+
+test('batch answers submit questions and plan approval atomically in one message, with optional autoShip', async () => {
+	const q1 = (await ask({ question: 'Blue or green?', recommend: 'Blue', provisional: true })).body.decision
+	const q2 = (await ask({ question: 'Round or square?', recommend: 'Round' })).body.decision
+	const approval = (await plan()).body.decision
+	// Leaving an open question out of a batch that approves the plan is refused without mutating anything.
+	const partial = await h.call('POST', '/api/issues/t1/answers', {
+		answers: [{ decision: q1, answer: 'Blue' }, { decision: approval, answer: 'Approve' }]
+	})
+	expect(partial.status).toBe(409)
+	expect((await decision(q1)).answer).toBeNull()
+
+	const ok = await h.call('POST', '/api/issues/t1/answers', {
+		answers: [
+			{ decision: q1, answer: 'Blue' },
+			{ decision: q2, answer: 'Round' },
+			{ decision: approval, answer: 'Approve' }
+		],
+		autoShip: true
+	})
+	expect(ok.status).toBe(200)
+	expect(ok.body.autoShip).toBe(true)
+	expect(sends()).toHaveLength(1)
+	expect(sends()[0]!.stdin).toContain(`${q1} ("Blue or green?"): Blue`)
+	expect(sends()[0]!.stdin).toContain(`${q2} ("Round or square?"): Round`)
+	expect(sends()[0]!.stdin).toContain(`${approval} ("Approve the plan?"): Approve`)
+	expect((await h.call('GET', '/api/board')).body.needsYou).toBe(0)
+})
+
+test('batch answers with a differing choice send the plan back to revise and do not enable autoShip', async () => {
+	const q1 = (await ask({ question: 'Blue or green?', recommend: 'Blue', provisional: true })).body.decision
+	const approval = (await plan()).body.decision
+	const res = await h.call('POST', '/api/issues/t1/answers', {
+		answers: [
+			{ decision: q1, answer: 'Green' },
+			{ decision: approval, answer: 'Change: also add border' }
+		],
+		autoShip: true
+	})
+	expect(res.status).toBe(200)
+	expect(res.body.autoShip).toBe(false)
+	expect((await decision(approval)).answer).toContain(`Change: write the plan again on the answers to ${q1}`)
+	expect((await decision(approval)).answer).toContain('Additional notes: also add border')
+})

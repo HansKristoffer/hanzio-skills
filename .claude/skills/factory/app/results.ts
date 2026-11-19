@@ -41,13 +41,13 @@ export const RESULT_SHAPES = {
 			size: oneOf('S', 'M', 'L'),
 			/** `review` only for an issue that took in a PR and asks nothing built on it. */
 			route: oneOf('implement', 'plan', 'review'),
-			/** The command that shows the problem, the commit it ran on, and what it printed there. */
+			/** The command that shows the problem, the commit it ran on, and what it printed there. Omitted for a feature. */
 			reproduction: either(obj({ command: str, base: str, observed: str }), obj({ notPossible: str })),
 			checks: list(obj({ command: str, baseline: str })),
 			undecided,
 			notes: str
 		},
-		['undecided', 'notes']
+		['reproduction', 'undecided', 'notes']
 	),
 	plan: obj({
 		/** What the person who approves the plan will get, and what waits for later, in plain words. */

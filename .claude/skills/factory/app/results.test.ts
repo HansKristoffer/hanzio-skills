@@ -218,3 +218,29 @@ test("a run that ended early leaves its progress lines to the next run of the st
 	expect(brief).toContain('Answered: Both')
 	expect((await as('/api/issue/run', { stage: 'review' })).body.brief).not.toContain('Questions asked of the user')
 })
+
+test('a feature research result may omit reproduction, and compact status trims superseded runs and plan markdown', async () => {
+	const featureResearch = { asked: 'Add dark mode toggle', kind: 'feature', size: 'M', route: 'plan', checks: [] }
+	expect((await runWith('research', done(featureResearch))).res.status).toBe(200)
+	const planPayload = (body: string) => ({
+		planned: 'Adds a theme toggle.',
+		outline: ['Toggle in header'],
+		plan: body,
+		criteria: ['Toggle persists'],
+		proof: 'screenshot',
+		undecided: [],
+		later: []
+	})
+	await runWith('plan', done(planPayload('first draft '.repeat(50))))
+	await runWith('plan', done(planPayload('final plan '.repeat(100))))
+
+	const compact = (await as('/api/issue/status', {})).body.runs as { stage: string; result: Record<string, any> }[]
+	const planRuns = compact.filter((r) => r.stage === 'plan')
+	expect(planRuns[0]!.result).toEqual({ outcome: 'done', superseded: true })
+	expect(planRuns[1]!.result.result.plan).toBeUndefined()
+	expect(planRuns[1]!.result.result.planChars).toBe('final plan '.repeat(100).length)
+	expect(planRuns[1]!.result.result.outline).toEqual(['Toggle in header'])
+
+	const full = (await as('/api/issue/status', { full: true })).body.runs as { stage: string; result: Record<string, any> }[]
+	expect(full.filter((r) => r.stage === 'plan')[1]!.result.result.plan).toContain('final plan')
+})

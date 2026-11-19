@@ -360,3 +360,67 @@ test('a PR a person merged while the issue waited on a decision, not on GitHub, 
 	expect(sends()).toHaveLength(1)
 	expect(sends()[0]!.stdin).toContain('the PR was merged')
 })
+
+test('a recorded nit fix commit keeps internalCovered true without a second review round', async () => {
+	const implement = (await as('/api/issue/run', { stage: 'implement' })).body.run
+	await h.as('c1')('POST', `/api/runs/${implement}/report`, {
+		text: 'done',
+		done: true,
+		result: { outcome: 'done', result: { built: 'Fixed', prUrl: PR, commit: HEAD, claims: [], notChecked: [], leftOut: [], decisions: [] } }
+	})
+	const rev = (await as('/api/issue/run', { stage: 'review', head: HEAD })).body.run
+	const revRes = await h.as('c2')('POST', `/api/runs/${rev}/report`, {
+		text: 'one nit',
+		done: true,
+		result: {
+			outcome: 'done',
+			result: {
+				commit: HEAD,
+				findings: [{ file: 'src/a.ts', line: 1, severity: 'nit', text: 'Rename x' }],
+				reproductionOnHead: 'none',
+				testsFailWithoutFix: true,
+				risk: { door: 'two-way', reach: 'local', unrelated: [], focus: [] }
+			}
+		}
+	})
+	const nitId = revRes.body.findings[0] as string
+	const nitCommit = 'e'.repeat(40)
+	await as('/api/issue/finding', { id: nitId, outcome: 'fixed', note: nitCommit })
+	await as('/api/issue/risk', { head: nitCommit, none: true })
+	h.gh.pr(rawPr({ view: { headRefOid: nitCommit } }))
+	expect((await cli(['gate'])).json.ready).toBe(true)
+})
+
+test('autoShip clears ask and planned risk when clean with nothing unrelated, never clearing merge never or unrelated changes', async () => {
+	await storeResults()
+	await as('/api/issue/update', { merge: 'ask' })
+	await as('/api/issue/risk', { head: HEAD, rule: 'a migration' })
+	const planDec = (await as('/api/issue/ask', { kind: 'plan', question: 'Approve?', recommend: 'Approve', options: ['Approve', 'Change'] })).body.decision
+	await h.call('POST', '/api/issues/t1/answers', { answers: [{ decision: planDec, answer: 'Approve' }], autoShip: true })
+	h.gh.pr(rawPr())
+	expect((await cli(['gate'])).json.ready).toBe(true)
+
+	// Unrelated changes reported by review still pause for merge approval even with autoShip on.
+	const rev2 = (await as('/api/issue/run', { stage: 'review', head: HEAD })).body.run
+	await h.as('c3')('POST', `/api/runs/${rev2}/report`, {
+		text: 'unrelated',
+		done: true,
+		result: {
+			outcome: 'done',
+			result: {
+				commit: HEAD,
+				findings: [],
+				reproductionOnHead: 'passes',
+				testsFailWithoutFix: true,
+				risk: { door: 'two-way', reach: 'module', unrelated: ['Edited README unasked'], focus: [] }
+			}
+		}
+	})
+	const blocked = (await cli(['gate'])).json.blockers.map((b: { code: string }) => b.code)
+	expect(blocked).toContain('risk')
+	expect(blocked).toContain('merge-setting')
+
+	// merge: never is never overridden by autoShip.
+	await as('/api/issue/update', { merge: 'never' })
+	expect((await cli(['gate'])).json.blockers.map((b: { code: string }) => b.code)).toContain('merge-setting')
+})

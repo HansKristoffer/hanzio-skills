@@ -273,7 +273,8 @@ export function startServer(options: ServerOptions) {
 		const runs = runsOf(id)
 		return (runs.filter((r) => r.state === 'running').at(-1) ?? runs.at(-1))?.stage ?? 'research'
 	}
-	const waits = (d: DecisionRow) => d.answer === null || (d.answered_via === 'page' && d.delivery !== 'sent')
+	const isOpenDecision = (d: DecisionRow) => d.answer === null && d.superseded_by === null
+	const waits = (d: DecisionRow) => isOpenDecision(d) || (d.answered_via === 'page' && d.delivery !== 'sent')
 	const gone = (issue: IssueRow) => issue.thread_missing >= MISSING_LIMIT
 	const openSends = (id: string) =>
 		db.query('select * from sends where issue_id = $id and arrived_at is null order by id').all({ id }) as SendRow[]
@@ -285,7 +286,7 @@ export function startServer(options: ServerOptions) {
 		gone(issue) ||
 		issue.pr_pokes >= MAX_POKES ||
 		undelivered(issue.id)
-	const blockingOpen = (id: string) => decisionsOf(id).some((d) => d.answer === null && !d.provisional)
+	const blockingOpen = (id: string) => decisionsOf(id).some((d) => isOpenDecision(d) && !d.provisional)
 
 	const base = () => `http://${tailnet?.name ?? tailnet?.ip ?? '127.0.0.1'}:${options.port}`
 	const pageUrl = (id: string) => `${base()}/#/issue/${id}`
@@ -405,7 +406,8 @@ export function startServer(options: ServerOptions) {
 		askedAt: d.asked_at,
 		answeredAt: d.answered_at,
 		head: d.head,
-		round: d.round
+		round: d.round,
+		supersededBy: d.superseded_by
 	})
 
 	const publicIssue = (i: IssueRow) => ({
@@ -424,6 +426,7 @@ export function startServer(options: ServerOptions) {
 		/** How large the change is: the lines its PR adds and deletes. null until the PR is read. */
 		size: (i.pr_state ? (JSON.parse(i.pr_state) as PrState).size : null) ?? null,
 		takenPr: i.pr_taken ? (JSON.parse(i.pr_taken) as TakenPr) : null,
+		autoShip: !!i.auto_ship,
 		configError: i.config_error,
 		needsYou: i.state === 'open' && needsYou(i),
 		stuck: i.nudges >= MAX_NUDGES || i.pr_pokes >= MAX_POKES,
@@ -437,8 +440,14 @@ export function startServer(options: ServerOptions) {
 	const boardItem = (i: IssueRow) => {
 		const runs = runsOf(i.id)
 		const running = runs.filter((r) => r.state === 'running').at(-1)
+		const pr = i.pr_state ? (JSON.parse(i.pr_state) as PrState) : null
 		return {
 			...publicIssue(i),
+			asked: (latestResult(i.id, 'research')?.result.asked as string | undefined) ?? null,
+			planned: (latestResult(i.id, 'plan')?.result.planned as string | undefined) ?? null,
+			built: (latestResult(i.id, 'implement')?.result.built as string | undefined) ?? null,
+			prChecks: pr?.checks.state ?? null,
+			reviewRisk: prRisk(i.id),
 			lastEvent: lastEvent(i.id),
 			decisions: decisionsOf(i.id).filter(waits).map(publicDecision),
 			waiting: waitingOf(i),
@@ -722,15 +731,39 @@ export function startServer(options: ServerOptions) {
 		}
 	}
 
-	function issueStatus(issue: IssueRow) {
+	/** Trims older superseded run results and the full plan markdown in CLI `status` so each orchestrator turn stays lean. */
+	function compactRuns(rows: RunRow[]) {
+		const latestByKey = new Map<string, string>()
+		for (const r of rows) {
+			if (r.state === 'done' && r.result) latestByKey.set(`${r.stage}:${r.subject ?? ''}`, r.id)
+		}
+		return rows.map((r) => {
+			const pub = publicRun(r)
+			if (!pub.result) return pub
+			const key = `${r.stage}:${r.subject ?? ''}`
+			const latestId = latestByKey.get(key)
+			if (latestId && latestId !== r.id) {
+				return { ...pub, result: { outcome: (pub.result as { outcome?: string }).outcome, superseded: true } }
+			}
+			if (r.stage === 'plan' && pub.result.outcome === 'done' && typeof pub.result.result?.plan === 'string') {
+				const { plan, ...rest } = pub.result.result as { plan: string; [k: string]: unknown }
+				return { ...pub, result: { ...pub.result, result: { ...rest, planChars: plan.length } } }
+			}
+			return pub
+		})
+	}
+
+	function issueStatus(issue: IssueRow, { compact = false } = {}) {
 		const decisions = decisionsOf(issue.id)
+		const runs = runsOf(issue.id)
 		return {
 			issue: publicIssue(issue),
 			url: pageUrl(issue.id),
 			stage: stageOf(issue.id),
-			runs: runsOf(issue.id).map(publicRun),
+			runs: compact ? compactRuns(runs) : runs.map(publicRun),
 			decisions: decisions.map(publicDecision),
-			mergeHeld: decisions.some((d) => d.answer === null),
+			mergeHeld: decisions.some(isOpenDecision),
+			autoShip: !!issue.auto_ship,
 			settings: parseResolved(issue).settings,
 			findings: findingsOf(issue.id).map(publicFinding),
 			reviewRisk: prRisk(issue.id),
@@ -762,7 +795,7 @@ export function startServer(options: ServerOptions) {
 		const parts: string[] = []
 		const json = (title: string, value: unknown) => `### ${title}\n\n\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\``
 		// What the user was asked, so a stage builds on their word, or on the recommendation while they have not answered.
-		const asked = decisionsOf(issue.id).filter((d) => d.kind === 'question')
+		const asked = decisionsOf(issue.id).filter((d) => d.kind === 'question' && d.superseded_by === null)
 		const questions = asked.length
 			? `### Questions asked of the user\n\n${asked
 					.map(
@@ -1054,6 +1087,10 @@ export function startServer(options: ServerOptions) {
 		const recommendation = text(body.recommend, 'recommend', { required: true, max: MAX_EVENT })!
 		let options = body.options ?? []
 		if (!Array.isArray(options) || options.some((o) => typeof o !== 'string')) fail(400, 'options must be a list of labels')
+		const rawReplaces = body.replaces === undefined ? [] : Array.isArray(body.replaces) ? body.replaces : [body.replaces]
+		if (rawReplaces.some((r) => typeof r !== 'string' || !r)) fail(400, 'replaces must be a list of decision ids')
+		const replaces = [...new Set(rawReplaces as string[])]
+		for (const oldId of replaces) decisionOf(oldId, issue.id)
 		let head: string | null = null
 		let round: number | null = null
 		let accepts = ''
@@ -1062,7 +1099,7 @@ export function startServer(options: ServerOptions) {
 			head = text(body.head, 'head', { required: true, max: 64 })!
 			if ((options as string[]).length) fail(400, 'option: a merge decision always has the options Merge and Do not merge')
 			options = [...MERGE_OPTIONS]
-			const open = decisionsOf(issue.id).filter((d) => d.answer === null && d.provisional)
+			const open = decisionsOf(issue.id).filter((d) => isOpenDecision(d) && d.provisional && !replaces.includes(d.id))
 			if (open.length) {
 				accepts = `Answering Merge also accepts the recommendation of each open question, which this head was built on:\n\n${open
 					.map((d) => `- ${d.question.replaceAll('\n', ' ')}\n  Recommendation: ${d.recommendation}`)
@@ -1074,35 +1111,45 @@ export function startServer(options: ServerOptions) {
 			round = latestRound(issue.id)?.n ?? fail(400, 'round: this issue has no review round')
 			options = [...ROUND_OPTIONS]
 		}
+		const givenBody = text(body.body, 'body')
+		// A plan decision pulls the latest stored plan automatically when --body-file is omitted.
+		const planBody = !givenBody && kind === 'plan' ? ((latestResult(issue.id, 'plan')?.result.plan as string | undefined) ?? undefined) : undefined
 		const id = randomId('d')
-		db.query(
-			`insert into decisions (id, issue_id, kind, provisional, question, body, recommendation, options, head, round, asked_at)
-			values ($id, $issue, $kind, $provisional, $question, $body, $recommendation, $options, $head, $round, $now)`
-		).run({
-			id,
-			issue: issue.id,
-			kind,
-			provisional: provisional ? 1 : 0,
-			question,
-			body: [text(body.body, 'body'), accepts].filter(Boolean).join('\n\n') || null,
-			recommendation,
-			options: JSON.stringify(options),
-			head,
-			round,
-			now: Date.now()
-		})
+		db.transaction(() => {
+			db.query(
+				`insert into decisions (id, issue_id, kind, provisional, question, body, recommendation, options, head, round, asked_at)
+				values ($id, $issue, $kind, $provisional, $question, $body, $recommendation, $options, $head, $round, $now)`
+			).run({
+				id,
+				issue: issue.id,
+				kind,
+				provisional: provisional ? 1 : 0,
+				question,
+				body: [givenBody ?? planBody, accepts].filter(Boolean).join('\n\n') || null,
+				recommendation,
+				options: JSON.stringify(options),
+				head,
+				round,
+				now: Date.now()
+			})
+			for (const oldId of replaces) {
+				db.query('update decisions set superseded_by = $id where id = $oldId').run({ id, oldId })
+			}
+		})()
+		if (replaces.length) addEvent(issue.id, 'decision', `Superseded ${replaces.join(', ')} with ${id}`)
 		addEvent(issue.id, 'decision', `${provisional ? 'Provisional' : 'Waiting for you'}: ${question}`)
 		notify(provisional ? 'question' : 'decision', issue.id, `${provisional ? 'Provisional question, the thread goes on with its recommendation' : 'Waiting for you'}: ${question}`, {
 			decision: publicDecision(decisionOf(id)),
 			// What answers it: answer_decision with this decision and one of `answer` (or your own words when it is null).
 			act: { tool: 'answer_decision', arguments: { decision: id }, answer: (options as string[]).length ? options : null }
 		})
-		return { decision: id, url: pageUrl(issue.id) }
+		return { decision: id, ...(replaces.length && { superseded: replaces }), url: pageUrl(issue.id) }
 	}
 
 	function decisionOf(id: string, issueId?: string) {
 		const decision = (db.query('select * from decisions where id = $id').get({ id }) as DecisionRow | null) ?? fail(404, `no decision ${id}`)
 		if (issueId && decision.issue_id !== issueId) fail(403, `decision ${id} belongs to another issue`)
+		if (decision.superseded_by !== null) fail(409, `decision ${id} was superseded by ${decision.superseded_by}`)
 		if (decision.answer !== null) fail(409, `decision ${id} is already answered`)
 		return decision
 	}
@@ -1111,7 +1158,7 @@ export function startServer(options: ServerOptions) {
 	 * on that head accepts them: the user says yes once, not once per question. */
 	function acceptWithMerge(decision: DecisionRow, answer: string, via: 'page' | 'thread') {
 		if (decision.kind !== 'merge' || answer !== 'Merge') return
-		const open = decisionsOf(decision.issue_id).filter((d) => d.answer === null && d.provisional && d.asked_at <= decision.asked_at)
+		const open = decisionsOf(decision.issue_id).filter((d) => isOpenDecision(d) && d.provisional && d.asked_at <= decision.asked_at)
 		const now = Date.now()
 		for (const d of open) {
 			db.query('update decisions set answer = $answer, answered_via = $via, delivery = $delivery, answered_at = $now where id = $id').run({
@@ -1128,14 +1175,16 @@ export function startServer(options: ServerOptions) {
 	/** A plan up for approval was written on the recommendation of each question open beside it, so the questions
 	 * come first. Once the last one is answered, an answer other than its recommendation sends the plan back to
 	 * be written on the answers: the user's Change, said for them. */
-	function planFollowsAnswers(issueId: string, via: 'page' | 'thread') {
+	function planFollowsAnswers(issueId: string, via: 'page' | 'thread', extraNote?: string) {
 		const all = decisionsOf(issueId)
-		const plan = all.find((d) => d.kind === 'plan' && d.answer === null)
-		if (!plan || all.some((d) => d.kind === 'question' && d.answer === null)) return
-		const differ = all.filter((d) => d.kind === 'question' && (d.answered_at ?? 0) >= plan.asked_at && d.answer !== d.recommendation)
+		const plan = all.find((d) => d.kind === 'plan' && isOpenDecision(d))
+		if (!plan || all.some((d) => d.kind === 'question' && isOpenDecision(d))) return
+		const differ = all.filter((d) => d.kind === 'question' && d.superseded_by === null && (d.answered_at ?? 0) >= plan.asked_at && d.answer !== d.recommendation)
 		if (!differ.length) return
+		const note = extraNote?.replace(/^change:\s*/i, '').trim()
+		const suffix = note ? `\n\nAdditional notes: ${note}` : ''
 		db.query('update decisions set answer = $answer, answered_via = $via, delivery = $delivery, answered_at = $now where id = $id').run({
-			answer: `Change: write the plan again on the answers to ${differ.map((d) => d.id).join(', ')}, which differ from what it was built on`,
+			answer: `Change: write the plan again on the answers to ${differ.map((d) => d.id).join(', ')}, which differ from what it was built on${suffix}`.slice(0, MAX_EVENT),
 			via,
 			delivery: via === 'page' ? 'held' : null,
 			now: Date.now(),
@@ -1166,7 +1215,7 @@ export function startServer(options: ServerOptions) {
 		if (issue.state !== 'open') fail(409, `issue ${issue.id} is ${issue.state}`)
 		const answer = text(body.answer, 'answer', { required: true, max: MAX_EVENT })!
 		if (decision.kind === 'plan') {
-			const open = decisionsOf(issue.id).filter((d) => d.kind === 'question' && d.answer === null).length
+			const open = decisionsOf(issue.id).filter((d) => d.kind === 'question' && isOpenDecision(d)).length
 			if (open) fail(409, `answer the ${open === 1 ? 'open question' : `${open} open questions`} of this issue first: the plan is built on ${open === 1 ? 'its answer' : 'their answers'}`)
 		}
 		db.query(
@@ -1176,6 +1225,100 @@ export function startServer(options: ServerOptions) {
 		acceptWithMerge(decision, answer, 'page')
 		planFollowsAnswers(issue.id, 'page')
 		return deliver(issue.id)
+	}
+
+	/** Answers a batch of decisions on one issue atomically (questions + plan approval in one click from the page). */
+	async function pageAnswers(issueId: string, body: Record<string, unknown>) {
+		const issue = getIssue(issueId) ?? fail(404, `no issue ${issueId}`)
+		if (issue.state !== 'open') fail(409, `issue ${issue.id} is ${issue.state}`)
+		if (!Array.isArray(body.answers) || !body.answers.length) fail(400, 'answers: give at least one { decision, answer }')
+		const autoShip = body.autoShip === true
+		if (autoShip && effectiveMerge(issue) === 'never') fail(400, 'autoShip: merge is never for this issue')
+		const seen = new Set<string>()
+		const entries = (body.answers as unknown[]).map((raw, n) => {
+			const item = (raw ?? {}) as Record<string, unknown>
+			const id = text(item.decision, `answers[${n}].decision`, { required: true })!
+			const answer = text(item.answer, `answers[${n}].answer`, { required: true, max: MAX_EVENT })!
+			if (seen.has(id)) fail(400, `answers: duplicate decision ${id}`)
+			seen.add(id)
+			return { decision: decisionOf(id, issue.id), answer }
+		})
+		const planEntry = entries.find((e) => e.decision.kind === 'plan')
+		if (planEntry) {
+			const remainingQuestions = decisionsOf(issue.id).filter(
+				(d) => d.kind === 'question' && isOpenDecision(d) && !seen.has(d.id)
+			).length
+			if (remainingQuestions) {
+				fail(409, `answer the ${remainingQuestions === 1 ? 'open question' : `${remainingQuestions} open questions`} of this issue first: the plan is built on ${remainingQuestions === 1 ? 'its answer' : 'their answers'}`)
+			}
+		}
+		const now = Date.now()
+		const nonPlan = entries.filter((e) => e.decision.kind !== 'plan')
+		let enabledAutoShip = false
+		db.transaction(() => {
+			for (const { decision, answer } of nonPlan) {
+				db.query(
+					`update decisions set answer = $answer, answered_via = 'page', answered_from = null, delivery = 'held', answered_at = $now where id = $id`
+				).run({ answer, now, id: decision.id })
+				addEvent(issue.id, 'answer', `Answered on the page: ${decision.question} → ${answer}`)
+				acceptWithMerge(decision, answer, 'page')
+			}
+			const extraNote = planEntry && planEntry.answer !== 'Approve' && planEntry.answer !== 'Change' ? planEntry.answer : undefined
+			planFollowsAnswers(issue.id, 'page', extraNote)
+			if (planEntry) {
+				const freshPlan = db.query('select * from decisions where id = $id').get({ id: planEntry.decision.id }) as DecisionRow
+				if (isOpenDecision(freshPlan)) {
+					db.query(
+						`update decisions set answer = $answer, answered_via = 'page', answered_from = null, delivery = 'held', answered_at = $now where id = $id`
+					).run({ answer: planEntry.answer, now, id: freshPlan.id })
+					addEvent(issue.id, 'answer', `Answered on the page: ${freshPlan.question} → ${planEntry.answer}`)
+					if (autoShip && planEntry.answer === 'Approve') {
+						db.query('update issues set auto_ship = 1 where id = $id').run({ id: issue.id })
+						addEvent(issue.id, 'report', 'Auto-ship enabled: will merge automatically once CI and reviews pass')
+						enabledAutoShip = true
+					}
+				}
+			}
+		})()
+		const delivered = await deliver(issue.id)
+		return { ok: true, autoShip: enabledAutoShip || !!getIssue(issue.id)!.auto_ship, ...delivered }
+	}
+
+	/** Sends a direct note from the factory page to an open issue's thread. */
+	async function pageMessage(issueId: string, body: Record<string, unknown>) {
+		const issue = getIssue(issueId) ?? fail(404, `no issue ${issueId}`)
+		if (issue.state !== 'open') fail(409, `issue ${issue.id} is ${issue.state}, and its thread no longer works on it`)
+		const message = text(body.message, 'message', { required: true, max: MAX_EVENT })!
+		if (!(await threadShow(issue.id))) fail(409, "T3 Code cannot find this issue's thread")
+		await sendTo(
+			issue.id,
+			'note',
+			`Factory: the user sent this from the factory page. Run factory status first, then take it into account where it bears on the work:\n\n${message}`
+		)
+		addEvent(issue.id, 'note', `Note from the page: ${message}`)
+		return { ok: true, sent: true }
+	}
+
+	/** Reads a GitHub issue or PR URL so the New issue form can pre-fill title and body. */
+	async function fetchGithubItem(body: Record<string, unknown>) {
+		const url = text(body.url, 'url', { required: true, max: 500 })!.trim()
+		const match = url.match(/^https:\/\/github\.com\/([^/\s]+)\/([^/\s]+)\/(issues|pull)\/(\d+)(?:[?#].*)?$/)
+		if (!match) fail(400, 'url: give a GitHub issue or pull request URL')
+		const [, owner, name, kind, num] = match
+		const cleanUrl = `https://github.com/${owner}/${name}/${kind}/${num}`
+		const cmd = kind === 'pull' ? ['pr', 'view', cleanUrl, '--json', 'title,body,url,state,number'] : ['issue', 'view', cleanUrl, '--json', 'title,body,url,state,number']
+		const res = await gh(cmd)
+		if (!res.ok) fail(502, `gh could not read ${cleanUrl}: ${res.err || res.out}`)
+		const parsed = JSON.parse(res.out) as { title?: string; body?: string; url?: string; state?: string; number?: number }
+		return {
+			kind: kind === 'pull' ? 'pr' : 'issue',
+			repo: `${owner}/${name}`.toLowerCase(),
+			number: Number(parsed.number ?? num),
+			title: String(parsed.title ?? ''),
+			body: String(parsed.body ?? ''),
+			url: String(parsed.url ?? cleanUrl),
+			state: String(parsed.state ?? '')
+		}
 	}
 
 	function issueClose(issue: IssueRow, body: Record<string, unknown>) {
@@ -1672,17 +1815,26 @@ export function startServer(options: ServerOptions) {
 	const mergeApproved = (issueId: string, head: string) =>
 		decisionsOf(issueId).some((d) => d.kind === 'merge' && d.answer === 'Merge' && sameCommit(d.head, head))
 
-	/** Decision 14: the head is covered by a trusted approval on it, or by a clean internal review of it. */
+	/** Decision 14: the head is covered by a trusted approval on it, by a clean internal review of it, or by a recorded nit fix after a clean review. */
 	function internalCovered(issue: IssueRow, pr: PrState) {
 		if (parseResolved(issue).settings.reviewRounds === 0) return true
 		if (pr.approvedBy.some((a) => sameCommit(a.commit, pr.head))) return true
 		if (mergeApproved(issue.id, pr.head)) return true
-		const reviewed = runsOf(issue.id).some((r) => {
+		const doneReviews = runsOf(issue.id).filter((r) => {
 			if (r.stage !== 'review' || r.subject !== 'pr' || r.state !== 'done' || !r.result) return false
-			const result = JSON.parse(r.result) as { outcome: string; result?: { commit?: string } }
-			return result.outcome === 'done' && (sameCommit(result.result?.commit, pr.head) || sameCommit(r.head, pr.head))
+			return (JSON.parse(r.result) as { outcome: string }).outcome === 'done'
 		})
-		return reviewed && !findingsOf(issue.id).some((f) => f.subject === 'pr' && f.severity === 'important' && isOpenFinding(f))
+		if (!doneReviews.length) return false
+		if (findingsOf(issue.id).some((f) => f.subject === 'pr' && f.severity === 'important' && isOpenFinding(f))) return false
+		const reviewedHead = doneReviews.some((r) => {
+			const result = JSON.parse(r.result!) as { result?: { commit?: string } }
+			return sameCommit(result.result?.commit, pr.head) || sameCommit(r.head, pr.head)
+		})
+		if (reviewedHead) return true
+		// A head pushed only to fix nit findings from a clean review needs no second review round.
+		return findingsOf(issue.id).some(
+			(f) => f.subject === 'pr' && f.severity === 'nit' && f.outcome === 'fixed' && sameCommit(f.outcome_note, pr.head)
+		)
 	}
 
 	/** Decision 11: three pushes in a round and three rounds, unless the user said to go on. */
@@ -1707,8 +1859,10 @@ export function startServer(options: ServerOptions) {
 			settings: parseResolved(issue).settings,
 			merge: effectiveMerge(issue),
 			internalCovered: pr ? internalCovered(issue, pr) : false,
-			openDecisions: decisionsOf(issue.id).filter((d) => d.answer === null).length,
+			openDecisions: decisionsOf(issue.id).filter(isOpenDecision).length,
 			mergeApproved: pr ? mergeApproved(issue.id, pr.head) : false,
+			autoShip: !!issue.auto_ship,
+			hasUnrelated: (prRisk(issue.id)?.unrelated.length ?? 0) > 0,
 			riskHead: issue.risk_head && pr && sameCommit(issue.risk_head, pr.head) ? pr.head : issue.risk_head,
 			riskRule: issue.risk_rule,
 			roundBudget: roundBudget(issue.id)
@@ -2824,7 +2978,7 @@ export function startServer(options: ServerOptions) {
 					: openIssueOf(req)
 			switch (parts[2]) {
 				case 'status':
-					return issueStatus(issue)
+					return issueStatus(issue, { compact: input.full !== true })
 				case 'evidence':
 					return issueEvidence(issue, input)
 				case 'preview':
@@ -2872,6 +3026,12 @@ export function startServer(options: ServerOptions) {
 		if (method === 'POST' && parts[0] === 'api' && parts[1] === 'decisions' && parts[3] === 'answer' && parts[2]) {
 			return pageAnswer(decodeURIComponent(parts[2]), await body())
 		}
+		if (method === 'POST' && parts[0] === 'api' && parts[1] === 'issues' && parts[3] === 'answers' && parts[2]) {
+			return pageAnswers(decodeURIComponent(parts[2]), await body())
+		}
+		if (method === 'POST' && parts[0] === 'api' && parts[1] === 'issues' && parts[3] === 'message' && parts[2]) {
+			return pageMessage(decodeURIComponent(parts[2]), await body())
+		}
 		if (method === 'POST' && parts[0] === 'api' && parts[1] === 'issues' && parts[3] === 'drop' && parts[2]) {
 			return dropIssue(decodeURIComponent(parts[2]), await body())
 		}
@@ -2882,6 +3042,8 @@ export function startServer(options: ServerOptions) {
 			const issue = getIssue(decodeURIComponent(parts[2])) ?? fail(404, `no issue ${parts[2]}`)
 			return deliver(issue.id)
 		}
+		if (method === 'GET' && url.pathname === '/api/repos') return { repos: knownRepos() }
+		if (method === 'POST' && url.pathname === '/api/github/fetch') return fetchGithubItem(await body())
 		if (method === 'PUT' && url.pathname.startsWith('/api/stores/')) {
 			return putStore(decodeURIComponent(url.pathname.slice('/api/stores/'.length)), await body())
 		}

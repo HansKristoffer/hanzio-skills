@@ -121,7 +121,7 @@ function nextStep(message: string) {
 
 /** The board's issue, cut down to what an agent needs to choose what to do next. */
 function brief(issue: Json) {
-	const keys = ['id', 'title', 'kind', 'repo', 'state', 'stage', 'outcome', 'summary', 'needsYou', 'stuck', 'threadGone', 'undelivered', 'waiting', 'run', 'prUrl', 'threadLink', 'url', 'source', 'createdAt', 'updatedAt', 'closedAt']
+	const keys = ['id', 'title', 'asked', 'built', 'kind', 'repo', 'state', 'stage', 'outcome', 'summary', 'autoShip', 'needsYou', 'stuck', 'threadGone', 'undelivered', 'waiting', 'run', 'prUrl', 'threadLink', 'url', 'source', 'createdAt', 'updatedAt', 'closedAt']
 	const out: Json = {}
 	for (const key of keys) if (issue[key] !== undefined && issue[key] !== null && issue[key] !== false) out[key] = issue[key]
 	const decisions = issue.decisions as Json[] | undefined
