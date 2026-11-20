@@ -549,11 +549,15 @@ function h(tag, attrs, ...children) {
 }
 
 /** replaceChildren turns null into the text "null", so empty parts are dropped first. */
+function fill(el, ...nodes) {
+	el.replaceChildren(...nodes.flat(Infinity).filter((n) => n !== null && n !== undefined && n !== false))
+}
+
 function render(...nodes) {
 	const active = document.activeElement
 	const key = active && active.dataset ? active.dataset.draft : undefined
 	const caret = key ? [active.selectionStart, active.selectionEnd] : null
-	main.replaceChildren(...nodes.flat(Infinity).filter((n) => n !== null && n !== undefined && n !== false))
+	fill(main, ...nodes)
 	const again = key && main.querySelector(`[data-draft="${CSS.escape(key)}"]`)
 	if (again) {
 		again.focus()
@@ -1069,7 +1073,7 @@ function decisionWorkbench(data, pending, planRes) {
 			)
 
 			box.onkeydown = (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !submitBtn.disabled) { e.preventDefault(); submitAll() } }
-			box.replaceChildren(head, ...held.filter((d) => d.kind === 'question').map(heldRow), planBlock, ...qCards, fbBox, bar)
+			fill(box, head, ...held.filter((d) => d.kind === 'question').map(heldRow), planBlock, ...qCards, fbBox, bar)
 		}
 		rebuild()
 		cards.push(box)
@@ -1173,7 +1177,7 @@ function mergeDecisionCard(issue, d, blockingBefore = 0) {
 			)
 		) : null
 
-		box.replaceChildren(
+		fill(box,
 			h('div', { class: 'wb-head' },
 				h('h2', {}, number ? `Ready to merge PR #${number}` : 'Ready to merge'),
 				h('span', { class: 'num' }, dotted(d.head ? `commit ${d.head.slice(0, 7)}` : null, when(d.askedAt)))
