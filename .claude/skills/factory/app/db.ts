@@ -215,7 +215,11 @@ export const MIGRATIONS = [
 	alter table issues add column auto_ship integer not null default 0;`,
 	// The PR's overview page (the summarize-pr skill's page) and the head it was written for.
 	`alter table issues add column overview_head text;
-	alter table issues add column overview_at integer;`
+	alter table issues add column overview_at integer;`,
+	// A thread can ask to be woken at a time for any wait, not only a usage limit's reset, and new comments on
+	// the item the issue came from reach the thread.
+	`alter table issues rename column limit_until to wake_at;
+	alter table issues add column source_seen integer;`
 ]
 
 export const MAX_EVENT = 2000
@@ -259,14 +263,17 @@ export type IssueRow = {
 	preview: string | null
 	/** The PR the issue started from, as JSON (`TakenPr` in takein.ts); null when the factory opens the PR. */
 	pr_taken: string | null
-	/** When the usage limit that stopped a stage resets; the service wakes the thread then. */
-	limit_until: number | null
+	/** When the service wakes the thread: a usage limit's reset (with `waiting_on` null), or the time the thread
+	 * set to check again on what it waits on. */
+	wake_at: number | null
 	limit_note: string | null
 	/** Set by the user on plan approval to skip the final merge confirmation once CI and reviews pass. */
 	auto_ship: number
 	/** The PR head the stored overview page shows; null when no overview was written. */
 	overview_head: string | null
 	overview_at: number | null
+	/** The newest comment on the source item the thread has been given; null means none since the issue started. */
+	source_seen: number | null
 }
 
 /** A message the service gave a thread, until it shows in the thread's messages. */

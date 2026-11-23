@@ -948,7 +948,7 @@ function statusOf(i) {
 		return {
 			tone: w.overdue ? 'warn' : 'idle',
 			label: `Waiting on ${w.on}${w.overdue ? ', overdue' : ''}`,
-			note: dotted(w.who.length ? w.who.join(', ') : null, w.note, lasting(w.since)),
+			note: dotted(w.who.length ? w.who.join(', ') : null, w.note, lasting(w.since), w.until ? `checks again at ${clock(w.until)}` : null),
 			alarm: w.safetyNet !== 'on' ? `Safety net ${w.safetyNet}` : null
 		}
 	}
@@ -2133,7 +2133,7 @@ function prPanel(data) {
 		h('div', { class: 'meta' },
 			h('div', {}, dotted(`head ${pr.head.slice(0, 7)}`, h('span', {}, 'synced ', when(pr.syncedAt)), pr.rules ? `rules: ${pr.rules.approvals} approval(s)${pr.rules.resolveThreads ? ', resolved conversations' : ''}` : 'branch rules unreadable')),
 			data.round ? h('div', {}, `Round ${data.round.n}${data.round.ended_at ? ' closed' : ' open'}, ${data.round.pushes} push${data.round.pushes === 1 ? '' : 'es'}`) : null,
-			data.waiting?.on === 'limit' ? h('div', {}, `Stopped by a usage limit${data.waiting.note ? ` (${data.waiting.note})` : ''}; the thread goes on after the reset at ${clock(data.waiting.until)}.`) : data.waiting ? h('div', {}, `Waiting on ${data.waiting.on}${data.waiting.note ? `: ${data.waiting.note}` : ''} since ${ago(data.waiting.since)}${data.waiting.overdue ? ' (overdue)' : ''}. Safety net ${data.waiting.safetyNet}.`) : null
+			data.waiting?.on === 'limit' ? h('div', {}, `Stopped by a usage limit${data.waiting.note ? ` (${data.waiting.note})` : ''}; the thread goes on after the reset at ${clock(data.waiting.until)}.`) : data.waiting ? h('div', {}, `Waiting on ${data.waiting.on}${data.waiting.note ? `: ${data.waiting.note}` : ''} since ${ago(data.waiting.since)}${data.waiting.overdue ? ' (overdue)' : ''}${data.waiting.until ? `; the thread checks again at ${clock(data.waiting.until)}` : ''}. Safety net ${data.waiting.safetyNet}.`) : null
 		)
 	)
 }
@@ -2890,6 +2890,7 @@ function intakeRow(source, item, showSource) {
 	if (item.priority) pushText(h('span', { class: `in-pri ${priorityClass(item.priority)}` }, h('i'), item.priority))
 	if (item.project) pushText(h('span', {}, item.project))
 	if (item.assignees.length) pushText(h('span', {}, item.assignees.join(', ')))
+	if (item.blockedBy?.length) pushText(h('span', { class: 'in-state', title: 'Scheduled intake leaves it until these are closed' }, `blocked by ${item.blockedBy.join(', ')}`))
 
 	const labelTags = item.labels.map((label) => {
 		const active = intake.filter.label === label

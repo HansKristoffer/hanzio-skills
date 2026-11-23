@@ -8,7 +8,7 @@ Factory intake for <project>. Find new <bugs, errors, requests> in <the systems>
 Metric: issues the factory shipped / threads this task started, read by the weekly review.
 Write boundary: this run's only writes are `factory new`. It changes no code and writes to no tracker.
 
-Look in: <each system, how to reach it, and what counts as an item, for example "GitHub issues in acme/api that are open and labelled factory: gh issue list --repo acme/api --label factory --state open --json number,title,body,url,createdAt">.
+Look in: <each system, how to reach it, and what counts as an item, for example "GitHub issues in acme/api that are open and labelled factory: gh issue list --repo acme/api --label factory --state open --json number,title,body,url,createdAt,blockedBy">.
 Source: <the stable id for an item, for example "the issue's URL">.
 Repository: <the checkout to run factory new in, for example "/home/me/code/api">.
 Caps: <only when they differ: "start at most 2", "none while 3 wait for the user">.
@@ -28,7 +28,7 @@ Factory intake for the Acme API. Find open GitHub issues labelled factory in acm
 Metric: issues the factory shipped / threads this task started, read by the weekly review.
 Write boundary: this run's only writes are `factory new`. It changes no code and writes to no tracker.
 
-Look in: GitHub issues in acme/api, open and labelled factory: gh issue list --repo acme/api --label factory --state open --limit 200 --json number,title,body,url,createdAt,comments. Each issue is an item; its text is the body and the comments.
+Look in: GitHub issues in acme/api, open and labelled factory: gh issue list --repo acme/api --label factory --state open --limit 200 --json number,title,body,url,createdAt,comments,blockedBy. Each issue is an item; its text is the body and the comments.
 Source: the issue's URL.
 Repository: /home/me/code/api.
 

@@ -32,6 +32,8 @@ export type IntakeItem = {
 	author: string | null
 	priority: string | null
 	project: string | null
+	/** The open items this one waits on (GitHub's blocked-by, Linear's blocked-by relation), as refs. */
+	blockedBy: string[]
 	createdAt: number
 	updatedAt: number
 }
@@ -124,6 +126,7 @@ type GhIssue = {
 	createdAt?: string
 	updatedAt?: string
 	comments?: { author?: { login: string } | null; body: string; createdAt: string }[]
+	blockedBy?: { nodes: { number: number; state: string; url: string }[] }
 }
 
 const time = (iso?: string | null) => (iso ? Date.parse(iso) || 0 : 0)
@@ -142,7 +145,7 @@ async function githubList(source: IntakeSource): Promise<IntakeItem[]> {
 	const { repo, label } = source.github!
 	const args = ['issue', 'list', '-R', repo, '--state', 'open', '--limit', String(LIST_LIMIT)]
 	if (label) args.push('--label', label)
-	args.push('--json', 'number,title,url,state,labels,assignees,author,createdAt,updatedAt')
+	args.push('--json', 'number,title,url,state,labels,assignees,author,createdAt,updatedAt,blockedBy')
 	const issues = await ghJson<GhIssue[]>(args, `the issues of ${repo}`)
 	return issues.map((i) => ({
 		key: String(i.number),
@@ -155,6 +158,12 @@ async function githubList(source: IntakeSource): Promise<IntakeItem[]> {
 		author: i.author?.login ?? null,
 		priority: null,
 		project: null,
+		blockedBy: (i.blockedBy?.nodes ?? [])
+			.filter((b) => b.state.toUpperCase() === 'OPEN')
+			.map((b) => {
+				const other = b.url.match(GH_ISSUE_URL)?.[1]
+				return other && other.toLowerCase() !== repo.toLowerCase() ? `${other}#${b.number}` : `#${b.number}`
+			}),
 		createdAt: time(i.createdAt),
 		updatedAt: time(i.updatedAt)
 	}))
@@ -215,7 +224,8 @@ async function linear<T>(key: string, query: string, variables: Record<string, u
 }
 
 const LINEAR_ISSUE = `id identifier title url createdAt updatedAt priorityLabel
-	state { name type } labels { nodes { name } } assignee { name } creator { name } project { name }`
+	state { name type } labels { nodes { name } } assignee { name } creator { name } project { name }
+	inverseRelations(first: 50) { nodes { type issue { identifier state { type } } } }`
 
 type LinearIssue = {
 	identifier: string
@@ -231,6 +241,8 @@ type LinearIssue = {
 	project?: { name: string } | null
 	description?: string | null
 	comments?: { nodes: { body: string; createdAt: string; user?: { name: string } | null }[] }
+	/** Relations whose target is this issue: for `blocks`, `issue` blocks this one. */
+	inverseRelations?: { nodes: { type: string; issue?: { identifier: string; state?: { type: string } | null } | null }[] }
 }
 
 /** Linear's URL ends in a slug of the title, which changes with it; the factory keys items without it. */
@@ -247,6 +259,9 @@ const linearItem = (i: LinearIssue): IntakeItem => ({
 	author: i.creator?.name ?? null,
 	priority: i.priorityLabel && i.priorityLabel !== 'No priority' ? i.priorityLabel : null,
 	project: i.project?.name ?? null,
+	blockedBy: (i.inverseRelations?.nodes ?? [])
+		.filter((r) => r.type === 'blocks' && r.issue && !['completed', 'canceled'].includes(r.issue.state?.type ?? ''))
+		.map((r) => r.issue!.identifier),
 	createdAt: time(i.createdAt),
 	updatedAt: time(i.updatedAt)
 })
@@ -326,6 +341,34 @@ export async function linearTeams(key: string) {
 
 // ---- Both ----
 
+/** A comment on an item, as the service reads it again while the factory works the item. */
+export type ItemComment = { who: string; at: string; body: string }
+
+const GH_ISSUE_URL = /^https:\/\/github\.com\/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\/issues\/(\d+)\/?$/i
+const LINEAR_ISSUE_URL = /^https:\/\/linear\.app\/[^/]+\/issue\/([A-Za-z0-9]+-\d+)/i
+
+/** The comments on the item an issue came from, oldest first, or null for a source the service cannot read: a
+ * GitHub issue through `gh`, a Linear issue with the key the Intake page keeps. */
+export async function itemComments(source: string, linearKey: string | null): Promise<ItemComment[] | null> {
+	const github = source.match(GH_ISSUE_URL)
+	if (github) {
+		const i = await ghJson<GhIssue>(['issue', 'view', github[2]!, '-R', github[1]!, '--json', 'comments'], source)
+		return (i.comments ?? []).map((c) => ({ who: c.author?.login ?? 'someone', at: c.createdAt, body: c.body }))
+	}
+	const key = source.match(LINEAR_ISSUE_URL)?.[1]
+	if (!key || !linearKey) return null
+	const data = await linear<{ issue: Pick<LinearIssue, 'comments'> | null }>(
+		linearKey,
+		`query($id: String!) { issue(id: $id) { comments(first: ${COMMENTS_MAX}) { nodes { body createdAt user { name } } } } }`,
+		{ id: key }
+	)
+	return (data.issue?.comments?.nodes ?? [])
+		.map((c) => ({ who: c.user?.name ?? 'someone', at: c.createdAt, body: c.body }))
+		.sort((a, b) => time(a.at) - time(b.at))
+}
+
+export const commentText = (c: ItemComment) => `**${c.who}** on ${c.at.slice(0, 10)}:\n\n${c.body.trim()}`
+
 /** The item's text, then what the tracker knows about it, then its comments oldest first. */
 function compose(item: { text?: string | null; facts: [string, string | null | undefined][]; comments: { who: string; at: string; body: string }[] }) {
 	const parts = [(item.text ?? '').trim() || '(The item has no description.)']
@@ -334,7 +377,7 @@ function compose(item: { text?: string | null; facts: [string, string | null | u
 	if (item.comments.length) {
 		parts.push(
 			`Comments (${item.comments.length}):`,
-			...item.comments.map((c) => `**${c.who}** on ${c.at.slice(0, 10)}:\n\n${c.body.trim()}`)
+			...item.comments.map(commentText)
 		)
 	}
 	return parts.join('\n\n')
