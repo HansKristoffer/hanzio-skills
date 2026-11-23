@@ -167,9 +167,32 @@ test('the stream stays open while quiet and then carries a change', async () => 
 		seen += decoder.decode(value)
 	}
 	await reader.cancel()
+	expect(seen).toContain('id: ')
 	expect(seen).toContain('event: change')
 	expect(seen).toContain('"issue":"t1"')
+	expect(seen).toContain('"kind":"report"')
+	expect(seen).toContain('"open":1')
+	expect(seen).toContain('"needsYou":0')
+	expect(seen).toContain('"title":"Exports time out"')
 }, 20_000)
+
+test('the long-poll changes endpoint wakes immediately on updates and catches missed events', async () => {
+	await start('t1')
+	const initial = (await h.call('GET', '/api/changes?after=0&wait=0')).body
+	expect(initial.seq).toBeGreaterThan(0)
+
+	const waiting = h.call('GET', `/api/changes?after=${initial.seq}&wait=10`)
+	await Bun.sleep(50)
+	await h.as('t1')('POST', '/api/issue/report', { text: 'progress tick' })
+	const woke = (await waiting).body
+	expect(woke.seq).toBeGreaterThan(initial.seq)
+	expect(woke.events.at(-1)).toMatchObject({ issue: 't1', kind: 'report', summary: 'progress tick', open: 1, needsYou: 0 })
+
+	// A client polling with an older sequence catches the event immediately without waiting.
+	const caught = (await h.call('GET', `/api/changes?after=${initial.seq}&wait=0`)).body
+	expect(caught.seq).toBe(woke.seq)
+	expect(caught.events.some((e: { summary?: string }) => e.summary === 'progress tick')).toBe(true)
+})
 
 test('a database at an older version is migrated at start', () => {
 	const home = tempDir()
@@ -191,7 +214,7 @@ test('a machine without Tailscale runs the server on loopback only', () => {
 	}
 })
 
-test('page message sends a note to the thread, repos lists known repos, and board exposes plain summaries', async () => {
+test('page message sends a note to the thread, board exposes repos, derived state, and flat brief', async () => {
 	await start('t1')
 	const research = (await h.as('t1')('POST', '/api/issue/run', { stage: 'research' })).body.run
 	await h.as('child')('POST', `/api/runs/${research}/report`, {
@@ -199,11 +222,62 @@ test('page message sends a note to the thread, repos lists known repos, and boar
 		done: true,
 		result: { outcome: 'done', result: { asked: 'Large account exports time out', kind: 'bug', size: 'S', route: 'implement', checks: [] } }
 	})
+	const plan = (await h.as('t1')('POST', '/api/issue/run', { stage: 'plan' })).body.run
+	await h.as('child-p')('POST', `/api/runs/${plan}/report`, {
+		text: 'planned',
+		done: true,
+		result: {
+			outcome: 'done',
+			result: {
+				planned: 'Stream rows in chunks.',
+				outline: ['Chunk export queries'],
+				plan: '# Plan\n\nStream CSV rows.',
+				criteria: ['Export completes under 2s'],
+				proof: 'unit test',
+				undecided: [],
+				later: [{ title: 'Add progress bar', body: 'Show export progress in UI.' }]
+			}
+		}
+	})
 	const board = (await h.call('GET', '/api/board')).body
+	expect(board.repos).toEqual(['acme/api'])
+	expect(board.needsByRepo).toEqual({})
 	expect(board.issues[0].asked).toBe('Large account exports time out')
 	expect(board.issues[0].autoShip).toBe(false)
+	expect(board.issues[0].derived.group).toBe('paused')
+	expect(board.issues[0].derived.stages.map((s: { stage: string; state: string }) => [s.stage, s.state])).toEqual([
+		['research', 'done'],
+		['plan', 'current'],
+		['implement', 'pending'],
+		['review', 'pending'],
+		['land', 'pending']
+	])
+	expect(board.issues[0].lastEvent.issueId).toBe('t1')
+	expect(board.issues[0].lastEvent.issue_id).toBeUndefined()
 
-	expect((await h.call('GET', '/api/repos')).body.repos).toEqual(['acme/api'])
+	const detail = (await h.call('GET', '/api/issues/t1')).body
+	expect(detail.derived.group).toBe('paused')
+	expect(detail.brief.asked).toBe('Large account exports time out')
+	expect(detail.brief.planned).toBe('Stream rows in chunks.')
+	expect(detail.brief.outline).toEqual(['Chunk export queries'])
+	expect(detail.brief.criteria).toEqual(['Export completes under 2s'])
+	expect(detail.brief.later).toEqual([{ title: 'Add progress bar', body: 'Show export progress in UI.' }])
+	expect(detail.brief.plan).toContain('Stream CSV rows.')
+	expect(detail.events[0].issueId).toBe('t1')
+	expect(detail.events[0].issue_id).toBeUndefined()
+	expect(detail.events.some((e: { runId: string | null }) => e.runId === research)).toBe(true)
+
+	const health = (await h.call('GET', '/health')).body
+	expect(health.ok).toBe(true)
+	expect(health.pid).toBe(process.pid)
+	expect(health.port).toBe(h.port)
+	expect(health.tailnet).toBeNull()
+
+	// Legacy consolidated routes are removed.
+	expect((await h.call('GET', '/api/repos')).status).toBe(404)
+	expect((await h.call('PUT', '/api/stores/acme/api', { store: 'machine' })).status).toBe(404)
+	expect((await h.call('POST', '/api/decisions/d_none/answer', { answer: 'x' })).status).toBe(404)
+
 	expect((await h.call('POST', '/api/github/fetch', { url: 'https://example.com/not-github' })).status).toBe(400)
 
 	h.replies({ showByThread: { t1: { code: 0, out: JSON.stringify({ thread: { status: 'completed', pendingRequestCount: 0 } }) } } })
