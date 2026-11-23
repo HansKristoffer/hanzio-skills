@@ -52,6 +52,7 @@ import {
 	type Stage
 } from './settings.ts'
 import { gh, readPr, type RawPr } from './gh.ts'
+import { githubViewer, IntakeError, linearTeams, linearViewer, listItems, parseSource, readItem, type IntakeSource } from './intake.ts'
 import type { TakenPr } from './takein.ts'
 import {
 	MARKER,
@@ -1729,6 +1730,102 @@ export function startServer(options: ServerOptions) {
 		}
 	}
 
+	// ---- Intake: sources the page lists open items from, and starts a thread for one in one click ----
+
+	type LinearConnection = { key: string; name: string; organization: string; connectedAt: number }
+	const readScope = <T>(scope: string): T | null => {
+		const row = db.query('select value from settings where scope = $scope').get({ scope }) as { value: string } | null
+		return row ? (JSON.parse(row.value) as T) : null
+	}
+	const writeScope = (scope: string, value: unknown) => {
+		if (value === null) db.query('delete from settings where scope = $scope').run({ scope })
+		else {
+			db.query('insert into settings (scope, value) values ($scope, $value) on conflict (scope) do update set value = $value').run({
+				scope,
+				value: JSON.stringify(value)
+			})
+		}
+	}
+	const intakeSources = () => readScope<IntakeSource[]>('intake:sources') ?? []
+	const linearKey = () => readScope<LinearConnection>('intake:linear')?.key ?? null
+	const intakeSource = (id: string) => intakeSources().find((s) => s.id === id) ?? fail(404, `no intake source ${id}`)
+	/** The intake module throws its own error, with the status the page should see. */
+	const viaIntake = async <T>(work: () => Promise<T>): Promise<T> => {
+		try {
+			return await work()
+		} catch (error) {
+			if (error instanceof IntakeError) fail(error.status, error.message)
+			throw error
+		}
+	}
+
+	/** The connections and the sources, never the Linear key: the page is open to the whole tailnet. */
+	async function intakeView() {
+		const conn = readScope<LinearConnection>('intake:linear')
+		return {
+			github: await githubViewer(),
+			linear: conn ? { connected: true, name: conn.name, organization: conn.organization, connectedAt: conn.connectedAt } : { connected: false },
+			sources: intakeSources(),
+			repos: knownRepos()
+		}
+	}
+
+	async function connectLinear(body: Record<string, unknown>) {
+		const key = text(body.apiKey, 'apiKey', { required: true, max: 500 })!.trim()
+		if (/\s/.test(key)) fail(400, 'apiKey: an API key has no spaces')
+		const who = await viaIntake(() => linearViewer(key))
+		writeScope('intake:linear', { key, ...who, connectedAt: Date.now() } satisfies LinearConnection)
+		emit(null)
+		return { ok: true, ...who }
+	}
+
+	function saveSource(id: string | null, body: Record<string, unknown>) {
+		const sources = intakeSources()
+		const before = id ? (sources.find((s) => s.id === id) ?? fail(404, `no intake source ${id}`)) : null
+		let source: IntakeSource
+		try {
+			source = parseSource(body, before, knownRepos())
+		} catch (error) {
+			return fail(400, (error as Error).message)
+		}
+		if (before && source.kind !== before.kind) fail(400, 'kind: a source keeps its kind; add a new source instead')
+		writeScope('intake:sources', before ? sources.map((s) => (s.id === before.id ? source : s)) : [...sources, source])
+		emit(null)
+		return { ok: true, source }
+	}
+
+	function removeSource(id: string) {
+		const sources = intakeSources()
+		if (!sources.some((s) => s.id === id)) fail(404, `no intake source ${id}`)
+		writeScope('intake:sources', sources.filter((s) => s.id !== id))
+		emit(null)
+		return { ok: true }
+	}
+
+	/** What the factory did with an item already: the open issue when there is one, else the newest closed one. */
+	function factoryStateOf(repo: string, url: string) {
+		const rows = db.query('select * from issues where repo = $repo and source = $source order by created_at desc').all({ repo, source: url }) as IssueRow[]
+		const row = rows.find((i) => i.state === 'open') ?? rows[0]
+		return row ? { id: row.id, state: row.state, outcome: row.outcome, threadLink: row.thread_link, closedAt: row.closed_at } : null
+	}
+
+	async function sourceItems(id: string) {
+		const source = intakeSource(id)
+		const items = await viaIntake(() => listItems(source, linearKey()))
+		return { source: source.id, items: items.map((item) => ({ ...item, factory: factoryStateOf(source.repo, item.url) })), readAt: Date.now() }
+	}
+
+	/** Reads the item again in full, so the thread gets its text and comments as the tracker holds them now. */
+	async function startFromSource(id: string, body: Record<string, unknown>) {
+		const source = intakeSource(id)
+		const key = text(body.item, 'item', { required: true, max: 100 })!
+		const item = await viaIntake(() => readItem(source, key, linearKey()))
+		return newThread(
+			{ repo: source.repo, title: item.title.slice(0, 300), body: item.body, source: item.url, merge: source.merge, again: body.again === true },
+			false
+		)
+	}
+
 	function history(days: number) {
 		const since = Date.now() - days * 24 * 60 * 60 * 1000
 		const closed = db
@@ -3165,6 +3262,27 @@ export function startServer(options: ServerOptions) {
 		if (method === 'POST' && parts[0] === 'api' && parts[1] === 'issues' && parts[3] === 'deliver' && parts[2]) {
 			const issue = getIssue(decodeURIComponent(parts[2])) ?? fail(404, `no issue ${parts[2]}`)
 			return deliver(issue.id)
+		}
+		if (parts[0] === 'api' && parts[1] === 'intake') {
+			const id = parts[3] ? decodeURIComponent(parts[3]) : null
+			if (method === 'GET' && parts.length === 2) return intakeView()
+			if (method === 'PUT' && url.pathname === '/api/intake/linear') return connectLinear(await body())
+			if (method === 'DELETE' && url.pathname === '/api/intake/linear') {
+				writeScope('intake:linear', null)
+				emit(null)
+				return { ok: true }
+			}
+			if (method === 'GET' && url.pathname === '/api/intake/linear/teams') {
+				const key = linearKey() ?? fail(409, 'Linear is not connected')
+				return { teams: await viaIntake(() => linearTeams(key)) }
+			}
+			if (parts[2] === 'sources') {
+				if (method === 'POST' && parts.length === 3) return saveSource(null, await body())
+				if (method === 'PUT' && id && parts.length === 4) return saveSource(id, await body())
+				if (method === 'DELETE' && id && parts.length === 4) return removeSource(id)
+				if (method === 'GET' && id && parts[4] === 'items' && parts.length === 5) return sourceItems(id)
+				if (method === 'POST' && id && parts[4] === 'start' && parts.length === 5) return startFromSource(id, await body())
+			}
 		}
 		if (method === 'GET' && url.pathname === '/api/repos') return { repos: knownRepos() }
 		if (method === 'POST' && url.pathname === '/api/github/fetch') return fetchGithubItem(await body())

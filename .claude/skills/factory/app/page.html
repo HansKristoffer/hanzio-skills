@@ -475,6 +475,160 @@
 	}
 	.narrow { max-width: 640px; }
 
+	/* Intake workspace */
+	.in-grid { display: grid; grid-template-columns: 248px minmax(0, 1fr); grid-template-rows: auto 1fr; column-gap: 28px; align-items: start; }
+	.in-sources { grid-column: 1; grid-row: 1; }
+	.in-conns { grid-column: 1; grid-row: 2; margin-top: 20px; border-top: 1px solid var(--line); padding-top: 16px; }
+	.in-queue { grid-column: 2; grid-row: 1 / span 2; min-width: 0; }
+	.in-sec-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 10px 6px; font-size: 12px; line-height: 16px; color: var(--muted); }
+	.in-rail-add { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 6px; border: 0; border-radius: 6px; background: transparent; color: var(--ink2); font: 500 12px/16px var(--sans); cursor: pointer; -webkit-tap-highlight-color: transparent; transition: background-color .15s var(--ease), color .15s var(--ease); }
+	.in-rail-add .ic, .in-rail-add .ic svg { width: 14px; height: 14px; }
+	.in-nav { display: grid; gap: 2px; }
+	.in-nav-item { position: relative; display: flex; align-items: center; }
+	.in-nav-btn { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; height: 34px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; color: var(--ink2); font: 13.5px/20px var(--sans); text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent; transition: background-color .15s var(--ease), color .15s var(--ease); }
+	.in-nav-btn.on { background: var(--raised); color: var(--ink); font-weight: 500; box-shadow: inset 0 0 0 1px var(--line); }
+	.in-nav-btn .ic, .in-nav-btn .ic svg { width: 15px; height: 15px; color: var(--muted); }
+	.in-nav-btn.on .ic, .in-nav-btn.on .ic svg { color: var(--ink2); }
+	.in-nav-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.in-nav-cnt { flex: none; font: 12px/16px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+	.in-nav-err { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--bad-dot); }
+	.in-nav-edit { position: absolute; right: 6px; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: var(--raised); color: var(--muted); cursor: pointer; opacity: 0; pointer-events: none; transition: opacity .15s var(--ease), color .15s var(--ease), background-color .15s var(--ease); }
+	.in-nav-edit .ic, .in-nav-edit .ic svg { width: 13px; height: 13px; }
+	.in-nav-item:focus-within .in-nav-edit { opacity: 1; pointer-events: auto; }
+
+	/* Compact Connections box in rail */
+	.in-conn-list { display: grid; gap: 4px; }
+	.in-conn { padding: 8px 10px; border-radius: 8px; }
+	.in-conn-row { display: flex; align-items: center; gap: 8px; min-height: 22px; }
+	.in-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--passed); }
+	.in-dot.ok { background: var(--ok-dot); }
+	.in-dot.bad { background: var(--bad-dot); }
+	.in-conn-name { font-size: 13px; font-weight: 500; color: var(--ink); }
+	.in-conn-val { flex: 1; min-width: 0; font-size: 12px; color: var(--muted); text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.in-conn-act { flex: none; margin-left: auto; padding: 2px 6px; border: 0; border-radius: 5px; background: transparent; color: var(--ink2); font: 500 12px/16px var(--sans); cursor: pointer; -webkit-tap-highlight-color: transparent; transition: background-color .15s var(--ease), color .15s var(--ease); }
+	.in-conn-sub { margin-top: 4px; padding-left: 14px; font-size: 12px; line-height: 16px; color: var(--muted); overflow-wrap: anywhere; }
+	.in-conn-sub.bad { color: var(--bad); }
+	.in-conn-form { display: grid; gap: 8px; margin-top: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+	.in-conn-form input { height: 32px; padding: 0 10px; font-size: 13px; }
+	.in-conn-form .fhint { margin-top: 0; }
+	.in-conn-inline { display: flex; gap: 8px; align-items: center; }
+	.in-conn-inline input { flex: 1; min-width: 0; }
+	.in-setup-card .in-conn-form { margin-top: 0; padding: 0; border: 0; background: transparent; }
+
+	/* Main queue header & filter bar */
+	.in-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px 16px; margin-bottom: 16px; }
+	.in-head-main { min-width: 0; }
+	.in-head h1 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; font-size: 20px; line-height: 28px; font-weight: 500; }
+	.in-head-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 4px; font-size: 13px; color: var(--muted); }
+	.in-head-act { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+	.in-spin .ic svg { animation: spin .75s linear infinite; }
+	@keyframes spin { to { transform: rotate(360deg); } }
+	@media (prefers-reduced-motion: reduce) { .in-spin .ic svg { animation: none; } }
+
+	.in-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+	.in-bar .seg { padding: 2px; border-radius: 9px; }
+	.in-bar .seg button { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 7px; font-size: 13px; }
+	.in-bar .seg .count { font-size: 11px; opacity: .75; }
+	.in-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+	.in-select { width: auto; max-width: 160px; height: 30px; padding: 0 26px 0 10px; border: 1px solid var(--line2); border-radius: 8px; background-color: var(--panel); color: var(--ink2); font-size: 12.5px; line-height: 18px; cursor: pointer; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23737373' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; transition: border-color .15s var(--ease), color .15s var(--ease), background-color .15s var(--ease); }
+	@media (prefers-color-scheme: dark) { .in-select { background-color: var(--raised); } }
+	.in-select.on { border-color: var(--ink2); color: var(--ink); font-weight: 500; background-color: var(--raised); }
+	.in-search-wrap { position: relative; margin-left: auto; width: 200px; min-width: 140px; }
+	.in-search-wrap .ic { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); width: 14px; height: 14px; color: var(--muted); pointer-events: none; }
+	.in-search-wrap .ic svg { width: 14px; height: 14px; }
+	.in-search-wrap input.search { width: 100%; height: 30px; margin-left: 0; padding: 0 28px 0 28px; font-size: 13px; }
+	.in-search-wrap .kbd { position: absolute; right: 7px; top: 50%; transform: translateY(-50%); pointer-events: none; }
+
+	/* Issue queue rows */
+	.in-row { display: grid; grid-template-columns: 84px minmax(0, 1fr) auto; column-gap: 12px; align-items: center; padding: 14px 20px; border-top: 1px solid var(--line); transition: background-color .15s var(--ease); }
+	.in-row:first-child { border-top: 0; }
+	.in-ref { display: inline-flex; align-items: center; gap: 6px; min-width: 0; font: 12px/20px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+	.in-ref .ic, .in-ref .ic svg { width: 14px; height: 14px; color: var(--muted); }
+	.in-main { min-width: 0; }
+	.in-title-line { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+	.in-title { font-size: 14.5px; line-height: 22px; font-weight: 500; color: var(--ink); text-decoration: none; overflow-wrap: anywhere; }
+	.in-title-out { display: inline-flex; flex: none; color: var(--muted); opacity: 0; transform: translateY(1px); transition: opacity .15s var(--ease); }
+	.in-title-out .ic, .in-title-out .ic svg { width: 12px; height: 12px; }
+	.in-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 4px; font-size: 12.5px; line-height: 18px; color: var(--muted); }
+	.in-sep { color: var(--line2); user-select: none; }
+	.in-pri { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 500; color: var(--ink2); }
+	.in-pri i { width: 6px; height: 6px; border-radius: 50%; background: var(--passed); }
+	.in-pri.urgent { color: var(--bad); }
+	.in-pri.urgent i { background: var(--bad-dot); }
+	.in-pri.high { color: var(--warn); }
+	.in-pri.high i { background: var(--warn-dot); }
+	.in-state { font-size: 12px; color: var(--ink2); }
+	.in-tag { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border: 1px solid var(--line); border-radius: 5px; background: var(--raised); color: var(--ink2); font: 12px/18px var(--sans); cursor: pointer; -webkit-tap-highlight-color: transparent; transition: border-color .15s var(--ease), color .15s var(--ease), background-color .15s var(--ease); }
+	.in-tag.on { border-color: var(--ink); background: var(--ink); color: var(--bg); }
+	.in-end { display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
+	.in-time { min-width: 52px; text-align: right; white-space: nowrap; }
+	.in-start { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 78px; height: 30px; padding: 0 12px 0 9px; border: 1px solid var(--line2); border-radius: 8px; background: var(--panel); color: var(--ink); font: 500 13px/20px var(--sans); box-shadow: var(--shadow); cursor: pointer; white-space: nowrap; -webkit-tap-highlight-color: transparent; transition: background-color .15s var(--ease), border-color .15s var(--ease), color .15s var(--ease), transform .15s var(--ease); }
+	.in-start .ic, .in-start .ic svg { width: 13px; height: 13px; }
+	.in-start .ic svg { transform: translateX(.5px); }
+	.in-start:active { transform: scale(.97); }
+	.in-start:disabled { opacity: .55; cursor: default; transform: none; }
+	.in-note { margin-top: 6px; font-size: 12.5px; }
+
+	/* Onboarding state when no sources exist yet */
+	.in-setup { max-width: 720px; }
+	.in-setup-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 20px; }
+	.in-setup-card { display: flex; flex-direction: column; gap: 10px; padding: 16px 20px; }
+	.in-setup-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+	.in-setup-title { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 500; }
+	.in-setup-title .ic, .in-setup-title .ic svg { width: 16px; height: 16px; color: var(--ink2); }
+	.in-setup-desc { font-size: 13px; color: var(--ink2); }
+	.in-setup-next { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 16px; margin-top: 16px; padding: 18px 20px; }
+	.in-setup-next h2 { font-size: 15px; font-weight: 500; }
+	.in-setup-next p { margin-top: 2px; font-size: 13px; color: var(--ink2); }
+
+	/* Slide-over sheet for adding/editing a source */
+	dialog.in-sheet { width: min(460px, 100vw); max-width: 100vw; height: 100dvh; max-height: 100dvh; margin: 0 0 0 auto; padding: 0; border: 0; border-left: 1px solid var(--line); background: var(--panel); color: var(--ink); }
+	dialog.in-sheet::backdrop { background: rgba(0, 0, 0, .42); }
+	dialog.in-sheet[open] { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
+	.in-sheet-body { overflow-y: auto; overscroll-behavior: contain; padding: 20px 24px 32px; display: grid; gap: 16px; align-content: start; }
+	.in-sheet-sep { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
+	.in-sheet-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 24px; border-top: 1px solid var(--line); background: var(--raised); }
+
+	@media (hover: hover) {
+		.in-rail-add:hover { background: var(--raised); color: var(--ink); }
+		.in-nav-btn:hover { background: var(--raised); color: var(--ink); }
+		.in-nav-item:hover .in-nav-edit { opacity: 1; pointer-events: auto; }
+		.in-nav-edit:hover { color: var(--ink); background: var(--panel); box-shadow: inset 0 0 0 1px var(--line2); }
+		.in-conn-act:hover { background: var(--raised); color: var(--ink); }
+		.in-conn-act.bad:hover { color: var(--bad); }
+		.in-select:hover { border-color: var(--ink2); color: var(--ink); }
+		.in-row:hover { background: color-mix(in srgb, var(--raised) 50%, var(--panel)); }
+		.in-title:hover { text-decoration: underline; text-underline-offset: 3px; }
+		.in-title-line:hover .in-title-out { opacity: .65; }
+		.in-tag:hover { border-color: var(--line2); color: var(--ink); }
+		.in-tag.on:hover { opacity: .88; color: var(--bg); }
+		.in-start:hover:not(:disabled) { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+	}
+	@container (max-width: 860px) {
+		.in-grid { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; row-gap: 20px; }
+		.in-sources { grid-column: 1; grid-row: 1; }
+		.in-queue { grid-column: 1; grid-row: 2; }
+		.in-conns { grid-column: 1; grid-row: 3; margin-top: 4px; }
+		.in-nav { display: flex; flex-wrap: wrap; gap: 6px; }
+		.in-nav-item { flex: 0 0 auto; }
+		.in-nav-btn { width: auto; height: 32px; padding: 0 10px; border: 1px solid var(--line2); background: var(--panel); }
+		.in-nav-btn.on { border-color: var(--ink); background: var(--ink); color: var(--bg); box-shadow: none; }
+		.in-nav-btn.on .ic, .in-nav-btn.on .ic svg, .in-nav-btn.on .in-nav-cnt { color: var(--bg); opacity: .85; }
+		.in-nav-edit { display: none; }
+		.in-conn-list { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; }
+		.in-conn { border: 1px solid var(--line); background: var(--panel); }
+	}
+	@container (max-width: 680px) {
+		.in-bar { padding: 10px 12px; }
+		.in-search-wrap { margin-left: 0; width: 100%; }
+		.in-search-wrap input.search { padding-right: 10px; }
+		.in-search-wrap .kbd { display: none; }
+		.in-row { grid-template-columns: minmax(0, 1fr); row-gap: 8px; padding: 14px 16px; }
+		.in-end { justify-content: space-between; margin-top: 2px; }
+		.in-time { min-width: 0; text-align: left; }
+		.in-setup-cards { grid-template-columns: minmax(0, 1fr); }
+	}
+
 	@media (max-width: 640px) {
 		.wrap { padding: 0 16px; }
 		.bar { flex-wrap: wrap; gap: 0 16px; }
@@ -513,7 +667,13 @@ const ICONS = {
 	close: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
 	out: '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
 	doc: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h6"/>',
-	split: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/>'
+	split: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/>',
+	github: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/>',
+	linear: '<circle cx="12" cy="12" r="9"/><path d="m7.2 14.8 2 2"/><path d="m6.5 11.2 6.3 6.3"/><path d="m8.2 7.8 8 8"/>',
+	inbox: '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+	refresh: '<path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/>',
+	search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+	edit: '<path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>'
 }
 const main = document.getElementById('main')
 let board = { issues: [], done: [], open: 0, needsYou: 0 }
@@ -759,6 +919,7 @@ function drawNav() {
 	const on = (name) => (page === name || (name === 'board' && page === 'issue') ? 'on' : '')
 	document.getElementById('nav').replaceChildren(
 		h('a', { href: '#/', class: on('board') }, 'Board', board.needsYou ? h('span', { class: 'count warn', title: `${board.needsYou} for you` }, board.needsYou) : null),
+		h('a', { href: '#/intake', class: on('intake') }, 'Intake'),
 		h('a', { href: '#/done', class: on('done') }, 'Done'),
 		h('a', { href: '#/settings', class: on('settings') }, 'Settings')
 	)
@@ -2376,6 +2537,581 @@ async function drawNew() {
 	)
 }
 
+// ---- Intake: open items from the connected trackers, each started in one click ----
+
+const intake = {
+	view: null,
+	/** Per source id: { loading, error, items, readAt }. */
+	lists: new Map(),
+	filter: { source: '', show: 'new', label: '', state: '', assignee: '', query: '' },
+	/** The source being added or edited in the slide-over sheet. */
+	form: null,
+	teams: null,
+	/** What a start answered, per item URL, so the row says so until the list is read again. */
+	starting: new Set(),
+	notes: new Map(),
+	linearKey: '',
+	linearFormOpen: false
+}
+
+const sourceSheet = { el: null }
+
+async function loadIntake(force) {
+	try { intake.view = await api('GET', '/api/intake') } catch (e) { intake.view = { error: e.message, sources: [], repos: [] } }
+	const ids = new Set(intake.view.sources.map((s) => s.id))
+	for (const id of intake.lists.keys()) if (!ids.has(id)) intake.lists.delete(id)
+	if (intake.filter.source && !ids.has(intake.filter.source)) intake.filter.source = ''
+	for (const source of intake.view.sources) if (force || !intake.lists.has(source.id)) loadItems(source.id)
+	if (route().page === 'intake') drawIntake()
+	if (sourceSheet.el?.open && intake.form) drawSourceSheet()
+}
+
+async function loadItems(id) {
+	const before = intake.lists.get(id)
+	intake.lists.set(id, { ...(before || { items: [] }), loading: true, error: null })
+	if (route().page === 'intake') drawIntake()
+	try {
+		const res = await api('GET', `/api/intake/sources/${encodeURIComponent(id)}/items`)
+		intake.lists.set(id, { loading: false, error: null, items: res.items, readAt: res.readAt })
+		for (const item of res.items) intake.notes.delete(item.url)
+	} catch (e) {
+		intake.lists.set(id, { ...(before || { items: [] }), loading: false, error: e.message })
+	}
+	if (route().page === 'intake') drawIntake()
+}
+
+async function startItem(source, item, again) {
+	intake.starting.add(item.url)
+	intake.notes.delete(item.url)
+	drawIntake()
+	try {
+		const res = await api('POST', `/api/intake/sources/${encodeURIComponent(source.id)}/start`, { item: item.key, again: again || undefined })
+		if (res.duplicateOf) {
+			if (res.duplicateOf.id) item.factory = { id: res.duplicateOf.id, state: 'open', threadLink: res.duplicateOf.threadLink }
+			else intake.notes.set(item.url, { text: 'A thread for it is starting now' })
+		} else if (res.closed) {
+			const last = res.closed[res.closed.length - 1]
+			item.factory = { id: last.id, state: 'closed', outcome: last.outcome, closedAt: last.closedAt }
+		} else {
+			item.factory = { id: res.issue, state: 'open', threadLink: res.threadLink, fresh: true }
+			refreshBoard()
+		}
+	} catch (e) {
+		intake.notes.set(item.url, { text: e.message, bad: true })
+	}
+	intake.starting.delete(item.url)
+	drawIntake()
+}
+
+async function removeSource(s) {
+	if (!confirm(`Remove the source ${s.name}? Issues the factory started from it keep going.`)) return false
+	try {
+		await api('DELETE', `/api/intake/sources/${encodeURIComponent(s.id)}`)
+		if (intake.filter.source === s.id) intake.filter.source = ''
+		await loadIntake()
+		return true
+	} catch (e) {
+		alert(e.message)
+		return false
+	}
+}
+
+async function disconnectLinear() {
+	if (!confirm('Disconnect Linear? Its sources stay, and list nothing until it is connected again.')) return
+	await api('DELETE', '/api/intake/linear').catch(() => {})
+	intake.teams = null
+	intake.linearFormOpen = false
+	await loadIntake(true)
+}
+
+function linearConnectBox(onCancel, inline) {
+	const error = h('span', { class: 'error' })
+	const submitBtn = h('button', { type: 'button', class: 'btn sm primary' }, 'Connect')
+	const key = h('input', {
+		type: 'password',
+		autocomplete: 'off',
+		placeholder: 'lin_api_...',
+		'aria-label': 'Linear API key',
+		'data-draft': 'linear-key',
+		value: intake.linearKey,
+		oninput: (e) => { intake.linearKey = e.target.value },
+		onkeydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); connect() } }
+	})
+	const connect = async () => {
+		const trimmed = key.value.trim()
+		if (!trimmed) { error.textContent = 'Paste a Linear API key'; return }
+		submitBtn.disabled = true
+		error.textContent = ''
+		try {
+			await api('PUT', '/api/intake/linear', { apiKey: trimmed })
+			intake.linearKey = ''
+			intake.teams = null
+			intake.linearFormOpen = false
+			await loadIntake(true)
+		} catch (err) {
+			error.textContent = err.message
+			submitBtn.disabled = false
+		}
+	}
+	submitBtn.addEventListener('click', connect)
+	return h('div', { class: 'in-conn-form' },
+		inline
+			? h('div', { class: 'in-conn-inline' }, key, submitBtn)
+			: key,
+		h('span', { class: 'fhint' }, 'Linear, Settings, Security & access. Kept on this machine and never shown again'),
+		!inline ? h('div', { class: 'row' },
+			submitBtn,
+			onCancel ? h('button', { type: 'button', class: 'btn sm', onclick: onCancel }, 'Cancel') : null
+		) : null,
+		error
+	)
+}
+
+function openSourceSheet(s) {
+	const v = intake.view || { repos: [] }
+	intake.form = s
+		? { id: s.id, kind: s.kind, repo: s.repo, name: s.name, merge: s.merge || '', ghRepo: s.github?.repo || '', label: (s.github || s.linear)?.label || '', team: s.linear?.team || '', project: s.linear?.project || '' }
+		: { kind: 'github', repo: v.repos[0] || '', name: '', merge: '', ghRepo: '', label: '', team: '', project: '' }
+	if (!sourceSheet.el) {
+		sourceSheet.el = h('dialog', {
+			class: 'in-sheet',
+			'aria-label': 'Source settings',
+			onclick: (e) => { if (e.target === sourceSheet.el) sourceSheet.el.close() },
+			onclose: () => { intake.form = null; sourceSheet.el.replaceChildren() }
+		})
+		document.body.append(sourceSheet.el)
+	}
+	drawSourceSheet()
+	if (!sourceSheet.el.open) sourceSheet.el.showModal()
+}
+
+function drawSourceSheet() {
+	const d = intake.form
+	const v = intake.view
+	if (!d || !v || !sourceSheet.el) return
+	const linearOn = !!(v.linear && v.linear.connected)
+	const error = h('span', { class: 'error' })
+	if (d.kind === 'linear' && linearOn && !intake.teams) {
+		intake.teams = []
+		api('GET', '/api/intake/linear/teams')
+			.then((r) => { intake.teams = r.teams; if (sourceSheet.el?.open && intake.form) drawSourceSheet() })
+			.catch((e) => { intake.teams = []; error.textContent = e.message })
+	}
+	const set = (key) => (e) => { d[key] = e.target.value }
+	const text = (key, placeholder) => h('input', { value: d[key], placeholder, oninput: set(key) })
+	const repo = h('select', { onchange: set('repo') }, ...v.repos.map((r) => h('option', { value: r, selected: r === d.repo }, r)))
+	const merge = h('select', { onchange: set('merge') },
+		h('option', { value: '', selected: !d.merge }, 'Project default'),
+		h('option', { value: 'ask', selected: d.merge === 'ask' }, 'Ask before merging'),
+		h('option', { value: 'never', selected: d.merge === 'never' }, 'Never merge (a person merges)')
+	)
+	const teams = intake.teams || []
+	const kindFields = d.kind === 'github'
+		? [
+			field('GitHub repository', text('ghRepo', d.repo || 'owner/name'), 'Leave empty for the repository the threads start in'),
+			field('Label (optional)', text('label', 'factory'), 'Only list issues with this label')
+		]
+		: [
+			!linearOn ? h('div', { class: 'stack', style: 'gap:8px' },
+				h('p', { class: 'meta' }, 'Connect Linear first so the factory can read its teams and issues.'),
+				linearConnectBox()
+			) : null,
+			field('Team', teams.length
+				? h('select', { onchange: set('team') }, h('option', { value: '' }, 'Pick a team'), ...teams.map((t) => h('option', { value: t.key, selected: t.key === d.team }, `${t.key}: ${t.name}`)))
+				: text('team', 'ENG')),
+			field('Label (optional)', text('label', 'Bug')),
+			field('Project (optional)', text('project', ''))
+		]
+	const save = async (e) => {
+		e.target.disabled = true
+		error.textContent = ''
+		const payload = {
+			kind: d.kind,
+			repo: d.repo,
+			name: d.name.trim() || undefined,
+			merge: d.merge || '',
+			...(d.kind === 'github'
+				? { github: { repo: d.ghRepo.trim() || d.repo, label: d.label.trim() || undefined } }
+				: { linear: { team: d.team.trim(), label: d.label.trim() || undefined, project: d.project.trim() || undefined } })
+		}
+		try {
+			const res = d.id
+				? await api('PUT', `/api/intake/sources/${encodeURIComponent(d.id)}`, payload)
+				: await api('POST', '/api/intake/sources', payload)
+			intake.lists.delete(res.source.id)
+			sourceSheet.el.close()
+			await loadIntake()
+		} catch (err) {
+			error.textContent = err.message
+			e.target.disabled = false
+		}
+	}
+	const existing = d.id ? v.sources.find((s) => s.id === d.id) : null
+	fill(sourceSheet.el,
+		h('div', { class: 'view-bar' },
+			h('strong', {}, d.id ? 'Edit source' : 'Add source'),
+			h('button', { type: 'button', class: 'btn sm', onclick: () => sourceSheet.el.close(), 'aria-label': 'Close' }, icon('close'), 'Close', h('span', { class: 'kbd' }, 'Esc'))
+		),
+		h('div', { class: 'in-sheet-body' },
+			d.id ? null : h('div', { class: 'seg', role: 'tablist', 'aria-label': 'Source kind' },
+				...[['github', 'GitHub issues'], ['linear', 'Linear']].map(([kind, label]) =>
+					h('button', { type: 'button', role: 'tab', 'aria-selected': d.kind === kind ? 'true' : 'false', class: d.kind === kind ? 'on' : '', onclick: () => { d.kind = kind; drawSourceSheet() } }, label))
+			),
+			...kindFields,
+			h('hr', { class: 'in-sheet-sep' }),
+			field('Starts threads in', repo, 'The factory repository whose checkout works the items'),
+			field('Who merges', merge),
+			field('Name (optional)', text('name', 'Shown in the sources list')),
+			error
+		),
+		h('div', { class: 'in-sheet-foot' },
+			existing
+				? h('button', { type: 'button', class: 'btn sm quiet', onclick: async () => { if (await removeSource(existing)) sourceSheet.el.close() } }, 'Remove source')
+				: h('span', {}),
+			h('div', { class: 'row' },
+				h('button', { type: 'button', class: 'btn', onclick: () => sourceSheet.el.close() }, 'Cancel'),
+				h('button', { type: 'button', class: 'btn primary', onclick: save }, d.id ? 'Save changes' : 'Add source')
+			)
+		)
+	)
+}
+
+const sourceMeta = (s) => s.kind === 'github'
+	? dotted('GitHub', s.github.repo, s.github.label ? `label ${s.github.label}` : null, `starts in ${s.repo}`)
+	: dotted('Linear', `team ${s.linear.team}`, s.linear.label ? `label ${s.linear.label}` : null, s.linear.project ? `project ${s.linear.project}` : null, `starts in ${s.repo}`)
+
+function connectionsSidebar(v) {
+	const gh = v.github || { ok: false, error: 'Not read yet' }
+	const linearOn = !!(v.linear && v.linear.connected)
+	return h('div', { class: 'in-conns', 'aria-label': 'Connections' },
+		h('div', { class: 'in-sec-head' }, h('span', {}, 'Connections')),
+		h('div', { class: 'in-conn-list' },
+			h('div', { class: 'in-conn', title: gh.ok ? 'Issues are read with the gh login of the machine the factory runs on' : undefined },
+				h('div', { class: 'in-conn-row' },
+					h('span', { class: `in-dot ${gh.ok ? 'ok' : 'bad'}` }),
+					h('span', { class: 'in-conn-name' }, 'GitHub'),
+					h('span', { class: 'in-conn-val' }, gh.ok ? `@${gh.login}` : 'Not signed in')
+				),
+				!gh.ok ? h('div', { class: 'in-conn-sub bad' }, `${gh.error}. Run gh auth login on the factory's machine`) : null
+			),
+			h('div', { class: 'in-conn', title: linearOn ? `Connected as ${v.linear.name} (${v.linear.organization})` : undefined },
+				h('div', { class: 'in-conn-row' },
+					h('span', { class: `in-dot${linearOn ? ' ok' : ''}` }),
+					h('span', { class: 'in-conn-name' }, 'Linear'),
+					linearOn
+						? [
+							h('span', { class: 'in-conn-val' }, v.linear.organization || v.linear.name),
+							h('button', { type: 'button', class: 'in-conn-act bad', onclick: disconnectLinear, title: `Disconnect ${v.linear.name}` }, 'Disconnect')
+						]
+						: h('button', { type: 'button', class: 'in-conn-act', onclick: () => { intake.linearFormOpen = !intake.linearFormOpen; drawIntake() } }, intake.linearFormOpen ? 'Close' : 'Connect')
+				),
+				!linearOn && intake.linearFormOpen ? linearConnectBox(() => { intake.linearFormOpen = false; drawIntake() }) : null
+			)
+		)
+	)
+}
+
+function intakeOnboarding(v) {
+	const gh = v.github || { ok: false, error: 'Not read yet' }
+	const linearOn = !!(v.linear && v.linear.connected)
+	return h('div', { class: 'in-setup' },
+		h('h1', {}, 'Intake'),
+		h('p', { class: 'lede' }, 'Connect GitHub or Linear, pick a repository or team, and start open issues in the factory in one click.'),
+		v.error ? h('p', { class: 'error', style: 'margin-top:12px' }, v.error) : null,
+		h('div', { class: 'in-setup-cards' },
+			h('section', { class: 'panel in-setup-card' },
+				h('div', { class: 'in-setup-top' },
+					h('span', { class: 'in-setup-title' }, icon('github'), 'GitHub'),
+					gh.ok ? chip(`@${gh.login}`, 'ok') : chip('Not signed in', 'bad')
+				),
+				h('p', { class: 'in-setup-desc' }, gh.ok
+					? 'Reads open issues with the gh login on this machine'
+					: `${gh.error}. Run gh auth login on the factory's machine`)
+			),
+			h('section', { class: 'panel in-setup-card' },
+				h('div', { class: 'in-setup-top' },
+					h('span', { class: 'in-setup-title' }, icon('linear'), 'Linear'),
+					linearOn
+						? h('div', { class: 'row' }, chip(v.linear.organization || v.linear.name, 'ok'), h('button', { type: 'button', class: 'btn sm quiet', onclick: disconnectLinear }, 'Disconnect'))
+						: chip('Not connected')
+				),
+				linearOn
+					? h('p', { class: 'in-setup-desc' }, `Connected as ${v.linear.name}`)
+					: linearConnectBox(null, true)
+			)
+		),
+		h('section', { class: 'panel in-setup-next' },
+			h('div', {},
+				h('h2', {}, 'Add your first source'),
+				h('p', {}, v.repos.length
+					? 'Choose a GitHub repository or Linear team to populate this queue'
+					: 'The factory starts threads in repositories it has a checkout of. Start one issue from a T3 Code thread in the repository first')
+			),
+			v.repos.length ? h('button', { type: 'button', class: 'btn primary', onclick: () => openSourceSheet(null) }, icon('plus'), 'Add source') : null
+		),
+		h('p', { class: 'foot' }, 'Anyone who can open this page can add sources and start threads. The Linear key stays on this machine and is never sent back to the page.')
+	)
+}
+
+const priorityClass = (p) => {
+	const v = String(p || '').toLowerCase()
+	if (v === 'urgent') return 'urgent'
+	if (v === 'high') return 'high'
+	return ''
+}
+
+/** One open item: aligned ref, title, structured metadata and a clean Start action. */
+function intakeRow(source, item, showSource) {
+	const f = item.factory
+	const busy = intake.starting.has(item.url)
+	const note = intake.notes.get(item.url)
+	let act
+	if (busy) act = h('button', { type: 'button', class: 'in-start', disabled: true }, 'Starting…')
+	else if (f && f.state === 'open') act = [chip(f.fresh ? 'Started' : 'In factory', 'ok'), h('a', { class: 'btn sm', href: issueHref(f) }, 'Open')]
+	else if (f) act = [
+		chip(outcomeName(f.outcome || f.state), f.outcome === 'shipped' ? 'ok' : ''),
+		h('a', { class: 'btn sm quiet', href: issueHref(f) }, 'Record'),
+		h('button', { type: 'button', class: 'btn sm', onclick: () => startItem(source, item, true) }, 'Start again')
+	]
+	else act = h('button', { type: 'button', class: 'in-start', onclick: () => startItem(source, item) }, icon('play'), 'Start')
+
+	const titleNode = isUrl(item.url)
+		? h('a', { class: 'in-title', href: item.url, target: '_blank', rel: 'noreferrer' }, item.title)
+		: h('span', { class: 'in-title' }, item.title)
+
+	const metaBits = []
+	const pushText = (node) => {
+		if (!node) return
+		if (metaBits.length) metaBits.push(h('span', { class: 'in-sep', 'aria-hidden': 'true' }, '·'))
+		metaBits.push(node)
+	}
+	if (showSource) pushText(h('span', {}, source.name))
+	if (item.state && item.state !== 'open') pushText(h('span', { class: 'in-state' }, item.state))
+	if (item.priority) pushText(h('span', { class: `in-pri ${priorityClass(item.priority)}` }, h('i'), item.priority))
+	if (item.project) pushText(h('span', {}, item.project))
+	if (item.assignees.length) pushText(h('span', {}, item.assignees.join(', ')))
+
+	const labelTags = item.labels.map((label) => {
+		const active = intake.filter.label === label
+		return h('button', {
+			type: 'button',
+			class: `in-tag${active ? ' on' : ''}`,
+			title: active ? `Clear ${label} filter` : `Filter by ${label}`,
+			onclick: () => { intake.filter.label = active ? '' : label; drawIntake() }
+		}, label)
+	})
+
+	return h('div', { class: 'in-row' },
+		h('div', { class: 'in-ref', title: source.kind === 'github' ? 'GitHub issue' : 'Linear issue' },
+			icon(source.kind),
+			h('span', {}, item.ref)
+		),
+		h('div', { class: 'in-main' },
+			h('div', { class: 'in-title-line' },
+				titleNode,
+				isUrl(item.url) ? h('span', { class: 'in-title-out', 'aria-hidden': 'true' }, icon('out')) : null
+			),
+			(metaBits.length || labelTags.length) ? h('div', { class: 'in-meta' }, ...metaBits, ...labelTags) : null,
+			note ? h('div', { class: `in-note ${note.bad ? 'error' : 'meta'}` }, note.text) : null
+		),
+		h('div', { class: 'in-end' },
+			item.updatedAt ? h('span', { class: 'in-time', title: `Updated ${clock(item.updatedAt)}` }, when(item.updatedAt)) : null,
+			h('div', { class: 'row' }, act)
+		)
+	)
+}
+
+function drawIntake() {
+	const v = intake.view
+	if (!v) {
+		return render(
+			h('div', { class: 'in-head' },
+				h('div', { class: 'in-head-main' }, h('h1', {}, 'Intake'), h('p', { class: 'in-head-sub' }, 'Reading sources…'))
+			),
+			h('section', { class: 'panel' }, h('div', { class: 'empty' }, h('p', {}, 'Reading sources…')))
+		)
+	}
+	if (!v.sources.length) return render(intakeOnboarding(v))
+
+	const f = intake.filter
+	const activeSource = f.source ? v.sources.find((s) => s.id === f.source) || null : null
+	const shown = activeSource ? [activeSource] : v.sources
+	const allRows = v.sources.flatMap((s) => (intake.lists.get(s.id)?.items || []).map((item) => ({ source: s, item })))
+	const rows = shown.flatMap((s) => (intake.lists.get(s.id)?.items || []).map((item) => ({ source: s, item })))
+
+	const options = (pick) => [...new Set(rows.flatMap(({ item }) => pick(item)).filter(Boolean))].sort((a, b) => a.localeCompare(b))
+	const labels = options((i) => i.labels)
+	const states = options((i) => [i.state])
+	const people = options((i) => i.assignees)
+	for (const [key, list] of [['label', labels], ['state', states], ['assignee', people]]) if (f[key] && f[key] !== '-' && !list.includes(f[key])) f[key] = ''
+
+	const showInNew = (item) => !item.factory || intake.starting.has(item.url) || !!item.factory.fresh
+	const countForShow = (items) => f.show === 'new'
+		? items.filter((i) => !i.factory).length
+		: f.show === 'factory'
+			? items.filter((i) => !!i.factory).length
+			: items.length
+
+	const q = f.query.trim().toLowerCase()
+	const matches = ({ item }) => {
+		if (f.show === 'new' && !showInNew(item)) return false
+		if (f.show === 'factory' && !item.factory) return false
+		if (f.label && !item.labels.includes(f.label)) return false
+		if (f.state && item.state !== f.state) return false
+		if (f.assignee === '-' ? item.assignees.length : f.assignee && !item.assignees.includes(f.assignee)) return false
+		if (q && !`${item.ref} ${item.title} ${item.labels.join(' ')} ${item.project || ''}`.toLowerCase().includes(q)) return false
+		return true
+	}
+	const list = rows.filter(matches).sort((a, b) => b.item.updatedAt - a.item.updatedAt)
+	const loading = shown.some((s) => intake.lists.get(s.id)?.loading)
+	const errors = shown.map((s) => [s, intake.lists.get(s.id)?.error]).filter(([, e]) => e)
+	const notStartedCount = rows.filter(({ item }) => !item.factory).length
+	const inFactoryCount = rows.filter(({ item }) => item.factory).length
+	const hasActiveFilters = !!(f.label || f.state || f.assignee || f.query.trim())
+	const lastRead = Math.max(0, ...shown.map((s) => intake.lists.get(s.id)?.readAt || 0))
+	const kinds = [...new Set(v.sources.map((s) => (s.kind === 'github' ? 'GitHub' : 'Linear')))]
+
+	const pick = (key, value) => { f[key] = value; drawIntake() }
+	const select = (key, all, values, extra) => values.length || extra
+		? h('select', { class: `in-select${f[key] ? ' on' : ''}`, 'aria-label': all, onchange: (e) => pick(key, e.target.value) },
+			h('option', { value: '', selected: !f[key] }, all),
+			extra || null,
+			...values.map((x) => h('option', { value: x, selected: f[key] === x }, x)))
+		: null
+
+	const sourcesNav = h('aside', { class: 'in-sources' },
+		h('div', { class: 'in-sec-head' },
+			h('span', {}, 'Sources'),
+			v.repos.length ? h('button', { type: 'button', class: 'in-rail-add', onclick: () => openSourceSheet(null) }, icon('plus'), 'Add') : null
+		),
+		h('div', { class: 'in-nav', role: 'navigation', 'aria-label': 'Intake sources' },
+			h('div', { class: 'in-nav-item' },
+				h('button', {
+					type: 'button',
+					class: `in-nav-btn${!f.source ? ' on' : ''}`,
+					'aria-current': !f.source ? 'page' : undefined,
+					onclick: () => pick('source', '')
+				},
+					icon('inbox'),
+					h('span', { class: 'in-nav-name' }, 'All sources'),
+					h('span', { class: 'in-nav-cnt' }, v.sources.every((s) => intake.lists.get(s.id)?.loading && !(intake.lists.get(s.id)?.items || []).length) ? '…' : countForShow(allRows.map((r) => r.item)))
+				)
+			),
+			...v.sources.map((s) => {
+				const st = intake.lists.get(s.id)
+				const on = f.source === s.id
+				const cnt = st?.loading && !st?.items?.length ? '…' : countForShow(st?.items || [])
+				return h('div', { class: 'in-nav-item' },
+					h('button', {
+						type: 'button',
+						class: `in-nav-btn${on ? ' on' : ''}`,
+						'aria-current': on ? 'page' : undefined,
+						onclick: () => pick('source', s.id)
+					},
+						icon(s.kind),
+						h('span', { class: 'in-nav-name' }, s.name),
+						st?.error ? h('span', { class: 'in-nav-err', title: st.error }) : h('span', { class: 'in-nav-cnt' }, cnt)
+					),
+					h('button', {
+						type: 'button',
+						class: 'in-nav-edit',
+						'aria-label': `Edit ${s.name}`,
+						title: `Edit ${s.name}`,
+						onclick: (e) => { e.stopPropagation(); openSourceSheet(s) }
+					}, icon('edit'))
+				)
+			})
+		)
+	)
+
+	const filterBar = h('div', { class: 'in-bar' },
+		h('div', { class: 'seg', role: 'tablist', 'aria-label': 'Status filter' },
+			...[
+				['new', 'Not started', notStartedCount],
+				['factory', 'In factory', inFactoryCount],
+				['all', 'All', rows.length]
+			].map(([key, label, n]) =>
+				h('button', {
+					type: 'button',
+					role: 'tab',
+					'aria-selected': f.show === key ? 'true' : 'false',
+					class: f.show === key ? 'on' : '',
+					onclick: () => pick('show', key)
+				}, label, h('span', { class: 'count' }, n))
+			)
+		),
+		h('div', { class: 'in-filters' },
+			select('label', 'Label', labels),
+			select('state', 'State', states.length > 1 ? states : []),
+			select('assignee', 'Assignee', people, h('option', { value: '-', selected: f.assignee === '-' }, 'Unassigned')),
+			hasActiveFilters ? h('button', {
+				type: 'button',
+				class: 'btn sm quiet',
+				onclick: () => { Object.assign(f, { label: '', state: '', assignee: '', query: '' }); drawIntake() }
+			}, 'Clear') : null
+		),
+		h('div', { class: 'in-search-wrap' },
+			icon('search'),
+			h('input', {
+				type: 'search',
+				class: 'search',
+				placeholder: 'Filter',
+				'aria-label': 'Filter items',
+				'data-draft': 'intake-search',
+				value: f.query,
+				oninput: (e) => pick('query', e.target.value),
+				onkeydown: (e) => { if (e.key === 'Escape' && f.query) { e.preventDefault(); pick('query', '') } }
+			}),
+			!f.query ? h('span', { class: 'kbd', 'aria-hidden': 'true' }, '/') : null
+		)
+	)
+
+	const queueHead = h('div', { class: 'in-head' },
+		h('div', { class: 'in-head-main' },
+			h('h1', {},
+				activeSource ? activeSource.name : 'All sources',
+				h('span', { class: 'count' }, list.length)
+			),
+			h('div', { class: 'in-head-sub' },
+				activeSource
+					? [sourceMeta(activeSource), activeSource.merge ? chip(activeSource.merge === 'never' ? 'never merges' : 'asks before merging') : null]
+					: dotted(count(v.sources.length, 'source'), kinds.join(', '))
+			)
+		),
+		h('div', { class: 'in-head-act' },
+			activeSource ? h('button', { type: 'button', class: 'btn sm', onclick: () => openSourceSheet(activeSource) }, 'Edit') : null,
+			h('button', {
+				type: 'button',
+				class: `btn sm${loading ? ' in-spin' : ''}`,
+				disabled: loading,
+				title: lastRead ? `Last read ${clock(lastRead)}` : 'Refresh sources',
+				onclick: () => loadIntake(true)
+			}, icon('refresh'), loading ? 'Reading…' : 'Refresh')
+		)
+	)
+
+	const queueBody = list.length
+		? list.map(({ source, item }) => intakeRow(source, item, !activeSource && v.sources.length > 1))
+		: h('div', { class: 'empty' },
+			h('p', {}, loading && !rows.length ? 'Reading sources…' : rows.length ? 'No matching items' : 'No open items'),
+			rows.length ? h('button', { type: 'button', class: 'btn', onclick: () => { Object.assign(f, { show: 'all', label: '', state: '', assignee: '', query: '' }); drawIntake() } }, 'Reset filters') : null
+		)
+
+	render(
+		h('div', { class: 'in-grid' },
+			sourcesNav,
+			h('div', { class: 'in-queue' },
+				queueHead,
+				v.error ? h('p', { class: 'notice bad', style: 'margin:0 0 12px' }, v.error) : null,
+				errors.length ? h('div', { style: 'margin-bottom:12px' }, errors.map(([s, e]) => h('p', { class: 'notice bad', style: 'margin-top:0' }, `${s.name}: ${e}`))) : null,
+				h('section', { class: 'panel', 'aria-label': 'Items' }, filterBar, queueBody),
+				h('p', { class: 'foot' }, 'Anyone who can open this page can add sources and start threads. The Linear key stays on this machine and is never sent back to the page.')
+			),
+			connectionsSidebar(v)
+		)
+	)
+}
+
 async function refreshBoard() {
 	try { board = await api('GET', '/api/board'); loaded = true } catch { return }
 	drawNav()
@@ -2387,6 +3123,11 @@ async function draw() {
 	if (page === 'issue' && id) return drawIssue(id)
 	if (page === 'settings') return drawSettings()
 	if (page === 'new') return drawNew()
+	if (page === 'intake') {
+		// Each visit reads the sources again, so an item another thread or a scheduled run started shows as such.
+		drawIntake()
+		return loadIntake(true)
+	}
 	if (page === 'done') return drawDone()
 	drawBoard()
 }
@@ -2421,7 +3162,7 @@ window.addEventListener('keydown', (e) => {
 	const tag = document.activeElement?.tagName
 	if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
 	const { page } = route()
-	if (e.key === '/' && (page === 'board' || page === 'done')) {
+	if (e.key === '/' && (page === 'board' || page === 'done' || page === 'intake')) {
 		const el = main.querySelector('.search')
 		if (el) { e.preventDefault(); el.focus() }
 	} else if (e.key === 'n' && page === 'board') {
