@@ -40,6 +40,8 @@ describe('issues', () => {
 		await h.as('t1')('POST', '/api/issue/run', { stage: 'implement' })
 		const item = (await h.call('GET', '/api/board')).body.issues[0]
 		expect(item.ran).toEqual(['research', 'implement'])
+		expect(item.failedStages).toEqual(['research'])
+		expect(item.findings).toEqual({ total: 0, open: 0, important: 0 })
 		expect(item.run.stage).toBe('implement')
 		expect(typeof item.run.startedAt).toBe('number')
 	})

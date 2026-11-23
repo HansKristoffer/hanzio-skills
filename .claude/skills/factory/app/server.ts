@@ -548,13 +548,24 @@ export function startServer(options: ServerOptions) {
 		const runs = runsOf(i.id)
 		const running = runs.filter((r) => r.state === 'running').at(-1)
 		const pr = i.pr_state ? (JSON.parse(i.pr_state) as PrState) : null
+		const prFindings = findingsOf(i.id).filter((f) => f.severity !== 'pre-existing')
+		const latestByStage = new Map<string, RunRow>()
+		for (const r of runs) latestByStage.set(r.stage, r)
 		return {
 			...publicIssue(i),
 			asked: (latestResult(i.id, 'research')?.result.asked as string | undefined) ?? null,
 			planned: (latestResult(i.id, 'plan')?.result.planned as string | undefined) ?? null,
 			built: (latestResult(i.id, 'implement')?.result.built as string | undefined) ?? null,
 			prChecks: pr?.checks.state ?? null,
+			prDraft: pr?.draft ?? null,
+			prApproved: pr?.approvedBy.length ?? 0,
+			prChangesRequested: pr?.changesRequestedBy.length ?? 0,
 			reviewRisk: prRisk(i.id),
+			findings: {
+				total: prFindings.length,
+				open: prFindings.filter(isOpenFinding).length,
+				important: prFindings.filter((f) => f.severity === 'important' && isOpenFinding(f)).length
+			},
 			lastEvent: lastEvent(i.id),
 			decisions: decisionsOf(i.id).filter(waits).map(publicDecision),
 			waiting: waitingOf(i),
@@ -562,6 +573,7 @@ export function startServer(options: ServerOptions) {
 			preview: previewOf(i)?.state ?? null,
 			/** The stages that have had a run, so the page can tell a skipped stage from a finished one. */
 			ran: [...new Set(runs.map((r) => r.stage))],
+			failedStages: [...latestByStage.entries()].filter(([, r]) => r.state === 'failed').map(([stage]) => stage),
 			run: running ? { stage: running.stage, subject: running.subject, model: running.model, startedAt: running.started_at } : null
 		}
 	}
