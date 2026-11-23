@@ -1,0 +1,1560 @@
+<title>{{PR title}}</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a section index on the left and one reading column. */
+:root {
+	--bg: #f4f5f7;
+	--surface: #ffffff;
+	--ink: #16181d;
+	--muted: #5c6370;
+	--rule: #dde0e6;
+	--accent: #9a5208;
+	--accent-soft: #f5e7d6;
+	--add: #1d7a3c;
+	--del: #b02a2a;
+	--font-display: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+	--font-body: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+	--font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	--fb-add-bg: #e6f4ea;
+	--fb-del-bg: #fbe9e9;
+	--code-bg: #e6e8ec;
+}
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme="light"]) {
+		--bg: #0f1114;
+		--surface: #161a1f;
+		--ink: #e6e8ec;
+		--muted: #99a0ac;
+		--rule: #2a2f37;
+		--accent: #e3a05a;
+		--accent-soft: #2f2416;
+		--add: #74d394;
+		--del: #f09a9a;
+		--fb-add-bg: #12301d;
+		--fb-del-bg: #3a1719;
+		--code-bg: #262b33;
+		color-scheme: dark;
+	}
+}
+:root[data-theme="dark"] {
+	--bg: #0f1114;
+	--surface: #161a1f;
+	--ink: #e6e8ec;
+	--muted: #99a0ac;
+	--rule: #2a2f37;
+	--accent: #e3a05a;
+	--accent-soft: #2f2416;
+	--add: #74d394;
+	--del: #f09a9a;
+	--fb-add-bg: #12301d;
+	--fb-del-bg: #3a1719;
+	--code-bg: #262b33;
+	color-scheme: dark;
+}
+
+/* Sizes: all text is 16px. Only the sidebar index and small labels are 12px. */
+body {
+	background: var(--bg);
+	color: var(--ink);
+	font-family: var(--font-body);
+	font-size: 16px;
+	line-height: 1.55;
+}
+.page {
+	max-width: 1920px;
+	margin: 0 auto;
+	padding-left: max(32px, env(safe-area-inset-left, 0px));
+	padding-right: max(32px, env(safe-area-inset-right, 0px));
+	display: grid;
+	grid-template-columns: 150px minmax(0, 1fr);
+	gap: 48px;
+}
+main {
+	padding-block: 40px 80px;
+	display: grid;
+	gap: 56px;
+	min-width: 0;
+}
+main > * { min-width: 0; }
+/* Text, charts and unified diffs keep a reading width. Split diffs use the full width, so each side has space for long lines. */
+header, section > * { max-width: 1040px; }
+:root[data-diff-style="split"] section > figure.diff { max-width: none; }
+code, .mono { font-family: var(--font-mono); }
+/* Inline code in text: diffs render in their own viewer, so all <code> here is inline. */
+code {
+	font-size: 0.9em;
+	padding: 0.1em 0.35em;
+	border-radius: 4px;
+	background: var(--code-bg);
+	color: var(--ink);
+}
+
+header { display: grid; gap: 14px; container: header / inline-size; }
+h1 {
+	font-family: var(--font-display);
+	font-weight: 650;
+	font-size: clamp(28px, 4.4vw, 40px);
+	line-height: 1.1;
+	letter-spacing: -0.02em;
+	margin: 0;
+	text-wrap: balance;
+}
+.lede { margin: 0; color: var(--muted); }
+.lede b { color: var(--ink); font-weight: 600; }
+.story { display: grid; gap: 6px; }
+
+/* Text from the PR description. A callout is a note of the author. */
+.callout {
+	margin: 0;
+	padding: 10px 14px;
+	border-left: 3px solid var(--accent);
+	border-radius: 0 6px 6px 0;
+	background: var(--surface);
+	display: grid;
+	gap: 6px;
+}
+.callout-label {
+	font-family: var(--font-mono);
+	font-size: 12px;
+	letter-spacing: 0.04em;
+	color: var(--accent);
+}
+.callout p, .callout ul { margin: 0; }
+.callout ul { padding-left: 18px; display: grid; gap: 4px; }
+.note a, .callout a { color: inherit; text-underline-offset: 3px; }
+.note a:hover, .callout a:hover { color: var(--accent); }
+
+/* A discarded idea: an approach that an earlier version of the PR had, or that its author considered, and dropped. It is muted, so that the text about the current code stands out. 90% keeps the text near 4.5:1 contrast. */
+.discarded {
+	margin: 0;
+	padding: 2px 0 2px 14px;
+	border-left: 2px dashed var(--rule);
+	display: grid;
+	gap: 4px;
+	color: color-mix(in srgb, var(--muted) 90%, var(--bg));
+}
+.discarded-label {
+	font-family: var(--font-mono);
+	font-size: 12px;
+	letter-spacing: 0.04em;
+}
+.discarded p { margin: 0; }
+.discarded code { color: inherit; }
+.discarded a { color: inherit; text-underline-offset: 3px; }
+.discarded a:hover { color: var(--accent); }
+
+/* A decision from the "Decisions" section of the PR description: a choice that a reviewer can want done differently. It stays in the part of the page that it is about. As in the description, it is a collapsible, closed by default. The summary has the choice, the Implicit label for an implicit decision (made while implementing, without being discussed), and the Slack icon when people discussed the decision in Slack. The reason and then what merging accepts open below it. */
+.decision {
+	margin: 0;
+	background: var(--surface);
+	border: 1px solid var(--rule);
+	border-radius: 8px;
+	scroll-margin-top: 16px;
+}
+.decision:target { box-shadow: 0 0 0 2px var(--accent); }
+.decision summary {
+	list-style: none;
+	cursor: pointer;
+	padding: 12px 18px 14px;
+	display: grid;
+	gap: 2px;
+	border-radius: 8px;
+}
+.decision summary::-webkit-details-marker { display: none; }
+.decision summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* One row: the title, then only the parts that the decision has (the Implicit label, the Slack icon), then the arrow. The title spans two rows. The first row is as tall as the first line of the title, and the other parts are centered in it, also when the title wraps. */
+.decision-head {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	grid-template-rows: 1lh auto;
+	grid-auto-columns: auto;
+	align-items: center;
+	column-gap: 12px;
+	line-height: 1.4;
+}
+.decision-head > * { grid-row: 1; }
+.decision-head > .decision-title { grid-row: 1 / span 2; }
+/* The arrow at the end of the title row points down when the decision is open. It is a chevron in a mask, and not the "›" character, because the character is lower than the center of the line. */
+.decision-head::after {
+	content: "";
+	grid-row: 1;
+	width: 6px;
+	height: 10px;
+	background: currentColor;
+	mask: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 6 10'><path d='M1.5 2 4.5 5 1.5 8' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>") center / contain no-repeat;
+	color: var(--muted);
+	transition: transform 120ms ease;
+}
+.decision[open] .decision-head::after { transform: rotate(90deg); }
+.decision summary:hover .decision-head::after { color: var(--accent); }
+@media (prefers-reduced-motion: reduce) {
+	.decision-head::after { transition: none; }
+}
+.decision-title { font-weight: 600; }
+.decision-origin {
+	font-family: var(--font-mono);
+	font-size: 12px;
+	padding: 1px 8px;
+	border-radius: 999px;
+	border: 1px solid var(--rule);
+	color: var(--muted);
+	cursor: help;
+}
+/* The Slack icon opens the Slack message where people discussed the decision. The negative margin makes the hover area larger than the icon, and does not move the icon. */
+.decision-head .decision-slack {
+	margin: -4px;
+	padding: 4px;
+	border-radius: 4px;
+	color: var(--muted);
+	line-height: 0;
+}
+.decision-head .decision-slack:is(:hover, :focus-visible) { color: var(--accent); }
+.decision-head .decision-slack:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
+.decision-slack svg { width: 14px; height: 14px; fill: currentColor; }
+.decision-body { padding: 0 18px 16px; display: grid; gap: 10px; }
+.decision p, .assumption p { margin: 0; }
+.decision-why { color: var(--muted); }
+.decision-cost { display: grid; gap: 2px; }
+.decision-label {
+	font-family: var(--font-mono);
+	font-size: 12px;
+	letter-spacing: 0.04em;
+	color: var(--muted);
+}
+.decision-cost .decision-label { color: var(--accent); }
+.decision a, .assumption a { color: inherit; text-underline-offset: 3px; }
+.decision a:hover, .assumption a:hover { color: var(--accent); }
+/* An assumption from the PR description: what the PR relies on. If it is false, the PR breaks. Dashed, because it is a premise, not a choice. */
+.assumption {
+	margin: 0;
+	padding: 12px 18px;
+	border: 1px dashed var(--rule);
+	border-radius: 8px;
+	display: grid;
+	gap: 6px;
+}
+
+/* A term of the PR's domain: the <dfn> at its first use, and each later use that the script marks. The script shows its explanation (data-tip) in a tooltip, on hover, focus and tap. */
+.term {
+	font-style: normal;
+	text-decoration: underline dotted;
+	text-decoration-thickness: 1.5px;
+	text-decoration-color: color-mix(in srgb, currentColor 60%, transparent);
+	text-underline-offset: 4px;
+	cursor: help;
+}
+.term:hover, .term:focus-visible { text-decoration-color: var(--accent); }
+.term:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+.term-tip {
+	position: fixed;
+	z-index: 10;
+	box-sizing: border-box;
+	max-width: min(340px, calc(100vw - 32px));
+	padding: 10px 14px;
+	display: grid;
+	gap: 4px;
+	border: 1px solid var(--rule);
+	border-radius: 8px;
+	background: var(--surface);
+	color: var(--ink);
+	box-shadow: 0 8px 24px rgb(0 0 0 / 0.14), 0 1px 3px rgb(0 0 0 / 0.08);
+	font-size: 16px;
+	line-height: 1.45;
+	text-align: left;
+	pointer-events: none;
+	visibility: hidden;
+	opacity: 0;
+	transform: translateY(var(--tip-shift, 3px));
+	transition: opacity 120ms ease, transform 120ms ease, visibility 0s linear 120ms;
+}
+.term-tip[data-placement="below"] { --tip-shift: -3px; }
+.term-tip[data-open] {
+	visibility: visible;
+	opacity: 1;
+	transform: none;
+	transition-delay: 0s;
+}
+.term-tip-label {
+	font-family: var(--font-mono);
+	font-size: 12px;
+	letter-spacing: 0.04em;
+	color: var(--accent);
+}
+/* The arrow points to the term: down when the tooltip is above it, up when it is below it. */
+.term-tip::before {
+	content: "";
+	position: absolute;
+	left: var(--arrow-x, 50%);
+	width: 10px;
+	height: 10px;
+	background: var(--surface);
+	border: 1px solid var(--rule);
+	transform: translateX(-50%) rotate(45deg);
+}
+.term-tip[data-placement="above"]::before { bottom: -6px; border-top-color: transparent; border-left-color: transparent; }
+.term-tip[data-placement="below"]::before { top: -6px; border-bottom-color: transparent; border-right-color: transparent; }
+@media (prefers-reduced-motion: reduce) {
+	.term-tip { transition: none; }
+}
+
+.stats {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px 20px;
+	align-items: center;
+	font-family: var(--font-mono);
+	font-variant-numeric: tabular-nums;
+	color: var(--muted);
+}
+.stats .add { color: var(--add); }
+.stats .del { color: var(--del); }
+.stats .faint { opacity: 0.5; }
+.chip {
+	background: var(--accent-soft);
+	color: var(--accent);
+	border-radius: 4px;
+	padding: 2px 8px;
+}
+/* The script puts the PR link at the top right of the header. The title flows around it, so only its first line is shorter. */
+.title-row { display: flow-root; }
+/* Balanced lines would all be as short as the first line. */
+.title-row h1 { text-wrap: pretty; }
+.pr-link {
+	float: right;
+	margin: 6px 0 0 24px;
+	font-family: var(--font-mono);
+	color: var(--accent);
+	text-decoration: none;
+	border: 1px solid currentColor;
+	border-radius: 4px;
+	padding: 1px 8px;
+}
+.pr-link:hover { background: var(--accent-soft); }
+/* In a narrow header, the first title line next to the link would be too short, so the link goes below the title. */
+@container header (max-width: 720px) {
+	.title-row { display: flex; flex-direction: column-reverse; align-items: flex-start; gap: 8px; }
+	.pr-link { margin: 0; }
+}
+/* Text ends where the first title line ends, so it leaves the same space for the PR link. The script sets --pr-link-width, and 24px is the margin of .pr-link. In a narrow header, the link goes below the title, so text uses the full width. */
+main { container: main / inline-size; }
+@container main (width > 720px) {
+	:is(header, section) > :is(.story, .note, .callout, .discarded, .decision, .assumption, .tests) {
+		box-sizing: border-box;
+		max-width: calc(min(100%, 1040px) - var(--pr-link-width, 0px) - 24px);
+	}
+}
+.sidebar {
+	position: sticky;
+	top: 0;
+	align-self: start;
+	padding-top: 44px;
+	display: grid;
+	gap: 24px;
+	justify-items: start;
+}
+.sidebar nav {
+	display: grid;
+	font-family: var(--font-mono);
+	font-size: 12px;
+}
+.sidebar nav a {
+	color: var(--muted);
+	text-decoration: none;
+	padding: 5px 0 5px 12px;
+	border-left: 2px solid var(--rule);
+}
+.sidebar nav a[aria-current="location"] { color: var(--accent); border-left-color: var(--accent); }
+.view-toggle {
+	display: inline-flex;
+	border: 1px solid var(--rule);
+	border-radius: 6px;
+	overflow: hidden;
+}
+.view-toggle[hidden] { display: none; }
+.view-toggle button {
+	font-family: var(--font-mono);
+	font-size: 12px;
+	padding: 3px 10px;
+	background: transparent;
+	color: var(--muted);
+	border: 0;
+	cursor: pointer;
+}
+.view-toggle button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+.view-toggle button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.sidebar nav a:hover, .sidebar nav a:focus-visible { color: var(--accent); }
+/* It looks like the layout control above it. */
+.preview-link {
+	font-family: var(--font-mono);
+	font-size: 12px;
+	padding: 3px 10px;
+	color: var(--muted);
+	text-decoration: none;
+	border: 1px solid var(--rule);
+	border-radius: 6px;
+}
+.preview-link:hover, .preview-link:focus-visible { color: var(--accent); background: var(--accent-soft); }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+
+section { display: grid; gap: 18px; scroll-margin-top: 16px; }
+section > * { min-width: 0; }
+h2 {
+	font-family: var(--font-display);
+	font-weight: 600;
+	font-size: 22px;
+	letter-spacing: -0.01em;
+	margin: 0;
+	text-wrap: balance;
+}
+.note { margin: 0; color: var(--muted); }
+
+.chart {
+	background: var(--surface);
+	border: 1px solid var(--rule);
+	border-radius: 8px;
+	padding: 20px;
+	overflow-x: auto;
+}
+/* The script draws the charts with Graphviz. These rules give them the page colors. */
+.chart svg { display: block; margin: 0 auto; max-width: 100%; height: auto; }
+.chart svg text { font-family: var(--font-body); fill: var(--ink); }
+.chart .node > :is(path, polygon) { fill: var(--bg); stroke: var(--ink); stroke-width: 1.5; }
+.chart .edge > path { stroke: var(--muted); stroke-width: 1.5; }
+.chart .edge > polygon { fill: var(--muted); stroke: var(--muted); }
+.chart .edge text, .chart .muted text { fill: var(--muted); }
+/* Secondary boxes and their arrows. */
+.chart .node.muted > :is(path, polygon) { fill: none; stroke: var(--muted); stroke-width: 1; stroke-dasharray: 4 3; }
+.chart .edge.muted > :is(path, polygon) { stroke-opacity: 0.45; fill-opacity: 0.45; stroke-width: 1; }
+/* Before/after charts: red is what the PR removes, green is what it adds, also on secondary boxes and arrows. */
+.chart :is(.node, .edge).added > :is(path, polygon) { stroke: var(--add); stroke-opacity: 1; }
+.chart .edge.added > polygon { fill: var(--add); fill-opacity: 1; }
+.chart .added text { fill: var(--add); }
+.chart :is(.node, .edge).removed > :is(path, polygon) { stroke: var(--del); stroke-opacity: 1; }
+.chart .edge.removed > polygon { fill: var(--del); fill-opacity: 1; }
+.chart .removed text { fill: var(--del); }
+.chart a:hover text { text-decoration: underline; }
+/* The chart source, when Graphviz does not load. */
+.chart pre { margin: 0; font-family: var(--font-mono); font-size: 12px; white-space: pre-wrap; }
+/* A before/after pair: side by side when both charts fit, else one above the other. */
+section > .chart-pair { max-width: none; display: grid; gap: 16px; }
+@container main (width > 1300px) { .chart-pair { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.chart-pair > div { display: grid; gap: 8px; align-content: start; min-width: 0; }
+
+.table-wrap { overflow-x: auto; }
+table {
+	border-collapse: collapse;
+	width: 100%;
+	font-variant-numeric: tabular-nums;
+}
+th, td { text-align: left; padding: 8px 12px 8px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-weight: 500; color: var(--muted); font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; }
+td ul { margin: 0; padding-left: 16px; }
+
+figure.diff {
+	margin: 0;
+	display: grid;
+	gap: 8px;
+	--diffs-font-family: var(--font-mono);
+	--diffs-header-font-family: var(--font-body);
+}
+.pierre { border-radius: 8px; overflow: hidden; border: 1px solid var(--rule); }
+.pierre:empty { display: none; }
+figure.diff.upgraded .fallback { display: none; }
+
+/* A code example: code that is not in the PR, for example a script that calls the new API. */
+figure.example { margin: 0; --diffs-font-family: var(--font-mono); }
+figure.example.upgraded .fallback { display: none; }
+figure.example .fallback pre { padding: 8px 12px; white-space: pre-wrap; word-break: break-word; }
+
+.fallback {
+	border: 1px solid var(--rule);
+	border-radius: 8px;
+	background: var(--surface);
+	overflow: hidden;
+}
+.fallback-head {
+	font-family: var(--font-mono);
+	font-size: 12px;
+	padding: 8px 12px;
+	border-bottom: 1px solid var(--rule);
+	color: var(--muted);
+}
+.fallback pre {
+	margin: 0;
+	padding: 8px 0;
+	font-family: var(--font-mono);
+	font-size: 12.5px;
+	line-height: 1.6;
+	tab-size: 4;
+	overflow-x: auto;
+}
+.fallback .row { display: block; padding: 0 12px; white-space: pre-wrap; word-break: break-word; }
+.fallback .row.add { background: var(--fb-add-bg); }
+.fallback .row.del { background: var(--fb-del-bg); }
+.fallback .row::before { display: inline-block; width: 1.5ch; color: var(--muted); content: " "; }
+.fallback .row.add::before { content: "+"; color: var(--add); }
+.fallback .row.del::before { content: "-"; color: var(--del); }
+.fallback .row.page-comment {
+	color: color-mix(in srgb, var(--accent) 55%, var(--muted));
+	cursor: help;
+}
+.fallback .row.expander { color: var(--accent); cursor: pointer; }
+.fallback .row.expander:hover, .fallback .row.expander:focus-visible { text-decoration: underline; }
+
+.tests { display: grid; gap: 18px; }
+.tests h3 {
+	margin: 0 0 6px;
+	font-family: var(--font-mono);
+	font-weight: 500;
+	font-size: inherit;
+	color: var(--accent);
+	overflow-wrap: anywhere;
+}
+.tests ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; list-style: none; }
+/* A test name is a list item, or a table cell in a freeform test table. */
+.tests [data-line] { font-family: var(--font-mono); }
+.tests td[data-line] { padding-left: 18px; }
+/* The mark hangs in the list indent or the cell padding, in place of the bullet. */
+.tests [data-line]::before { display: inline-block; width: 18px; margin-left: -18px; }
+.tests [data-line][data-change="added"]::before { content: "+"; color: var(--add); }
+.tests [data-line][data-change="modified"]::before { content: "~"; color: var(--accent); }
+.tests [data-line][data-change="removed"]::before { content: "−"; color: var(--del); }
+/* The tests of one describe block: its name one time, and the tests indented below it. */
+.tests .describe-name { font-family: var(--font-mono); }
+.tests li.describe > ul { margin-top: 4px; }
+/* The cases of one parameterized test: a bracket left of the marks joins them, and they have no gap. */
+.tests li.cases { position: relative; }
+.tests li.cases > ul { padding-left: 0; gap: 0; }
+.tests li.cases::before {
+	position: absolute;
+	inset: 5px auto 5px -28px;
+	width: 5px;
+	border: 1px solid var(--muted);
+	border-right: 0;
+	border-radius: 3px 0 0 3px;
+	content: "";
+}
+.tests [data-line] a, .fallback-head a {
+	color: var(--muted);
+	text-decoration: underline;
+	text-decoration-color: var(--rule);
+	text-underline-offset: 3px;
+}
+.diff-link {
+	font-family: var(--font-mono);
+	font-size: 12px;
+	color: var(--muted);
+	text-decoration: none;
+}
+.tests [data-line] a:hover, .fallback-head a:hover, .diff-link:hover { color: var(--accent); text-decoration-color: currentColor; }
+
+/* GitHub review threads. The script shows a copy of each thread under its code line, so the original stays hidden. */
+figure.diff > .thread { display: none; }
+.thread {
+	display: grid;
+	gap: 10px;
+	margin: 6px 12px;
+	padding: 10px 14px;
+	border: 1px solid var(--rule);
+	border-left: 3px solid var(--accent);
+	border-radius: 0 6px 6px 0;
+	background: var(--surface);
+	color: var(--ink);
+	font-family: var(--font-body);
+	font-size: 16px;
+	line-height: 1.55;
+	white-space: normal;
+}
+.comment { display: grid; gap: 2px; }
+.comment + .comment { padding-top: 10px; border-top: 1px solid var(--rule); }
+.comment :is(p, ul, ol, pre, blockquote) { margin: 0; }
+/* The blocks of GitHub Markdown, which the script renders. */
+.comment blockquote {
+	padding-left: 12px;
+	border-left: 3px solid var(--rule);
+	color: var(--muted);
+}
+.comment pre {
+	overflow-x: auto;
+	padding: 8px 12px;
+	border-radius: 6px;
+	background: var(--code-bg);
+}
+.comment pre code { padding: 0; background: none; }
+.comment a { color: inherit; text-underline-offset: 3px; }
+.comment .comment-author {
+	justify-self: start;
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-family: var(--font-mono);
+	font-size: 12px;
+	color: var(--accent);
+	text-decoration: none;
+}
+.comment-avatar {
+	width: 20px;
+	height: 20px;
+	border-radius: 50%;
+	background: var(--code-bg);
+}
+/* GitHub shows the avatars of apps as rounded squares, and of people as circles. */
+.comment-avatar[data-bot] { border-radius: 4px; }
+.comment a:hover { color: var(--accent); }
+.comment .comment-author:hover { text-decoration: underline; }
+
+script[type="text/plain"] { display: none; }
+
+/* Narrow windows: the section index goes above the content as one row. */
+@media (max-width: 860px) {
+	.page {
+		grid-template-columns: minmax(0, 1fr);
+		gap: 0;
+		padding-left: max(16px, env(safe-area-inset-left, 0px));
+		padding-right: max(16px, env(safe-area-inset-right, 0px));
+	}
+	.sidebar {
+		position: static;
+		padding-top: 24px;
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 12px 24px;
+	}
+	.sidebar nav { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+	.sidebar nav a { padding: 0; border-left: 0; }
+	main { padding-top: 32px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+	* { scroll-behavior: auto !important; }
+}
+</style>
+
+<div class="page">
+<aside class="sidebar">
+	<nav aria-label="Sections">
+		<a href="#flow">Flow</a>
+		<a href="#{{section id}}">{{Section name}}</a>
+		<a href="#tests">Tests</a>
+	</nav>
+	<div class="view-toggle" id="view-toggle" role="group" aria-label="Diff layout" hidden>
+		<button type="button" data-style="split" aria-pressed="true">Split</button>
+		<button type="button" data-style="unified" aria-pressed="false">Unified</button>
+	</div>
+	<a class="preview-link" href="{{production preview URL}}" target="_blank" rel="noopener" title="Open the production preview of this pull request">Preview ↗</a>
+</aside>
+
+<main data-repo-url="https://github.com/{{owner}}/{{repo}}" data-pr="{{PR number}}" data-head-sha="{{head commit SHA}}">
+	<header>
+		<h1>{{PR title}}</h1>
+		<div class="story">
+			<p class="lede"><b>Before</b>, {{…}}</p>
+			<p class="lede"><b>Now</b>, {{…}}</p>
+		</div>
+		<div class="stats" data-pr-additions="{{PR additions}}" data-pr-deletions="{{PR deletions}}">
+			<span class="chip">experiment: {{experiment}}</span>
+		</div>
+		<p class="note">{{…}}</p>
+		<aside class="callout">
+			<div class="callout-label">Note</div>
+			<p>{{…}}</p>
+		</aside>
+	</header>
+
+	<section id="flow">
+		<h2>Flow</h2>
+		<div class="chart" data-links='{"A": "{{path}}#L{{line}}", "B": "{{path}}#L{{line}}"}'>
+<script type="text/plain" class="dot">
+digraph {
+	A [label="{{system part}}"]
+	B [label="{{system part}}"]
+	A -> B [label="{{what flows}}"]
+}
+</script>
+		</div>
+	</section>
+
+	<section id="{{section id}}">
+		<h2>{{Section name}}</h2>
+		<details class="decision">
+			<summary>
+				<span class="decision-label">Decision</span>
+				<span class="decision-head">
+					<span class="decision-title">{{the choice}}</span>
+					<span class="decision-origin" title="Made while implementing, without being discussed.">Implicit</span>
+					<a class="decision-slack" href="{{Slack message URL}}" target="_blank" rel="noopener" title="Slack discussion" aria-label="Slack discussion"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zM6.313 15.165a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zM8.834 6.313a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zM18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zM17.688 8.834a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312zM15.165 18.956a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zM15.165 17.688a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z"/></svg></a>
+				</span>
+			</summary>
+			<div class="decision-body">
+				<p class="decision-why">{{the reason}}</p>
+				<p class="decision-cost"><span class="decision-label">Trade-off</span><span>{{what merging accepts}}</span></p>
+			</div>
+		</details>
+		<div class="assumption">
+			<div class="decision-label">Assumption</div>
+			<p>{{what the PR relies on}}</p>
+		</div>
+		<p class="note">{{…}}</p>
+		<figure class="diff" data-path="{{path}}" data-line="{{first changed line}}" data-lang="typescript">
+<script type="text/plain" class="old">
+{{old code}}
+</script>
+<script type="text/plain" class="new">
+{{new code}}
+</script>
+		</figure>
+		<figure class="example" data-lang="typescript">
+<script type="text/plain">
+{{example code}}
+</script>
+		</figure>
+		<aside class="discarded">
+			<div class="discarded-label">Discarded idea</div>
+			<p>{{…}}</p>
+		</aside>
+	</section>
+
+	<section id="tests">
+		<h2>Tests</h2>
+		<div class="tests">
+			<div data-path="{{test file path}}">
+				<ul>
+					<li data-line="{{line}}" data-change="{{added, modified or removed}}">{{test name}}</li>
+				</ul>
+			</div>
+		</div>
+	</section>
+</main>
+</div>
+
+<script type="module">
+const { repoUrl, pr, headSha } = document.querySelector("main").dataset
+const prFilesUrl = `${repoUrl}/pull/${pr}/files`
+const blobUrl = `${repoUrl}/blob/${headSha}/`
+const figures = [...document.querySelectorAll("figure.diff")]
+
+// A code line that starts with `//!` is a comment that is only on this page, not in the PR.
+// The page shows it as `//`, in the accent color, with this tooltip.
+const PAGE_COMMENT_TITLE = "Not in the code: this comment is only on this page."
+const pageComments = new Set()
+
+// hidden-blocks:start (check.mjs runs this function to count the shown lines)
+// Unchanged code between a `//{` line and a `//}` line only gives context to the change. The page hides each such block
+// behind one row, `// ▸ <n> more lines`, until the reader clicks it. Returns the lines as the page shows them first
+// (`collapsed`), the lines with all blocks open (`expanded`), and for each collapsed line its line number in `expanded`.
+const EXPANDER = /^\/\/ ▸ \d+ more lines?$/
+function splitHiddenBlocks(lines) {
+	const collapsed = []
+	const expanded = []
+	const expandedLineOf = []
+	let block = null
+	for (const line of lines) {
+		if (!block && /^\s*\/\/\{\s*$/.test(line)) {
+			block = { indent: line.match(/^\s*/)[0], lines: [] }
+			continue
+		}
+		if (block && /^\s*\/\/\}\s*$/.test(line)) {
+			const count = block.lines.length
+			collapsed.push(`${block.indent}// ▸ ${count} more line${count === 1 ? "" : "s"}`)
+			expandedLineOf.push(expanded.length + 1)
+			for (const hiddenLine of block.lines) expanded.push(hiddenLine)
+			block = null
+			continue
+		}
+		if (block) {
+			block.lines.push(line)
+			continue
+		}
+		collapsed.push(line)
+		expanded.push(line)
+		expandedLineOf.push(expanded.length)
+	}
+	return { collapsed, expanded, expandedLineOf }
+}
+// hidden-blocks:end
+
+// Returns the code of one side as the page shows it first, and with its hidden blocks open.
+function readSide(figure, side) {
+	const element = figure.querySelector(`script.${side}`)
+	if (!element) return { text: "", expandedText: "", expandedLineOf: [] }
+	const text = element.textContent
+		.replace(/^\n/, "")
+		.replace(/\s+$/, "")
+		.replace(/^(\s*)\/\/!(.*)$/gm, (_, indent, comment) => {
+			pageComments.add(`//${comment}`.trim())
+			return `${indent}//${comment}`
+		})
+	// An empty side is no file, not a file with one empty line.
+	if (text === "") return { text: "", expandedText: "", expandedLineOf: [] }
+	const { collapsed, expanded, expandedLineOf } = splitHiddenBlocks(text.split("\n"))
+	return { text: collapsed.join("\n") + "\n", expandedText: expanded.join("\n") + "\n", expandedLineOf }
+}
+
+function toLines(text) {
+	return text === "" ? [] : text.replace(/\n$/, "").split("\n")
+}
+
+const hasHiddenBlocks = figure => toLines(readSide(figure, "new").text).some(line => EXPANDER.test(line.trim()))
+
+// diff-lines:start (check.mjs runs this function to count the shown lines)
+// Line-level LCS diff for the plain view that shows before the diff viewer loads.
+// As in the diff viewer (`ignoreWhitespace`), leading and trailing whitespace does not count. Thus a line that only
+// changes its indentation (for example, code that the PR wraps in a `try`) is an unchanged row, with the new text.
+function diffLines(oldLines, newLines) {
+	const n = oldLines.length
+	const m = newLines.length
+	const oldKeys = oldLines.map(line => line.trim())
+	const newKeys = newLines.map(line => line.trim())
+	const table = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1))
+	for (let i = n - 1; i >= 0; i--) {
+		for (let j = m - 1; j >= 0; j--) {
+			table[i][j] = oldKeys[i] === newKeys[j] ? table[i + 1][j + 1] + 1 : Math.max(table[i + 1][j], table[i][j + 1])
+		}
+	}
+	const rows = []
+	let i = 0
+	let j = 0
+	while (i < n && j < m) {
+		if (oldKeys[i] === newKeys[j]) {
+			rows.push({ kind: "same", text: newLines[j] })
+			i++
+			j++
+			continue
+		}
+		if (table[i + 1][j] >= table[i][j + 1]) {
+			rows.push({ kind: "del", text: oldLines[i++] })
+			continue
+		}
+		rows.push({ kind: "add", text: newLines[j++] })
+	}
+	while (i < n) rows.push({ kind: "del", text: oldLines[i++] })
+	while (j < m) rows.push({ kind: "add", text: newLines[j++] })
+	return rows
+}
+// diff-lines:end
+
+function githubLink(href, text) {
+	const link = document.createElement("a")
+	link.href = href
+	link.target = "_blank"
+	link.rel = "noopener"
+	link.textContent = text
+	return link
+}
+
+// A thread's data-side and data-line point to a line of the shown (shortened) code, not of the file.
+function readThreads(figure) {
+	return [...figure.querySelectorAll(":scope > .thread")]
+}
+
+// avatars.mjs writes this block, because the artifact host blocks external images.
+const avatars = JSON.parse(document.getElementById("avatars")?.textContent ?? "{}")
+
+const escapeHtml = text => text.replace(/[&<>"]/g, character => `&#${character.charCodeAt(0)};`)
+
+// GitHub links `#123` to that pull request or issue, and `@login` to that user.
+const githubReference = {
+	name: "githubReference",
+	level: "inline",
+	start: source => source.match(/(?<![\w/#@])[#@]\w/)?.index,
+	tokenizer(source) {
+		if (this.lexer.state.inLink) return
+		const match = /^(?:#(\d+)|@([a-z\d](?:[a-z\d-]*[a-z\d])?))(?![\w-])/i.exec(source)
+		if (!match) return
+		const href = match[1] ? `${repoUrl}/issues/${match[1]}` : `https://github.com/${match[2]}`
+		return { type: "githubReference", raw: match[0], href }
+	},
+	renderer: ({ raw, href }) => `<a href="${href}">${raw}</a>`,
+}
+
+async function loadMarkdown() {
+	try {
+		const { Marked } = await import("https://cdn.jsdelivr.net/npm/marked@15.0.12/+esm")
+		return new Marked({
+			gfm: true,
+			// As in GitHub comments, a line break in the Markdown is a line break on the page.
+			breaks: true,
+			renderer: {
+				// GitHub removes most HTML from comments. The page shows it as text, so a comment runs no script.
+				html: ({ text }) => escapeHtml(text),
+				// The page has its own heading sizes.
+				heading({ tokens }) {
+					return `<p><strong>${this.parser.parseInline(tokens)}</strong></p>`
+				},
+				// The artifact host blocks external images.
+				image: ({ href, text }) => `<a href="${escapeHtml(href)}">${escapeHtml(text || href)}</a>`,
+			},
+			extensions: [githubReference],
+		})
+	} catch (error) {
+		console.warn("The Markdown renderer did not load. Comments show as plain text.", error)
+		return null
+	}
+}
+
+function renderMarkdown(markdown, source) {
+	const blocks = document.createElement("template")
+	if (markdown) {
+		blocks.innerHTML = markdown.parse(source)
+	} else {
+		for (const paragraph of source.split(/\n\s*\n/)) {
+			blocks.content.append(Object.assign(document.createElement("p"), { textContent: paragraph }))
+		}
+	}
+	for (const link of blocks.content.querySelectorAll("a")) {
+		link.target = "_blank"
+		link.rel = "noopener"
+	}
+	return blocks.content
+}
+
+// The diff viewer shows copies of the threads, so the comments are complete before it loads.
+const comments = [...document.querySelectorAll("figure.diff > .thread > .comment")]
+const markdown = comments.length > 0 ? await loadMarkdown() : null
+for (const comment of comments) {
+	const source = comment.querySelector(':scope > script[type="text/markdown"]')
+	source.replaceWith(renderMarkdown(markdown, source.textContent.trim()))
+	const author = githubLink(comment.dataset.href, `${comment.dataset.author} ↗`)
+	author.className = "comment-author"
+	const avatar = avatars[comment.dataset.author]
+	if (avatar) {
+		const image = document.createElement("img")
+		image.className = "comment-avatar"
+		image.src = avatar
+		image.alt = ""
+		if (comment.dataset.author.endsWith("[bot]")) image.dataset.bot = ""
+		author.prepend(image)
+	}
+	comment.prepend(author)
+}
+
+// GitHub names the anchor of a file in the "Files changed" tab after the SHA-256 of its path.
+// `R<line>` after it anchors a line of the head commit (the right side of the diff), and `L<line>` a line of the
+// merge base (the left side).
+async function prFileUrl(path, line, side = "R") {
+	try {
+		const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(path))
+		const hex = [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("")
+		return `${prFilesUrl}#diff-${hex}${line ? `${side}${line}` : ""}`
+	} catch {
+		// crypto.subtle exists only in secure contexts.
+		return prFilesUrl
+	}
+}
+
+// A diff with only old code shows deleted code, so its line is on the merge base side.
+const fileUrls = await Promise.all(
+	figures.map(figure =>
+		prFileUrl(figure.dataset.path, figure.dataset.line, figure.querySelector("script.new") ? "R" : "L"),
+	),
+)
+
+let shownAdditions = 0
+let shownDeletions = 0
+
+const EXPANDER_TITLE = "Show the code around the changes in this file"
+
+// The line of a thread on the code with its hidden blocks open. Its data-line counts the lines as the page shows them
+// first.
+function threadLine(figure, thread, expanded) {
+	const line = Number(thread.dataset.line)
+	return expanded ? readSide(figure, thread.dataset.side).expandedLineOf[line - 1] : line
+}
+
+// The plain view, unified only, that shows before the diff viewer loads.
+function renderFallbackCode(figure, expanded) {
+	const oldSide = readSide(figure, "old")
+	const newSide = readSide(figure, "new")
+	const rows = expanded
+		? diffLines(toLines(oldSide.expandedText), toLines(newSide.expandedText))
+		: diffLines(toLines(oldSide.text), toLines(newSide.text))
+	const pre = document.createElement("pre")
+	const threads = readThreads(figure)
+	const lineNumbers = { old: 0, new: 0 }
+	for (const row of rows) {
+		if (row.kind !== "add") lineNumbers.old++
+		if (row.kind !== "del") lineNumbers.new++
+		const line = document.createElement("span")
+		line.className = `row ${row.kind}`
+		line.textContent = row.text === "" ? " " : row.text
+		if (pageComments.has(row.text.trim())) {
+			line.classList.add("page-comment")
+			line.title = PAGE_COMMENT_TITLE
+		}
+		if (!expanded && row.kind === "same" && EXPANDER.test(row.text.trim())) {
+			line.classList.add("expander")
+			line.title = EXPANDER_TITLE
+			line.tabIndex = 0
+			line.setAttribute("role", "button")
+		}
+		pre.append(line)
+		for (const thread of threads) {
+			const { side } = thread.dataset
+			const isOnSide = side === "old" ? row.kind !== "add" : row.kind !== "del"
+			if (isOnSide && lineNumbers[side] === threadLine(figure, thread, expanded)) pre.append(thread.cloneNode(true))
+		}
+	}
+	return pre
+}
+
+figures.forEach((figure, index) => {
+	figure.dataset.href = fileUrls[index]
+	figure.dataset.name ??= figure.dataset.path
+	for (const row of diffLines(toLines(readSide(figure, "old").text), toLines(readSide(figure, "new").text))) {
+		// Blank lines are only there to make the code easy to read, so they do not count as shown lines.
+		const isBlank = row.text.trim() === ""
+		if (row.kind === "add" && !isBlank) shownAdditions++
+		if (row.kind === "del" && !isBlank) shownDeletions++
+	}
+	const fallback = document.createElement("div")
+	fallback.className = "fallback"
+	const head = document.createElement("div")
+	head.className = "fallback-head"
+	head.append(githubLink(figure.dataset.href, figure.dataset.name))
+	fallback.append(head, renderFallbackCode(figure, false))
+	const viewer = document.createElement("div")
+	viewer.className = "pierre"
+	figure.append(fallback, viewer)
+})
+
+// The diff viewer of each figure, when it loads.
+const viewers = new Map()
+
+function diffFiles(figure, expanded) {
+	const { name, lang } = figure.dataset
+	const oldSide = readSide(figure, "old")
+	const newSide = readSide(figure, "new")
+	return {
+		oldFile: { name, lang, contents: expanded ? oldSide.expandedText : oldSide.text },
+		newFile: { name, lang, contents: expanded ? newSide.expandedText : newSide.text },
+		lineAnnotations: readThreads(figure).map(thread => ({
+			side: thread.dataset.side === "old" ? "deletions" : "additions",
+			lineNumber: threadLine(figure, thread, expanded),
+			metadata: thread,
+		})),
+	}
+}
+
+// One click shows the hidden code of all diffs of the file. The page has no control to hide it again: the reader
+// reloads the page for that.
+function showHiddenCode(path) {
+	for (const figure of figures) {
+		if (figure.dataset.path !== path || "expanded" in figure.dataset || !hasHiddenBlocks(figure)) continue
+		figure.dataset.expanded = ""
+		figure.querySelector(".fallback pre").replaceWith(renderFallbackCode(figure, true))
+		viewers.get(figure)?.render({ ...diffFiles(figure, true), forceRender: true })
+	}
+}
+
+function onExpanderEvent(event, path) {
+	if (event.type === "keydown" && event.key !== "Enter" && event.key !== " ") return
+	if (!event.composedPath().some(node => node.classList?.contains("expander") || node.dataset?.expander === "")) return
+	event.preventDefault()
+	showHiddenCode(path)
+}
+
+for (const figure of figures) {
+	const fallback = figure.querySelector(".fallback")
+	for (const type of ["click", "keydown"]) fallback.addEventListener(type, event => onExpanderEvent(event, figure.dataset.path))
+}
+
+// A code example is not in the PR, so it has no header, no link and no diff. The diff viewer highlights it.
+const examples = [...document.querySelectorAll("figure.example")]
+
+function readExample(example) {
+	return example.querySelector("script").textContent.replace(/^\n/, "").replace(/\s+$/, "") + "\n"
+}
+
+for (const example of examples) {
+	const fallback = document.createElement("div")
+	fallback.className = "fallback"
+	const pre = document.createElement("pre")
+	pre.textContent = readExample(example)
+	fallback.append(pre)
+	const viewer = document.createElement("div")
+	viewer.className = "pierre"
+	example.append(fallback, viewer)
+}
+
+const TEST_CHANGE_TITLES = { added: "Added test", modified: "Modified test", removed: "Removed test" }
+for (const group of document.querySelectorAll(".tests [data-path]")) {
+	const heading = document.createElement("h3")
+	// The full path, because many files in a repo share a name (for example index.test.ts).
+	heading.textContent = group.dataset.path
+	group.prepend(heading)
+	for (const item of group.querySelectorAll("[data-line]")) {
+		const { change, line, renamedFrom } = item.dataset
+		item.title = renamedFrom ? "Renamed test" : TEST_CHANGE_TITLES[change]
+		// A removed test has its line at the merge base.
+		const url = await prFileUrl(group.dataset.path, line, change === "removed" ? "L" : "R")
+		item.replaceChildren(githubLink(url, item.textContent))
+	}
+}
+
+// A removed test name counts as a shown deletion, and the other test names as shown additions.
+for (const item of document.querySelectorAll(".tests [data-line]")) {
+	if (item.dataset.change === "removed") shownDeletions++
+	else shownAdditions++
+}
+
+const stats = document.querySelector(".stats")
+const numberFormat = new Intl.NumberFormat("en-US")
+
+function lineCount(className, sign, shown, total) {
+	const count = document.createElement("span")
+	count.className = className
+	const faint = document.createElement("span")
+	faint.className = "faint"
+	faint.textContent = `(${numberFormat.format(total)})`
+	count.append(`${sign}${shown} `, faint)
+	return count
+}
+
+const counts = document.createElement("span")
+counts.title = "Lines on this page (lines in the pull request)"
+counts.append(
+	lineCount("add", "+", shownAdditions, Number(stats.dataset.prAdditions)),
+	" ",
+	lineCount("del", "−", shownDeletions, Number(stats.dataset.prDeletions)),
+)
+stats.prepend(counts)
+
+// Like all GitHub link texts on the page, it leaves out the owner of the PR's repo.
+const prLink = githubLink(`${repoUrl}/pull/${pr}`, `${repoUrl.split("/").at(-1)}#${pr} ↗`)
+prLink.className = "pr-link"
+prLink.title = "Open the pull request on GitHub"
+const title = document.querySelector("main header h1")
+const titleRow = document.createElement("div")
+titleRow.className = "title-row"
+title.replaceWith(titleRow)
+// The float must come before the title, so that the title flows around it.
+titleRow.append(prLink, title)
+// The text leaves space for the link (see the CSS). The link gets wider when its font loads.
+new ResizeObserver(() => {
+	prLink.closest("main").style.setProperty("--pr-link-width", `${prLink.offsetWidth}px`)
+}).observe(prLink)
+
+// The page is published again at the same URL after each update of the PR, and the viewer reloads it. The page keeps the
+// block that the reader was reading, and the reader's distance into it, so the reload does not move the reader. A block
+// is a part of the page text (a heading, a note, a diff), found again by its text or its file, because an update can
+// add or remove blocks around it. Pixel positions alone would point elsewhere after a change or after the diffs load.
+const SCROLL_KEY = `scroll:${repoUrl}/pull/${pr}`
+const scrollBlocks = () => [...document.querySelectorAll("main > header > *, main section > *")]
+
+function scrollBlockKeys() {
+	const counts = new Map()
+	return scrollBlocks().map(block => {
+		const name = block.matches("figure.diff")
+			? `diff ${block.dataset.path} ${block.dataset.name ?? ""}`
+			: `${block.tagName} ${block.closest("section")?.id ?? "header"} ${block.textContent.trim().slice(0, 80)}`
+		const count = counts.get(name) ?? 0
+		counts.set(name, count + 1)
+		return `${name} #${count}`
+	})
+}
+
+function saveScrollPosition() {
+	const blocks = scrollBlocks()
+	const index = blocks.findIndex(block => block.getBoundingClientRect().bottom > 0)
+	if (index === -1) return
+	const position = { key: scrollBlockKeys()[index], offset: -blocks[index].getBoundingClientRect().top, y: scrollY }
+	try {
+		localStorage.setItem(SCROLL_KEY, JSON.stringify(position))
+	} catch {}
+}
+
+function readScrollPosition() {
+	try {
+		return JSON.parse(localStorage.getItem(SCROLL_KEY) ?? "null")
+	} catch {
+		return null
+	}
+}
+
+// A link to a part of the page wins over the kept position.
+const savedScrollPosition = location.hash ? null : readScrollPosition()
+let isRestoringScroll = savedScrollPosition !== null
+
+function restoreScrollPosition() {
+	if (!isRestoringScroll) return
+	const index = scrollBlockKeys().indexOf(savedScrollPosition.key)
+	const top =
+		index === -1
+			? savedScrollPosition.y
+			: scrollBlocks()[index].getBoundingClientRect().top + scrollY + savedScrollPosition.offset
+	window.scrollTo({ top, behavior: "instant" })
+}
+
+if (isRestoringScroll) {
+	history.scrollRestoration = "manual"
+	restoreScrollPosition()
+	// The diffs and charts load after this and change the page height. Until the reader scrolls, each change of the
+	// height moves the page back to the kept block.
+	const stopRestoring = () => {
+		isRestoringScroll = false
+	}
+	for (const type of ["wheel", "touchstart", "keydown", "pointerdown"]) {
+		addEventListener(type, stopRestoring, { once: true, passive: true })
+	}
+	new ResizeObserver(restoreScrollPosition).observe(document.querySelector("main"))
+	setTimeout(stopRestoring, 10_000)
+}
+
+let scrollSaveFrame = 0
+addEventListener(
+	"scroll",
+	() => {
+		if (isRestoringScroll) return
+		cancelAnimationFrame(scrollSaveFrame)
+		scrollSaveFrame = requestAnimationFrame(saveScrollPosition)
+	},
+	{ passive: true },
+)
+
+// Graphviz lays out each arrow label like a box, so labels do not overlap boxes or other labels.
+// It measures text with Helvetica metrics, which are close to the page font.
+const chartFont = { fontname: "Helvetica", fontsize: 16 }
+
+// Graphviz names each box and arrow in a <title>: the box id, or "<id>-><id>" for an arrow.
+function styleChart(svg, links) {
+	const mutedIds = new Set()
+	for (const box of svg.querySelectorAll("g.node.muted")) mutedIds.add(box.querySelector("title").textContent)
+	for (const arrow of svg.querySelectorAll("g.edge")) {
+		const ends = arrow.querySelector("title").textContent.split("->").map(end => end.split(":")[0])
+		if (ends.some(id => mutedIds.has(id))) arrow.classList.add("muted")
+	}
+	for (const box of svg.querySelectorAll("g.node")) {
+		const path = links[box.querySelector("title").textContent]
+		if (!path) continue
+		const link = document.createElementNS("http://www.w3.org/2000/svg", "a")
+		link.setAttribute("href", blobUrl + path)
+		link.setAttribute("target", "_blank")
+		link.setAttribute("rel", "noopener")
+		box.replaceWith(link)
+		link.append(box)
+	}
+	// The browser shows titles as tooltips, and these are only ids.
+	for (const title of svg.querySelectorAll("title")) title.remove()
+}
+
+async function renderCharts(charts) {
+	try {
+		const { instance } = await import("https://cdn.jsdelivr.net/npm/@viz-js/viz@3.31.0/dist/viz.js")
+		const viz = await instance()
+		for (const chart of charts) {
+			const svg = viz.renderSVGElement(chart.querySelector("script.dot").textContent, {
+				graphAttributes: { ...chartFont, bgcolor: "transparent", nodesep: 0.6, ranksep: 0.5, pad: 0.1 },
+				nodeAttributes: { ...chartFont, shape: "box", style: "rounded", margin: "0.3,0.15" },
+				edgeAttributes: { ...chartFont, arrowsize: 0.7 },
+			})
+			// Graphviz sizes the SVG in points. Pixels make its font size the same as the page text.
+			const [, , width, height] = svg.getAttribute("viewBox").split(" ")
+			svg.setAttribute("width", width)
+			svg.setAttribute("height", height)
+			styleChart(svg, JSON.parse(chart.dataset.links ?? "{}"))
+			chart.append(svg)
+		}
+	} catch (error) {
+		console.warn("The charts did not render. The page shows their source.", error)
+		for (const chart of charts) {
+			if (chart.querySelector("svg")) continue
+			const source = document.createElement("pre")
+			source.textContent = chart.querySelector("script.dot").textContent.trim()
+			chart.append(source)
+		}
+	}
+}
+
+// The charts render in the background, so the diffs do not wait for Graphviz.
+const charts = [...document.querySelectorAll(".chart")]
+if (charts.length > 0) renderCharts(charts)
+
+const sections = [...document.querySelectorAll("main section")]
+const sectionLinks = [...document.querySelectorAll(".sidebar nav a")]
+
+function markCurrentSection() {
+	let current = sections[0]
+	for (const section of sections) {
+		if (section.getBoundingClientRect().top <= 120) current = section
+	}
+	// The last section can be too short to reach the top of the window.
+	const atBottom = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2
+	if (atBottom) current = sections.at(-1)
+	for (const link of sectionLinks) {
+		if (link.hash === `#${current.id}`) link.setAttribute("aria-current", "location")
+		else link.removeAttribute("aria-current")
+	}
+}
+
+markCurrentSection()
+window.addEventListener("scroll", markCurrentSection, { passive: true })
+window.addEventListener("resize", markCurrentSection)
+
+// One tooltip shows the explanation of the term under the pointer or with keyboard focus.
+const termTip = document.createElement("div")
+termTip.className = "term-tip"
+termTip.id = "term-tip"
+termTip.setAttribute("role", "tooltip")
+const termTipLabel = document.createElement("div")
+termTipLabel.className = "term-tip-label"
+const termTipText = document.createElement("div")
+termTip.append(termTipLabel, termTipText)
+document.body.append(termTip)
+const TERM_TIP_GAP = 10
+const TERM_TIP_MARGIN = 16
+let tippedTerm = null
+
+// The page explains each term one time, in the <dfn> at its first use. The script marks each other use of the term
+// (also its plural, in any case) with the same tooltip. Headings, links, inline code, diffs, charts and test names
+// stay as they are.
+const TERM_SKIP = "h1, h2, h3, a, code, .term, .stats, figure, .chart, .tests, script"
+const termDefinitions = new Map()
+for (const definition of document.querySelectorAll("main dfn.term[data-tip]")) {
+	definition.dataset.term = definition.textContent.trim().replace(/\s+/g, " ")
+	termDefinitions.set(definition.dataset.term.toLowerCase(), definition)
+	definition.tabIndex = 0
+}
+
+function markTermUses() {
+	// Longer terms first, so a term that contains another term wins.
+	const names = [...termDefinitions.keys()].sort((first, second) => second.length - first.length)
+	const escapeForRegExp = name => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+")
+	const pattern = new RegExp(`\\b(${names.map(escapeForRegExp).join("|")})(?:e?s)?\\b`, "gi")
+	const walker = document.createTreeWalker(document.querySelector("main"), NodeFilter.SHOW_TEXT, {
+		acceptNode: node => (node.parentElement.closest(TERM_SKIP) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
+	})
+	const textNodes = []
+	while (walker.nextNode()) textNodes.push(walker.currentNode)
+	for (const node of textNodes) {
+		const matches = [...node.textContent.matchAll(pattern)]
+		if (matches.length === 0) continue
+		const parts = []
+		let end = 0
+		for (const match of matches) {
+			const definition = termDefinitions.get(match[1].toLowerCase().replace(/\s+/g, " "))
+			const use = document.createElement("span")
+			use.className = "term"
+			use.dataset.term = definition.dataset.term
+			use.dataset.tip = definition.dataset.tip
+			use.textContent = match[0]
+			// Only the <dfn> is in the Tab order. A tap or click still focuses each use, so the tooltip stays on touch screens.
+			use.tabIndex = -1
+			parts.push(node.textContent.slice(end, match.index), use)
+			end = match.index + match[0].length
+		}
+		parts.push(node.textContent.slice(end))
+		node.replaceWith(...parts)
+	}
+}
+
+if (termDefinitions.size > 0) markTermUses()
+
+// A term can wrap over two lines. The tooltip points to the line under the pointer, else to the first line.
+function termLineBox(term, pointerY) {
+	const lines = [...term.getClientRects()]
+	return lines.find(line => pointerY >= line.top && pointerY <= line.bottom) ?? lines[0]
+}
+
+function showTermTip(term, pointerY) {
+	tippedTerm = term
+	termTipLabel.textContent = term.dataset.term
+	// Text between backticks is inline code, as in Markdown. The odd parts of the split are inside backticks.
+	termTipText.replaceChildren(
+		...term.dataset.tip.split("`").map((part, index) => {
+			if (index % 2 === 0) return part
+			const code = document.createElement("code")
+			code.textContent = part
+			return code
+		}),
+	)
+	term.setAttribute("aria-describedby", termTip.id)
+	const line = termLineBox(term, pointerY)
+	const { offsetWidth: width, offsetHeight: height } = termTip
+	const center = line.left + line.width / 2
+	const left = Math.max(TERM_TIP_MARGIN, Math.min(center - width / 2, window.innerWidth - width - TERM_TIP_MARGIN))
+	const fitsAbove = line.top - TERM_TIP_GAP - height >= TERM_TIP_MARGIN
+	termTip.dataset.placement = fitsAbove ? "above" : "below"
+	termTip.style.left = `${left}px`
+	termTip.style.top = `${fitsAbove ? line.top - TERM_TIP_GAP - height : line.bottom + TERM_TIP_GAP}px`
+	// The arrow stays on the term, also when the tooltip moves in from the window edge.
+	termTip.style.setProperty("--arrow-x", `${Math.max(14, Math.min(center - left, width - 14))}px`)
+	termTip.dataset.open = ""
+}
+
+function hideTermTip() {
+	tippedTerm?.removeAttribute("aria-describedby")
+	tippedTerm = null
+	delete termTip.dataset.open
+}
+
+document.addEventListener("pointerover", event => {
+	const term = event.target.closest?.(".term[data-tip]")
+	if (term && term !== tippedTerm) showTermTip(term, event.clientY)
+})
+document.addEventListener("pointerout", event => {
+	// A tap focuses the term, so on touch screens the tooltip stays until the focus moves.
+	if (event.pointerType === "touch") return
+	const term = event.target.closest?.(".term[data-tip]")
+	if (term && !term.contains(event.relatedTarget)) hideTermTip()
+})
+document.addEventListener("focusin", event => {
+	const term = event.target.closest?.(".term[data-tip]")
+	if (term && term !== tippedTerm) showTermTip(term)
+})
+document.addEventListener("focusout", event => {
+	if (event.target === tippedTerm) hideTermTip()
+})
+document.addEventListener("keydown", event => {
+	if (event.key === "Escape") hideTermTip()
+})
+// The tooltip has a fixed position, so it would stay behind when the page scrolls.
+window.addEventListener("scroll", hideTermTip, { passive: true })
+
+function currentThemeType() {
+	const theme = document.documentElement.getAttribute("data-theme")
+	return theme === "dark" || theme === "light" ? theme : "system"
+}
+
+const DIFF_STYLE_KEY = "diffStyle"
+const viewToggle = document.getElementById("view-toggle")
+const layoutButtons = [...viewToggle.querySelectorAll("button")]
+// On a phone, each side of a split diff is too narrow to read, so the diffs are unified and the control is hidden. The
+// viewer's choice stays for a wider window. This is the width where the section index goes above the content.
+const narrowScreen = matchMedia("(max-width: 860px)")
+
+function readDiffStyle() {
+	try {
+		return localStorage.getItem(DIFF_STYLE_KEY) === "unified" ? "unified" : "split"
+	} catch {
+		return "split"
+	}
+}
+
+let chosenDiffStyle = readDiffStyle()
+
+function currentDiffStyle() {
+	return narrowScreen.matches ? "unified" : chosenDiffStyle
+}
+
+function showDiffStyle() {
+	const diffStyle = currentDiffStyle()
+	document.documentElement.dataset.diffStyle = diffStyle
+	viewToggle.hidden = narrowScreen.matches
+	for (const button of layoutButtons) button.setAttribute("aria-pressed", String(button.dataset.style === diffStyle))
+}
+
+// The diff viewer renders the lines in its shadow root, and renders them again on each update.
+function markLines(root, figure) {
+	const isExpanded = "expanded" in figure.dataset
+	for (const line of root?.querySelectorAll("[data-line-type]") ?? []) {
+		const text = line.textContent.trim()
+		if (pageComments.has(text)) {
+			line.dataset.pageComment = ""
+			line.title = PAGE_COMMENT_TITLE
+		}
+		if (!isExpanded && EXPANDER.test(text)) {
+			line.dataset.expander = ""
+			line.title = EXPANDER_TITLE
+			line.tabIndex = 0
+			line.setAttribute("role", "button")
+		}
+	}
+	if (root && !root.expanderListeners) {
+		root.expanderListeners = true
+		for (const type of ["click", "keydown"]) root.addEventListener(type, event => onExpanderEvent(event, figure.dataset.path))
+	}
+}
+
+try {
+	const { File, FileDiff } = await import("https://cdn.jsdelivr.net/npm/@pierre/diffs@1.5.2/+esm")
+	const theme = { dark: "pierre-dark", light: "pierre-light" }
+	const exampleViewers = examples.map(example => {
+		const target = example.querySelector(".pierre")
+		const viewer = new File({
+			theme,
+			themeType: currentThemeType(),
+			overflow: "wrap",
+			disableFileHeader: true,
+			disableLineNumbers: true,
+		})
+		viewer.render({
+			file: { name: "example", lang: example.dataset.lang, contents: readExample(example) },
+			containerWrapper: target,
+		})
+		if (target.childElementCount > 0) example.classList.add("upgraded")
+		return viewer
+	})
+
+	const instances = []
+	for (const figure of figures) {
+		const { href } = figure.dataset
+		const target = figure.querySelector(".pierre")
+		const instance = new FileDiff({
+			theme,
+			themeType: currentThemeType(),
+			diffStyle: currentDiffStyle(),
+			overflow: "wrap",
+			expandUnchanged: true,
+			hunkSeparators: "simple",
+			// The code here is shortened, so the real line numbers would mislead.
+			disableLineNumbers: true,
+			// As GitHub’s “Hide whitespace”: a line that only changes its indentation is an unchanged row, not a removed
+			// and an added line. Each side of the split view keeps its own indentation.
+			parseDiffOptions: { ignoreWhitespace: true },
+			renderHeaderMetadata: () => {
+				const link = githubLink(href, "↗")
+				link.className = "diff-link"
+				link.ariaLabel = "Open on GitHub"
+				link.title = "Open on GitHub"
+				return link
+			},
+			renderAnnotation: annotation => annotation.metadata.cloneNode(true),
+			// Custom properties such as --accent inherit into the shadow root. The tokens have their own
+			// colors, and the theme colors object keys orange too, so the accent is mixed with gray.
+			unsafeCSS: `[data-page-comment] { cursor: help; }
+			[data-page-comment] span { color: color-mix(in srgb, var(--accent) 55%, var(--muted)) !important; }
+			[data-expander] { cursor: pointer; }
+			[data-expander] span { color: var(--accent) !important; }
+			[data-expander]:hover span, [data-expander]:focus-visible span { text-decoration: underline; }`,
+			onPostRender: node => markLines(node.shadowRoot, figure),
+		})
+		instance.render({ ...diffFiles(figure, false), containerWrapper: target })
+		if (target.childElementCount > 0) figure.classList.add("upgraded")
+		instances.push(instance)
+		viewers.set(figure, instance)
+	}
+	new MutationObserver(() => {
+		for (const viewer of [...exampleViewers, ...instances]) viewer.setThemeType(currentThemeType())
+	}).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] })
+
+	function updateDiffStyle() {
+		showDiffStyle()
+		const diffStyle = currentDiffStyle()
+		for (const instance of instances) {
+			if (instance.options.diffStyle === diffStyle) continue
+			instance.setOptions({ ...instance.options, diffStyle })
+			instance.rerender()
+		}
+	}
+
+	// The plain fallback view is unified only, so the control shows only with the diff viewer.
+	showDiffStyle()
+	for (const button of layoutButtons) {
+		button.addEventListener("click", () => {
+			chosenDiffStyle = button.dataset.style
+			try {
+				localStorage.setItem(DIFF_STYLE_KEY, chosenDiffStyle)
+			} catch {}
+			updateDiffStyle()
+		})
+	}
+	// A window can cross the width, for example when a tablet turns.
+	narrowScreen.addEventListener("change", updateDiffStyle)
+} catch (error) {
+	console.warn("The diff viewer did not load. The page shows plain diffs.", error)
+}
+</script>

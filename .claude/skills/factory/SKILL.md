@@ -106,7 +106,7 @@ Read [references/plan-flow.md](references/plan-flow.md) and follow it: a plan ru
 
 ## 8. The review on GitHub, then land
 
-Read [references/review-loop.md](references/review-loop.md) and follow it: the PR goes ready, bots and the project's reviewers review it, you fix, answer or decline every comment, and `factory gate` says when it may merge. Then [references/land.md](references/land.md): `land-pr`'s own gate, the merge and the deploy check.
+Read [references/review-loop.md](references/review-loop.md) and follow it: a child writes the PR's overview page, the PR goes ready, bots and the project's reviewers review it, you fix, answer or decline every comment, and `factory gate` says when it may merge. Then [references/land.md](references/land.md): `land-pr`'s own gate, the merge and the deploy check.
 
 **Done when** the PR is merged and the deploy is checked, or the issue waits on someone named, or a decision holds the merge.
 

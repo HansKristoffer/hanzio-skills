@@ -9,7 +9,7 @@ import { onHost, parseUrlFlags, repoWebBase, type PreviewUrl } from './evidence.
 import * as gh from './gh.ts'
 import { prepare, pushEvidence } from './media.ts'
 import { answers, buncargoDown, buncargoUp, ownAlive, ownLog, ownStart, ownStop, usesBuncargo } from './preview.ts'
-import { withSections } from './pr.ts'
+import { withOverview, withSections } from './pr.ts'
 import { pushTaken, takeIn, type TakenPr } from './takein.ts'
 import { detectTailnet, startServer } from './server.ts'
 import { UNIT, install, uninstall, unitInstalled } from './service.ts'
@@ -54,6 +54,12 @@ The review on GitHub (gh runs here, as this thread's login):
       A stage stopped by its provider's usage limit: the service wakes this thread once the limit resets.
 
 What the reviewer looks at (git, ffmpeg and buncargo run here, in this checkout):
+  overview brief
+      The target and the task for the child that writes the PR's overview page with the summarize-pr
+      skill, and the page's path. The brief goes to a file the task names.
+  overview put [<file>]
+      Store the page the child wrote (by default the path overview brief printed), serve it from the
+      issue's page, and link it at the top of the PR's body in a private repository.
   evidence add <file> --title <t> [--label before|after] [--commit <sha>] [<note> | -]
       A screenshot (png, jpg, webp, gif) or a video (mp4, webm, mov) of the change, shown on the issue's
       page. Two captures under one title, labelled before and after, show side by side. The same title
@@ -83,7 +89,7 @@ Anywhere:
   serve                          run the server in the foreground
   service install|uninstall      keep the server up across reboots`
 
-const ISSUE_COMMANDS = new Set(['start', 'status', 'run', 'update', 'ask', 'answer', 'close', 'finding', 'pr', 'gate', 'risk', 'wait', 'evidence', 'preview'])
+const ISSUE_COMMANDS = new Set(['start', 'status', 'run', 'update', 'ask', 'answer', 'close', 'finding', 'pr', 'gate', 'risk', 'wait', 'evidence', 'preview', 'overview'])
 
 class UsageError extends Error {}
 
@@ -459,6 +465,9 @@ async function main(argv: string[]) {
 		case 'evidence':
 			await ensureServer()
 			return print(await evidenceCommand(rest))
+		case 'overview':
+			await ensureServer()
+			return print(await overviewCommand(rest))
 		case 'preview':
 			await ensureServer()
 			return print(await previewCommand(rest))
@@ -534,11 +543,12 @@ async function prUrl() {
 	return url
 }
 
-/** Brings the reviewer notes in the PR's body up to date. The service links the factory page from them only
- * when told the repository is private. */
+/** Brings the reviewer notes in the PR's body up to date. The service links the factory page and the overview
+ * from them only when told the repository is private. */
 async function writeNotes(url: string) {
 	const plan = await call('POST', '/api/issue/pr/plan', { action: 'notes', repoPrivate: await gh.isPrivate(gh.parsePrUrl(url)) })
-	await gh.setBody(url, withSections(await gh.prBody(url), String(plan.sections)))
+	const overview = typeof plan.overview === 'string' ? plan.overview : null
+	await gh.setBody(url, withOverview(withSections(await gh.prBody(url), String(plan.sections)), overview))
 }
 
 async function prCommand(argv: string[]) {
@@ -642,6 +652,29 @@ async function publishEvidence() {
 		await call('POST', '/api/issue/report', { text: `Captures could not be pushed to GitHub, so they show on the page only: ${message}`.slice(0, 1900) })
 		return { pushed: 0, error: message }
 	}
+}
+
+async function overviewCommand(argv: string[]) {
+	const [action, ...rest] = argv
+	if (action === 'brief') {
+		const { brief, ...started } = await call('POST', '/api/issue/overview', { action: 'brief' })
+		mkdirSync(String(started.folder), { recursive: true })
+		const briefFile = join(String(started.folder), 'brief.md')
+		writeFileSync(briefFile, `${brief}\n`)
+		return {
+			...started,
+			briefFile,
+			task: `You write the overview page of a factory issue's PR. Your task is the brief in \`${briefFile}\`: read the whole file before anything else, then do what it says.`
+		}
+	}
+	if (action === 'put') {
+		const { positionals } = args(rest, {})
+		const stored = await call('POST', '/api/issue/overview', { action: 'put', path: positionals[0] ? resolve(positionals[0]) : undefined })
+		const pr = await prUrlOrNone()
+		if (pr) await writeNotes(pr)
+		return { ...stored, prBody: pr ? 'updated' : 'no PR yet' }
+	}
+	throw new UsageError('overview: brief or put [<file>]')
 }
 
 async function evidenceCommand(argv: string[]) {

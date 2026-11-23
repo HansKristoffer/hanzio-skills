@@ -212,7 +212,10 @@ export const MIGRATIONS = [
 	`alter table decisions add column answered_from text;`,
 	// A later revision can supersede an open question, and a person approving a plan can opt into auto-ship once CI and reviews pass.
 	`alter table decisions add column superseded_by text;
-	alter table issues add column auto_ship integer not null default 0;`
+	alter table issues add column auto_ship integer not null default 0;`,
+	// The PR's overview page (the summarize-pr skill's page) and the head it was written for.
+	`alter table issues add column overview_head text;
+	alter table issues add column overview_at integer;`
 ]
 
 export const MAX_EVENT = 2000
@@ -261,6 +264,9 @@ export type IssueRow = {
 	limit_note: string | null
 	/** Set by the user on plan approval to skip the final merge confirmation once CI and reviews pass. */
 	auto_ship: number
+	/** The PR head the stored overview page shows; null when no overview was written. */
+	overview_head: string | null
+	overview_at: number | null
 }
 
 /** A message the service gave a thread, until it shows in the thread's messages. */
@@ -427,6 +433,8 @@ export function pruneOld(db: Database, now = Date.now()) {
 		db.query(`delete from ${table} where issue_id in (${old})`).run({ before })
 	}
 	db.query(`delete from runs where issue_id in (${old})`).run({ before })
+	// The server deletes the overview files that no issue points to any more.
+	db.query(`update issues set overview_head = null, overview_at = null where id in (${old})`).run({ before })
 }
 
 /** An issue's settings as stored at start, with the default of every key added since, so a new key never

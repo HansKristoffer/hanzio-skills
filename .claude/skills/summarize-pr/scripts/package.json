@@ -1,0 +1,7 @@
+{
+	"private": true,
+	"description": "Dependencies of render-charts.mjs",
+	"dependencies": {
+		"puppeteer-core": "24.43.1"
+	}
+}

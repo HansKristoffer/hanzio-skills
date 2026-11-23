@@ -402,3 +402,13 @@ export function withSections(body: string, sections: string) {
 	if (start >= 0 && end > start) return `${body.slice(0, start)}${sections}${body.slice(end + endMarker.length)}`
 	return `${body.trimEnd()}\n\n${sections}\n`
 }
+
+/** The overview link at the top of a PR's body, in the summarize-pr skill's own form, so its `gather.sh` leaves
+ * the link out of the description it reads. */
+const OVERVIEW_TIP = /^> \[!TIP\]\r?\n> Review \[the summary of this PR\]\([^)]*\)(\r?\n)*/
+
+/** Puts the overview link at the top of the body, replacing an earlier one. Without a URL the body stays as it is. */
+export function withOverview(body: string, url: string | null) {
+	if (!url) return body
+	return `> [!TIP]\n> Review [the summary of this PR](${url})\n\n${body.replace(OVERVIEW_TIP, '')}`
+}

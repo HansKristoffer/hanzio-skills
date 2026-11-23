@@ -4,7 +4,7 @@
 import type { Server } from 'bun'
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
-import { buildBrief, fenced, stageFile } from './brief.ts'
+import { buildBrief, buildOverviewBrief, fenced, stageFile } from './brief.ts'
 import {
 	MAX_EVENT,
 	openDatabase,
@@ -366,6 +366,95 @@ export function startServer(options: ServerOptions) {
 		if (!existsSync(root)) return
 		const kept = new Set((db.query('select distinct issue_id from evidence').all() as { issue_id: string }[]).map((r) => folderOf(r.issue_id)))
 		for (const folder of readdirSync(root)) if (!kept.has(folder)) rmSync(join(root, folder), { recursive: true, force: true })
+	}
+
+	// ---- the PR's overview page ----
+
+	/** The summarize-pr skill's page about the PR, kept in the service's home so it outlives the child's folder. */
+	const overviewFile = (issueId: string) => join(options.home, 'overviews', `${folderOf(issueId)}.html`)
+	const overviewUrl = (issueId: string) => `${base()}/overview/${encodeURIComponent(issueId)}`
+	/** Where the overview's child writes `gather.sh`'s facts and the page: outside every repository. */
+	const overviewDir = (issueId: string) => `/tmp/factory-overview-${folderOf(issueId)}`
+	const MAX_OVERVIEW = 16 * 1024 * 1024
+
+	/** `stale`: the PR has moved past the head the page shows. */
+	function overviewOf(issue: IssueRow) {
+		if (!issue.overview_head || !existsSync(overviewFile(issue.id))) return null
+		const head = issue.pr_state ? (JSON.parse(issue.pr_state) as PrState).head : null
+		return { url: overviewUrl(issue.id), head: issue.overview_head, at: issue.overview_at, stale: !!head && !sameCommit(head, issue.overview_head) }
+	}
+
+	/** Files left by issues that pruning cleared, or by a crash between the copy and the update. */
+	function sweepOverviews() {
+		const root = join(options.home, 'overviews')
+		if (!existsSync(root)) return
+		const rows = db.query('select id from issues where overview_head is not null').all() as { id: string }[]
+		const kept = new Set(rows.map((r) => `${folderOf(r.id)}.html`))
+		for (const name of readdirSync(root)) if (!kept.has(name)) rmSync(join(root, name), { force: true })
+	}
+
+	function issueOverview(issue: IssueRow, body: Record<string, unknown>) {
+		const action = oneOf(body.action, ['brief', 'put'] as const, 'action')
+		const prUrl = issue.pr_url ?? fail(409, 'this issue has no PR yet, and the overview is a page about the PR: run factory update --pr <url> first')
+		const folder = overviewDir(issue.id)
+		const page = join(folder, 'overview.html')
+		if (action === 'brief') {
+			const settings = parseResolved(issue).settings
+			// The planner's model writes for the reader who decides; the overview has the same reader.
+			const target = stageTarget(settings, 'plan')!
+			const brief = buildOverviewBrief({
+				settings,
+				folder,
+				page,
+				prUrl,
+				context: overviewContext(issue),
+				issue: { title: issue.title, source: issue.source, body: issue.body }
+			})
+			addEvent(issue.id, 'overview', `Overview of the PR started on ${target.model}`)
+			return { target, folder, page, brief }
+		}
+		const path = text(body.path, 'path', { max: 4000 }) ?? page
+		if (!isAbsolute(path) || !existsSync(path) || !statSync(path).isFile()) fail(400, `path: ${path} is not a file`)
+		if (statSync(path).size > MAX_OVERVIEW) fail(400, `path: ${path} is over 16 MB`)
+		const html = readFileSync(path, 'utf8')
+		const head =
+			html.match(/<main\b[^>]*\sdata-head-sha="([0-9a-f]{40})"/)?.[1] ??
+			fail(400, `${path} has no <main data-head-sha> with the PR head's full SHA: write it with the summarize-pr skill, and run its check.mjs`)
+		mkdirSync(join(options.home, 'overviews'), { recursive: true })
+		copyFileSync(path, overviewFile(issue.id))
+		const now = Date.now()
+		db.query('update issues set overview_head = $head, overview_at = $now where id = $id').run({ head, now, id: issue.id })
+		addEvent(issue.id, 'overview', `Overview of the PR written for ${head.slice(0, 7)}`)
+		const overview = overviewOf(getIssue(issue.id)!)!
+		return {
+			overview,
+			...(overview.stale && { warning: `The PR's head has moved past ${head.slice(0, 7)}: the page shows an older head. Write it again for the new head.` })
+		}
+	}
+
+	/** A model wrote this page from text other people wrote. The sandbox gives it an origin of its own, so its
+	 * scripts cannot reach this service's API, which trusts its own origin. The page loads its libraries from a CDN. */
+	function serveOverview(pathname: string) {
+		const missing = () => new Response('No overview of this PR yet', { status: 404 })
+		let id: string
+		try {
+			id = decodeURIComponent(pathname.slice('/overview/'.length))
+		} catch {
+			return missing()
+		}
+		const issue = getIssue(id)
+		if (!issue || !overviewOf(issue)) return missing()
+		// The template is the body of a page, as the artifact host serves it; the service adds the document around it.
+		const page = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body>\n${readFileSync(overviewFile(issue.id), 'utf8')}\n</body></html>`
+		return new Response(page, {
+			headers: {
+				'content-type': 'text/html; charset=utf-8',
+				'content-security-policy': 'sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox',
+				'cache-control': 'no-store',
+				'referrer-policy': 'no-referrer',
+				'x-content-type-options': 'nosniff'
+			}
+		})
 	}
 
 	const publicFinding = (f: FindingRow) => ({
@@ -769,6 +858,7 @@ export function startServer(options: ServerOptions) {
 			reviewRisk: prRisk(issue.id),
 			evidence: evidenceOf(issue.id),
 			preview: previewOf(issue),
+			overview: overviewOf(issue),
 			warnings: warningsOf(issue),
 			pr: issue.pr_state ? JSON.parse(issue.pr_state) : null,
 			gate: gateOf(issue),
@@ -900,6 +990,27 @@ export function startServer(options: ServerOptions) {
 			if (section) parts.push(section)
 		}
 		return parts.join('\n\n')
+	}
+
+	/** What the overview's child takes from stored results, beside the PR's description: what was asked and built,
+	 * the decisions, what was left for later and what was measured. */
+	function overviewContext(issue: IssueRow) {
+		const pick = (result: Record<string, unknown> | undefined, keys: string[]) =>
+			Object.fromEntries(keys.filter((k) => result?.[k] !== undefined).map((k) => [k, result![k]]))
+		const json = (title: string, value: Record<string, unknown>) =>
+			Object.keys(value).length ? `### ${title}\n\n\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\`` : null
+		const answered = decisionsOf(issue.id).filter((d) => d.kind === 'question' && d.superseded_by === null && d.answer !== null)
+		return [
+			`### The PR\n\n${issue.pr_url}`,
+			json('What research said was asked', pick(latestResult(issue.id, 'research')?.result, ['asked'])),
+			json('The approved plan, in short', pick(latestResult(issue.id, 'plan')?.result, ['planned', 'outline', 'later'])),
+			json("The implementer's result", pick(latestResult(issue.id, 'implement')?.result, ['built', 'decisions', 'leftOut', 'measured'])),
+			answered.length
+				? `### Questions the user answered\n\n${answered.map((d) => `- ${d.question.replaceAll('\n', ' ')}\n  Answered: ${d.answer!.replaceAll('\n', ' ')}`).join('\n')}`
+				: null
+		]
+			.filter(Boolean)
+			.join('\n\n')
 	}
 
 	function issueRun(req: Request, issue: IssueRow, body: Record<string, unknown>) {
@@ -2002,6 +2113,10 @@ export function startServer(options: ServerOptions) {
 	const pageLine = (issue: IssueRow) =>
 		`[The factory page for this issue](${pageUrl(issue.id)}) shows the whole run and the questions that wait for an answer, and can start the app on this change. It opens ${tailnet ? "on the factory's tailnet" : 'on the machine the factory runs on'}.`
 
+	/** The overview link goes at the top of the body, unless the PR is someone else's that the issue took in: its
+	 * body stays the author's, and the link goes in the reviewer notes. */
+	const overviewAtTop = (issue: IssueRow) => !issue.pr_taken || (JSON.parse(issue.pr_taken) as TakenPr).mine
+
 	/** The reviewer notes for the PR's body. `repoPrivate` says only the repository's members read them: the page
 	 * has no sign-in, so its address goes into no body the public can read. */
 	function reviewSections(issue: IssueRow, repoPrivate = false) {
@@ -2029,6 +2144,10 @@ export function startServer(options: ServerOptions) {
 			'<!-- factory:review-notes -->',
 			'## For the reviewer',
 			...(repoPrivate ? [pageLine(issue)] : []),
+			// Like the page, the overview opens without a sign-in, so only a private repository's PR links it.
+			...(repoPrivate && !overviewAtTop(issue) && overviewOf(issue)
+				? [`[The overview of this PR](${overviewOf(issue)!.url}) shows what it changes and why, without the full diff.`]
+				: []),
 			...(seen?.command
 				? [
 						`### Reproduced on ${seen.base ? commitRef(seen.base, repo) : 'the base'}`,
@@ -2094,7 +2213,10 @@ export function startServer(options: ServerOptions) {
 		const pr = issue.pr_state ? (JSON.parse(issue.pr_state) as PrState) : null
 		const who = text(body.login, 'login', { max: 100 }) ?? 'the maintainer'
 		const marker = MARKER(issue.id)
-		if (action === 'notes') return { url, sections: reviewSections(issue, body.repoPrivate === true) }
+		if (action === 'notes') {
+			const repoPrivate = body.repoPrivate === true
+			return { url, sections: reviewSections(issue, repoPrivate), overview: overviewAtTop(issue) && repoPrivate ? (overviewOf(issue)?.url ?? null) : null }
+		}
 		if (action === 'review') return { url, ...reviewComment(issue, url, who) }
 		if (!pr) return fail(409, 'the PR was never synced: run factory pr sync')
 		if (action === 'request') {
@@ -2983,6 +3105,8 @@ export function startServer(options: ServerOptions) {
 					return issueEvidence(issue, input)
 				case 'preview':
 					return issuePreview(issue, input)
+				case 'overview':
+					return issueOverview(issue, input)
 				case 'update':
 					return issueUpdate(issue, input)
 				case 'run':
@@ -3078,6 +3202,7 @@ export function startServer(options: ServerOptions) {
 			return new Response(page, { headers: { 'content-type': 'text/html; charset=utf-8' } })
 		}
 		if (req.method === 'GET' && url.pathname.startsWith('/evidence/')) return serveEvidence(url.pathname)
+		if (req.method === 'GET' && url.pathname.startsWith('/overview/')) return serveOverview(url.pathname)
 		if (req.method === 'GET' && url.pathname === '/api/stream') {
 			server.timeout(req, 0)
 			let controller: ReadableStreamDefaultController<Uint8Array>
@@ -3143,6 +3268,7 @@ export function startServer(options: ServerOptions) {
 	}
 
 	sweepEvidence()
+	sweepOverviews()
 	listen('127.0.0.1')
 	if (options.tailnet) addTailnet(options.tailnet)
 
