@@ -16,7 +16,9 @@ const query = args.find((a) => a.startsWith('query=')) ?? ''
 const key =
 	args[0] === 'pr'
 		? args[1]!
-		: query.includes('addPullRequestReviewThreadReply')
+		: args[0] === 'issue'
+			? `issue-${args[1]}`
+			: query.includes('addPullRequestReviewThreadReply')
 			? 'reply'
 			: query.includes('resolveReviewThread')
 				? 'resolve'

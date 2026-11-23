@@ -1,6 +1,6 @@
 # The factory's MCP server and its updates webhook
 
-The factory service is also an MCP server, at `/mcp` on its own port. An agent on this machine or anywhere on the tailnet can use it to drive the factory: list and read issues, answer the decisions that wait for the user, start issues, drop them, start a reviewer's dev environment, and change the settings and the webhook. It can do everything the page does, and it can also start plain T3 Code threads in projects that don't go through the factory. The issue threads keep using the `factory` CLI; the MCP server is for the person and the agents working for them.
+The factory service is also an MCP server, at `/mcp` on its own port. An agent on this machine or anywhere on the tailnet can use it to drive the factory: list and read issues, answer the decisions that wait for the user, start issues, drop them, start a reviewer's dev environment, and change the settings and the webhook. It can do everything the page does except connect the Intake page's sources and start their items, and it can also start plain T3 Code threads in projects that don't go through the factory. The issue threads keep using the `factory` CLI; the MCP server is for the person and the agents working for them.
 
 ## Add it to an agent
 
