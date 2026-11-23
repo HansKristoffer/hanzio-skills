@@ -112,6 +112,25 @@ describe('GitHub sources', () => {
 		expect((await h.call('DELETE', `/api/intake/sources/${id}`)).status).toBe(200)
 		expect((await h.call('GET', '/api/intake')).body.sources).toEqual([])
 	})
+
+	test('caches upstream intake reads briefly while refreshing on ?refresh=1 and always reading fresh factory state', async () => {
+		const { id } = (await h.call('POST', '/api/intake/sources', { kind: 'github', repo: 'acme/api' })).body.source
+		h.gh.replies({ 'issue-list': { out: [issue] } })
+
+		await h.call('GET', '/api/intake')
+		await h.call('GET', '/api/intake')
+		expect(h.gh.calls().filter((c) => c.args[0] === 'api' && c.args[1] === 'user')).toHaveLength(1)
+
+		await h.call('GET', '/api/intake?refresh=1')
+		expect(h.gh.calls().filter((c) => c.args[0] === 'api' && c.args[1] === 'user')).toHaveLength(2)
+
+		await h.call('GET', `/api/intake/sources/${id}/items`)
+		await h.call('GET', `/api/intake/sources/${id}/items`)
+		expect(h.gh.calls().filter((c) => c.args[0] === 'issue' && c.args[1] === 'list')).toHaveLength(1)
+
+		await h.call('GET', `/api/intake/sources/${id}/items?refresh=1`)
+		expect(h.gh.calls().filter((c) => c.args[0] === 'issue' && c.args[1] === 'list')).toHaveLength(2)
+	})
 })
 
 describe('Linear sources', () => {

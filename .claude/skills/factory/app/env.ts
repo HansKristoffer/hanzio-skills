@@ -34,6 +34,21 @@ export function sh(args: string[], options: { cwd?: string } = {}) {
 	}
 }
 
+/** Async version of `sh` for HTTP handlers so subprocesses never block the event loop. */
+export async function shAsync(args: string[], options: { cwd?: string } = {}) {
+	try {
+		const proc = Bun.spawn(args, { cwd: options.cwd, env: { ...process.env }, stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' })
+		const [out, err, code] = await Promise.all([
+			new Response(proc.stdout as ReadableStream).text(),
+			new Response(proc.stderr as ReadableStream).text(),
+			proc.exited
+		])
+		return { ok: code === 0, out: out.trim(), err: err.trim() }
+	} catch (error) {
+		return { ok: false, out: '', err: `${args[0]} is not installed: ${(error as Error).message}` }
+	}
+}
+
 /** Whether this user has a systemd manager to run a unit that outlives the caller's session. */
 export const hasSystemd = () => process.platform === 'linux' && sh(['systemctl', '--user', 'show-environment']).ok
 

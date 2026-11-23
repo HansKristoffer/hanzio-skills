@@ -15,6 +15,17 @@
 		var dark = t === 'dark' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
 		if (dark) document.documentElement.classList.add('dark');
 		if (!embed && localStorage.getItem('factory-sidebar-collapsed') === 'true') document.documentElement.dataset.sb = 'collapsed';
+		// Start fetching initial data before CSS and main script finish parsing.
+		var boot = window.__boot = { board: fetch('/api/board') };
+		var hp = location.hash.replace(/^#\/?/, '').split('/');
+		if (hp[0] === 'issue' && hp[1]) {
+			var bid = decodeURIComponent(hp[1]);
+			boot.issue = { id: bid, p: fetch('/api/issues/' + encodeURIComponent(bid)) };
+		} else if (hp[0] === 'settings') {
+			boot.settings = [fetch('/api/settings'), fetch('/api/mcp'), fetch('/api/webhook')];
+		} else if (hp[0] === 'intake') {
+			boot.intake = fetch('/api/intake');
+		}
 	} catch (e) {}
 })();
 </script>
@@ -67,6 +78,7 @@
 		--radius-box: 12px;
 		--radius-ctrl: 8px;
 		--ease: cubic-bezier(0.22, 1, 0.36, 1);
+		--ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
 		--sans: "Inter Variable", "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 		--mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 		color-scheme: light;
@@ -135,7 +147,6 @@
 	button:not(:disabled), [role="button"]:not(:disabled) { cursor: pointer; }
 	code, kbd, pre { font-family: var(--mono); }
 
-	@keyframes page-in { from { opacity: 0; transform: translateY(6px); } }
 	@keyframes pulse-soft { 50% { opacity: 0.42; } }
 	@keyframes spotlight { from { box-shadow: 0 0 0 3px var(--ring); } }
 	@keyframes spin { to { transform: rotate(360deg); } }
@@ -145,7 +156,6 @@
 		.spin-icon svg { animation: spin 2.4s linear infinite !important; }
 	}
 
-	main[data-anim] .page-enter { animation: page-in 0.2s var(--ease) backwards; }
 	.spotlight { animation: spotlight 1.2s ease-out; }
 	.mono { font-family: var(--mono); font-size: 12px; }
 	.muted { color: var(--fg-muted); }
@@ -297,6 +307,7 @@
 		width: 100%; max-width: 1320px; margin: 0 auto;
 		padding: 26px 28px 72px; flex: 1;
 	}
+	main.main:focus, main.main:focus-visible { outline: none; }
 
 	/* Mobile sidebar drawer */
 	dialog.drawer-nav {
@@ -306,6 +317,7 @@
 	}
 	dialog.drawer-nav::backdrop { background: rgb(0 0 0 / 0.45); }
 	dialog.drawer-nav[open] { display: flex; flex-direction: column; }
+	dialog.drawer-nav { --sheet-from: translateX(-100%); }
 
 	/* Controls */
 	.btn {
@@ -522,13 +534,7 @@
 	.lc-foot a:hover { color: var(--fg); }
 
 	/* Sticky Filter Bar (Board & Done) */
-	.filter-bar {
-		position: sticky; top: 48px; z-index: 15;
-		margin: 0 -28px 18px; padding: 10px 28px;
-		background: color-mix(in oklab, var(--bg) 92%, transparent);
-		backdrop-filter: blur(10px);
-		display: flex; flex-direction: column; gap: 9px;
-	}
+	.filter-bar { margin: 0 0 18px; display: flex; flex-direction: column; gap: 9px; }
 	.filter-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 	.search-box { position: relative; flex: 1; min-width: 200px; }
 	.search-box .ic { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--fg-subtle); pointer-events: none; }
@@ -568,6 +574,8 @@
 		border-bottom: 1px solid var(--border);
 		transition: background-color .13s var(--ease);
 		scroll-margin-top: 120px; scroll-margin-bottom: 48px;
+		contain: layout style;
+		content-visibility: auto; contain-intrinsic-size: auto 74px;
 	}
 	.q-row:last-child { border-bottom: 0; }
 	.q-row:hover { background: color-mix(in oklab, var(--hover) 62%, transparent); }
@@ -930,9 +938,37 @@
 
 	dialog.sheet { width: min(560px, 100vw); max-width: 100vw; height: 100dvh; max-height: 100dvh; margin: 0 0 0 auto; padding: 0; border: 0; border-left: 1px solid var(--border); background: var(--panel); color: var(--fg); box-shadow: var(--shadow-lg); }
 	dialog.sheet.wide { width: min(840px, 100vw); }
-	dialog.sheet::backdrop { background: rgb(0 0 0 / 0.45); }
 	dialog.sheet[open] { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
 	dialog.sheet.no-foot[open] { grid-template-rows: auto minmax(0, 1fr); }
+	dialog.sheet { border-radius: 0; }
+	dialog:focus, dialog:focus-visible { outline: none; }
+
+	/*
+	 * Side sheets and the mobile nav slide in from their edge and the scrim fades.
+	 * The closed state holds the exit timing (faster), the open state the entry timing.
+	 * display and overlay transition discretely so the sheet stays painted while it slides out.
+	 */
+	dialog.sheet { --sheet-from: translateX(100%); --scrim: rgb(0 0 0 / 0.45); }
+	dialog.sheet, dialog.drawer-nav {
+		transform: var(--sheet-from);
+		transition: transform .2s var(--ease), overlay .2s allow-discrete, display .2s allow-discrete;
+	}
+	dialog.sheet[open], dialog.drawer-nav[open] {
+		transform: none;
+		transition: transform .32s var(--ease-drawer), overlay .32s allow-discrete, display .32s allow-discrete;
+	}
+	dialog.sheet::backdrop, dialog.drawer-nav::backdrop {
+		background: transparent;
+		transition: background-color .2s var(--ease), overlay .2s allow-discrete, display .2s allow-discrete;
+	}
+	dialog.sheet[open]::backdrop { background: var(--scrim); }
+	dialog.drawer-nav[open]::backdrop { background: rgb(0 0 0 / 0.45); }
+	dialog.sheet[open]::backdrop, dialog.drawer-nav[open]::backdrop { transition-duration: .32s; }
+	@starting-style {
+		dialog.sheet[open], dialog.drawer-nav[open] { transform: var(--sheet-from); }
+		dialog.sheet[open]::backdrop, dialog.drawer-nav[open]::backdrop { background: transparent; }
+	}
+	html:has(dialog.sheet[open], dialog.drawer-nav[open]) { overflow: hidden; }
 	.sheet-body { overflow-y: auto; overscroll-behavior: contain; padding: 20px 24px 36px; display: grid; gap: 16px; align-content: start; }
 	.sheet-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 24px; border-top: 1px solid var(--border); background: var(--surface); }
 
@@ -996,6 +1032,8 @@
 		display: grid; grid-template-columns: 20px 84px minmax(0, 1fr) auto; column-gap: 12px;
 		align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--border);
 		transition: background-color .13s var(--ease);
+		contain: layout style;
+		content-visibility: auto; contain-intrinsic-size: auto 72px;
 	}
 	.in-row:last-child { border-bottom: 0; }
 	.in-row:hover { background: color-mix(in oklab, var(--hover) 55%, transparent); }
@@ -1095,7 +1133,7 @@
 		.btn.menu-btn { display: inline-flex; }
 		.topbar { padding: 0 14px; }
 		main.main { padding: 18px 16px 64px; }
-		.filter-bar { margin: 0 -16px 14px; padding: 10px 16px; }
+		.filter-bar { margin-bottom: 14px; }
 		.cmd-trigger { width: auto; padding: 0 9px; }
 		.cmd-trigger .cmd-lbl, .top-conn { display: none; }
 	}
@@ -1105,10 +1143,22 @@
 	html[data-embed="1"] .sidebar, html[data-embed="1"] .topbar { display: none !important; }
 	html[data-embed="1"] .shell { min-height: 100%; }
 	html[data-embed="1"] main.main { max-width: 1200px; padding: 12px 24px 48px; }
-	html[data-embed="1"] .filter-bar { top: 0; margin: 0 -24px 14px; padding: 10px 24px; }
+	html[data-embed="1"] .filter-bar { margin-bottom: 14px; }
 	html[data-embed="1"] .page-head > div:first-child { display: none; }
 	html[data-embed="1"] .page-head:not(:has(> :nth-child(2))) { display: none; }
 	html[data-embed="1"] .page-head { margin-bottom: 14px; justify-content: flex-end; }
+	/*
+	 * Inside the host the scrim only covers the iframe, so an edge-to-edge sheet reads as a box
+	 * pasted on top. Float it as a card with the host's radius and a lighter scrim instead.
+	 */
+	html[data-embed="1"] dialog.sheet {
+		--sheet-from: translateX(calc(100% + 16px));
+		--scrim: rgb(0 0 0 / 0.16);
+		height: calc(100dvh - 16px); max-height: calc(100dvh - 16px); max-width: calc(100vw - 16px);
+		margin: 8px 8px 8px auto; border: 1px solid var(--border); border-radius: var(--radius-box);
+		overflow: hidden;
+	}
+	html.dark[data-embed="1"] dialog.sheet { --scrim: rgb(0 0 0 / 0.4); }
 	.embed-back {
 		display: inline-flex; align-items: center; gap: 6px; margin-bottom: 10px;
 		color: var(--fg-subtle); font-size: 12.5px; font-weight: 500; text-decoration: none;
@@ -1197,9 +1247,35 @@ const toastEl = document.getElementById('toast')
 
 let board = { issues: [], done: [], repos: [], open: 0, needsYou: 0, needsByRepo: {}, limited: [], failing: { issues: 0, runs: 0, reasons: [] } }
 let historyCache = new Map() // days -> { at, data }
+const issueCache = new Map() // id -> { data, dirty, at }
+const issueInflight = new Map() // id -> Promise<data>
+const ISSUE_CACHE_MAX = 80
+const settingsCache = { data: null, mcpInfo: null, webhookInfo: null, dirty: true, at: 0 }
+let settingsInflight = null
+const SESS_MAX_AGE_MS = 5 * 60 * 1000
+const readSess = (k) => {
+	try {
+		const raw = sessionStorage.getItem(k)
+		if (!raw) return null
+		const parsed = JSON.parse(raw)
+		if (!parsed || typeof parsed.at !== 'number' || Date.now() - parsed.at > SESS_MAX_AGE_MS) return null
+		return parsed
+	} catch { return null }
+}
+const writeSess = (k, value) => {
+	try { sessionStorage.setItem(k, JSON.stringify({ at: Date.now(), value })) } catch {}
+}
 let loaded = false
 let sseConnected = false
 let currentIssueData = null
+let renderedIssueShellId = null
+let renderedIssueShellData = null
+let renderedSettingsShell = false
+let boardVersion = 0
+let issueDataSeq = 0
+let lastSidebarKey = ''
+const viewCache = new Map() // slot -> { sig, node, at }
+const VIEW_CACHE_MAX = 16
 
 // Persisted user preferences
 const readStore = (k, fallback) => { try { return localStorage.getItem(k) ?? fallback } catch { return fallback } }
@@ -1233,35 +1309,55 @@ const newDraft = { repo: '', title: '', pr: '', source: '', body: '', merge: '' 
 
 // ---- DOM & formatting helpers ----
 
+function appendNodes(parent, item) {
+	if (item === null || item === undefined || item === false) return
+	if (Array.isArray(item)) {
+		for (let i = 0; i < item.length; i++) appendNodes(parent, item[i])
+	} else if (item instanceof Node) {
+		parent.appendChild(item)
+	} else {
+		parent.appendChild(document.createTextNode(String(item)))
+	}
+}
+
 function h(tag, attrs, ...children) {
 	const el = document.createElement(tag)
-	for (const [key, value] of Object.entries(attrs || {})) {
-		if (value === undefined || value === null || value === false) continue
-		if (key.startsWith('on')) el.addEventListener(key.slice(2), value)
-		else if (key === 'class') el.className = value
-		else el.setAttribute(key, value === true ? '' : value)
+	if (attrs) {
+		for (const key in attrs) {
+			const value = attrs[key]
+			if (value === undefined || value === null || value === false) continue
+			if (key.charCodeAt(0) === 111 && key.charCodeAt(1) === 110) el.addEventListener(key.slice(2), value)
+			else if (key === 'class') el.className = value
+			else el.setAttribute(key, value === true ? '' : value)
+		}
 	}
-	for (const child of children.flat(Infinity)) {
-		if (child === null || child === undefined || child === false) continue
-		el.append(child instanceof Node ? child : document.createTextNode(String(child)))
-	}
+	for (let i = 0; i < children.length; i++) appendNodes(el, children[i])
 	return el
 }
 
-function fill(el, ...nodes) {
-	el.replaceChildren(...nodes.flat(Infinity).filter((n) => n !== null && n !== undefined && n !== false))
+// Opens a side sheet with focus on the sheet itself, so its Close button does not light up a focus ring.
+// Tab still moves into the sheet and Esc closes it.
+function showSheet(el) {
+	el.showModal()
+	el.focus()
 }
 
-let lastRenderedRoute = ''
+// Waits out the sheet's exit transition (.2s) before emptying it, unless it reopened meanwhile.
+function emptyAfterClose(el) {
+	clearTimeout(el.emptyTimer)
+	el.emptyTimer = setTimeout(() => { if (!el.open) el.replaceChildren() }, 240)
+}
+
+function fill(el, ...nodes) {
+	const frag = document.createDocumentFragment()
+	for (let i = 0; i < nodes.length; i++) appendNodes(frag, nodes[i])
+	el.replaceChildren(frag)
+}
+
 function render(...nodes) {
-	const r = route()
-	const routeKey = `${r.page}:${r.id || ''}:${r.tab || ''}`
-	if (routeKey !== lastRenderedRoute) {
-		main.dataset.anim = '1'
-		lastRenderedRoute = routeKey
-	} else {
-		delete main.dataset.anim
-	}
+	renderedIssueShellId = null
+	renderedIssueShellData = null
+	renderedSettingsShell = false
 	const active = document.activeElement
 	const key = active && active.dataset ? active.dataset.draft : undefined
 	const caret = key && typeof active.selectionStart === 'number' ? [active.selectionStart, active.selectionEnd] : null
@@ -1273,9 +1369,19 @@ function render(...nodes) {
 	}
 }
 
+const ICON_TEMPLATES = new Map()
 function icon(name, cls = '') {
-	const el = h('span', { class: `ic${cls ? ` ${cls}` : ''}`, 'aria-hidden': 'true' })
-	el.innerHTML = `<svg viewBox="0 0 24 24">${ICONS[name] || ''}</svg>`
+	let svg = ICON_TEMPLATES.get(name)
+	if (!svg) {
+		const box = document.createElement('span')
+		box.innerHTML = `<svg viewBox="0 0 24 24">${ICONS[name] || ''}</svg>`
+		svg = box.firstChild
+		ICON_TEMPLATES.set(name, svg)
+	}
+	const el = document.createElement('span')
+	el.className = cls ? `ic ${cls}` : 'ic'
+	el.setAttribute('aria-hidden', 'true')
+	if (svg) el.appendChild(svg.cloneNode(true))
 	return el
 }
 
@@ -1313,12 +1419,52 @@ const span = (ms) => {
 	if (m < 1440) return `${Math.floor(m / 60)}h ${m % 60}m`
 	return `${Math.round(m / 1440)}d`
 }
-const hour = (ms) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-const clock = (ms) => new Date(ms).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-const shortDay = (ms) => new Date(ms).toLocaleDateString([], { month: 'short', day: 'numeric' })
-const when = (ms) => h('time', { 'data-at': ms, title: clock(ms) }, ago(ms))
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const pad2 = (n) => (n < 10 ? `0${n}` : `${n}`)
+const hour = (ms) => { const d = new Date(ms); return `${pad2(d.getHours())}:${pad2(d.getMinutes())}` }
+const clock = (ms) => { const d = new Date(ms); return `${MONTHS[d.getMonth()]} ${d.getDate()}, ${pad2(d.getHours())}:${pad2(d.getMinutes())}` }
+const shortDay = (ms) => { const d = new Date(ms); return `${MONTHS[d.getMonth()]} ${d.getDate()}` }
+const when = (ms) => h('time', { 'data-at': ms }, ago(ms))
 const since = (ms) => h('span', { 'data-since': ms }, span(Date.now() - ms))
 const lasting = (ms) => h('span', {}, 'for ', since(ms))
+function refreshTimeNodes(root) {
+	for (const el of root.querySelectorAll('[data-at]')) el.textContent = ago(Number(el.dataset.at))
+	for (const el of root.querySelectorAll('[data-since]')) el.textContent = span(Date.now() - Number(el.dataset.since))
+}
+function getCachedView(slot, sig) {
+	const hit = viewCache.get(slot)
+	if (!hit || hit.sig !== sig) return null
+	viewCache.delete(slot)
+	viewCache.set(slot, hit)
+	if (Date.now() - hit.at > 5000) {
+		refreshTimeNodes(hit.node)
+		hit.at = Date.now()
+	}
+	return hit.node
+}
+function putCachedView(slot, sig, node) {
+	if (viewCache.has(slot)) viewCache.delete(slot)
+	viewCache.set(slot, { sig, node, at: Date.now() })
+	while (viewCache.size > VIEW_CACHE_MAX) viewCache.delete(viewCache.keys().next().value)
+}
+const foldLazy = (key, summary, buildBody, extraAttrs) => {
+	let built = false
+	const isOpen = opened.has(key)
+	const el = h('details', {
+		...extraAttrs,
+		open: isOpen,
+		ontoggle: (e) => {
+			if (e.target.open) {
+				opened.add(key)
+				if (!built) { built = true; appendNodes(el, buildBody()) }
+			} else {
+				opened.delete(key)
+			}
+		}
+	}, h('summary', {}, summary))
+	if (isOpen) { built = true; appendNodes(el, buildBody()) }
+	return el
+}
 const plain = (v) => (v && typeof v === 'object' ? Object.entries(v).map(([k, x]) => `${k}: ${typeof x === 'object' ? JSON.stringify(x) : x}`).join(', ') : '')
 const dotted = (...parts) => parts.filter((p) => p !== null && p !== undefined && p !== false && p !== '').flatMap((p, n) => (n ? [' · ', p] : [p]))
 const isUrl = (url) => !!url && /^https?:\/\//.test(url)
@@ -1451,11 +1597,15 @@ function md(text) {
 	return blocks
 }
 
-async function api(method, path, body) {
-	const res = await fetch(path, { method, headers: { 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) })
+async function readJsonResponse(res) {
 	const json = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
 	if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`)
 	return json
+}
+
+async function api(method, path, body) {
+	const res = await fetch(path, { method, headers: { 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) })
+	return readJsonResponse(res)
 }
 
 // ---- Theme & Shell State ----
@@ -1482,6 +1632,7 @@ function setRepoScope(next) {
 	repoScope = next
 	writeStore('factory-repo-scope', next)
 	scopeMenuOpen = false
+	renderedIssueShellId = null
 	drawSidebar()
 	draw()
 }
@@ -1600,6 +1751,7 @@ function buildSidebarContent(onNavigate, isMobile = false) {
 	const navItem = (href, key, label, ic, badge, badgeCls = '') => h('a', {
 		href,
 		class: `nav-link${isOn(key) ? ' on' : ''}`,
+		'data-nav': key,
 		'aria-current': isOn(key) ? 'page' : undefined,
 		title: sidebarCollapsed && !isMobile ? `${label}${badge ? ` (${badge})` : ''}` : undefined,
 		onclick: () => { scopeMenuOpen = false; onNavigate && onNavigate() }
@@ -1715,13 +1867,26 @@ function buildSidebarContent(onNavigate, isMobile = false) {
 }
 
 function drawSidebar() {
-	fill(sidebarEl, ...buildSidebarContent(null, false))
-	if (mobileNav.el?.open) fill(mobileNav.el, ...buildSidebarContent(() => mobileNav.el.close(), true))
-	topConnEl.hidden = sseConnected
 	const n = board.issues.filter(inScope).filter((i) => i.needsYou).length
 	const { page } = route()
 	const label = page === 'dashboard' ? 'Dashboard' : page === 'intake' ? 'Intake' : page === 'done' ? 'Done' : page === 'settings' ? 'Settings' : page === 'new' ? 'New issue' : page === 'issue' ? (currentIssueData?.issue?.title || 'Issue') : 'Board'
 	document.title = `${n ? `(${n}) ` : ''}${label} · Factory`
+	if (EMBED) return
+	topConnEl.hidden = sseConnected
+	const activeNav = page === 'issue' ? 'board' : page
+	const key = `${boardVersion}|${repoScope}|${sidebarCollapsed}|${scopeMenuOpen}|${sseConnected}|${themePref}`
+	if (key === lastSidebarKey && sidebarEl.childElementCount > 0) {
+		for (const a of sidebarEl.querySelectorAll('a.nav-link[data-nav]')) {
+			const on = a.dataset.nav === activeNav
+			a.classList.toggle('on', on)
+			if (on) a.setAttribute('aria-current', 'page')
+			else a.removeAttribute('aria-current')
+		}
+		return
+	}
+	lastSidebarKey = key
+	fill(sidebarEl, ...buildSidebarContent(null, false))
+	if (mobileNav.el?.open) fill(mobileNav.el, ...buildSidebarContent(() => mobileNav.el.close(), true))
 }
 
 function drawBreadcrumb(parts) {
@@ -1732,9 +1897,18 @@ function drawBreadcrumb(parts) {
 	}))
 }
 
-// ---- History loader (for Dashboard & Done) ----
+// ---- History loader (for Dashboard & Done; board.done already carries 30d metrics) ----
+
+function historyFromBoard(days) {
+	if (!loaded || days > 30) return null
+	if (board.done.some((i) => i.minutes === undefined)) return null
+	const cutoff = Date.now() - days * 86400000
+	return { days, issues: board.done.filter((i) => (i.closedAt || 0) > cutoff) }
+}
 
 async function loadHistory(days) {
+	const local = historyFromBoard(days)
+	if (local) return local
 	const cached = historyCache.get(days)
 	if (cached && Date.now() - cached.at < 30000) return cached.data
 	try {
@@ -1751,8 +1925,12 @@ async function loadHistory(days) {
 async function drawDashboard() {
 	drawBreadcrumb(repoScope ? [{ label: 'Dashboard', href: '#/dashboard', onclick: () => setRepoScope('') }, { label: repoShort(repoScope) }] : [])
 	if (!loaded) return render()
-	const hist = await loadHistory(dashDays)
+	const local = historyFromBoard(dashDays)
+	const hist = local || await loadHistory(dashDays)
 	if (route().page !== 'dashboard') return
+	const dashSig = `${boardVersion}|${repoScope}|${dashDays}|${local ? 1 : historyCache.get(dashDays)?.at || 0}`
+	const cachedView = getCachedView('dashboard', dashSig)
+	if (cachedView) return render(cachedView)
 
 	const open = board.issues.filter(inScope)
 	const closed = (hist.issues || []).filter(inScope)
@@ -1792,7 +1970,7 @@ async function drawDashboard() {
 			h('button', {
 				type: 'button',
 				class: 'hbar-row',
-				onclick: () => { boardFilter.stage = stage; boardFilter.quick = ''; location.hash = '#/' }
+				onclick: () => { boardFilter.stage = stage; boardFilter.quick = ''; navigateHash('#/') }
 			},
 				h('span', {}, cap(stage)),
 				h('div', { class: 'hbar-track' }, h('div', { class: 'hbar-fill', style: `width:${(n / maxStage) * 100}%;background:${STAGE_COLOR[stage]}` })),
@@ -1895,7 +2073,7 @@ async function drawDashboard() {
 	const maxOut = Math.max(1, ...outcomeCounts.map((x) => x.n))
 	const verifiedDeploys = shipped.filter((i) => i.deploy === 'verified').length
 
-	render(h('div', { class: 'page-enter' },
+	const dashRoot = h('div', { class: 'page-enter' },
 		h('div', { class: 'page-head' },
 			h('div', {},
 				h('h1', {}, 'Dashboard'),
@@ -1976,7 +2154,9 @@ async function drawDashboard() {
 				) : null
 			)
 		)
-	))
+	)
+	putCachedView('dashboard', dashSig, dashRoot)
+	render(dashRoot)
 }
 
 // ---- Page: Board / Queue (#/) ----
@@ -2040,6 +2220,9 @@ function queueRow(i) {
 function drawBoard() {
 	drawBreadcrumb(repoScope ? [{ label: 'Board', href: '#/', onclick: () => setRepoScope('') }, { label: repoShort(repoScope) }] : [])
 	if (!loaded) return render()
+	const boardSig = () => `${boardVersion}|${repoScope}|${boardFilter.quick}|${boardFilter.stage}|${boardFilter.sort}|${boardFilter.query}`
+	const cachedView = getCachedView('board', boardSig())
+	if (cachedView) return render(cachedView)
 	const scoped = board.issues.filter(inScope)
 	const scopedDoneShipped = board.done.filter((i) => inScope(i) && i.outcome === 'shipped').length
 	const withStatus = scoped.map((i) => ({ i, s: i.derived }))
@@ -2049,19 +2232,6 @@ function drawBoard() {
 	const cntWaiting = withStatus.filter((x) => x.s.group === 'waiting').length
 	const cntPaused = withStatus.filter((x) => x.s.group === 'paused').length
 	const cntCiFail = scoped.filter((i) => i.prChecks === 'failing').length
-
-	const q = boardFilter.query.trim().toLowerCase()
-	const filtered = withStatus.filter(({ i, s }) => {
-		if (boardFilter.stage && i.stage !== boardFilter.stage) return false
-		if (boardFilter.quick === 'needs' && s.group !== 'needs') return false
-		if (boardFilter.quick === 'working' && s.group !== 'working') return false
-		if (boardFilter.quick === 'waiting' && s.group !== 'waiting') return false
-		if (boardFilter.quick === 'paused' && s.group !== 'paused') return false
-		if (boardFilter.quick === 'ci-fail' && i.prChecks !== 'failing') return false
-		if (boardFilter.quick === 'attention' && !s.attention) return false
-		if (q && !`${i.title} ${i.asked || ''} ${i.built || ''} ${i.repo} ${prNumber(i.prUrl) || ''}`.toLowerCase().includes(q)) return false
-		return true
-	})
 
 	const diffTotal = (i) => (i.size ? i.size.added + i.size.deleted : 0)
 	const sortItems = (arr) => arr.slice().sort((a, b) => {
@@ -2084,35 +2254,80 @@ function drawBoard() {
 		drawBoard()
 	}
 
-	const hasFilters = !!(boardFilter.quick || boardFilter.stage || boardFilter.query.trim())
-
-	const groupSections = GROUPS.map((g) => {
-		const rows = sortItems(filtered.filter((x) => x.s.group === g.id))
-		if (!rows.length) return null
-		return h('section', { class: 'q-group', id: `group-${g.id}` },
-			h('div', { class: 'q-group-head' },
-				h('h2', { class: 'q-group-title' },
-					h('span', { class: 'dot', style: `background:${g.dot}` }),
-					g.title,
-					h('span', { class: 'cnt' }, rows.length)
+	const buildResults = () => {
+		const q = boardFilter.query.trim().toLowerCase()
+		const filtered = withStatus.filter(({ i, s }) => {
+			if (boardFilter.stage && i.stage !== boardFilter.stage) return false
+			if (boardFilter.quick === 'needs' && s.group !== 'needs') return false
+			if (boardFilter.quick === 'working' && s.group !== 'working') return false
+			if (boardFilter.quick === 'waiting' && s.group !== 'waiting') return false
+			if (boardFilter.quick === 'paused' && s.group !== 'paused') return false
+			if (boardFilter.quick === 'ci-fail' && i.prChecks !== 'failing') return false
+			if (boardFilter.quick === 'attention' && !s.attention) return false
+			if (q && !`${i.title} ${i.asked || ''} ${i.built || ''} ${i.repo} ${prNumber(i.prUrl) || ''}`.toLowerCase().includes(q)) return false
+			return true
+		})
+		const groupSections = GROUPS.map((g) => {
+			const rows = sortItems(filtered.filter((x) => x.s.group === g.id))
+			if (!rows.length) return null
+			return h('section', { class: 'q-group', id: `group-${g.id}` },
+				h('div', { class: 'q-group-head' },
+					h('h2', { class: 'q-group-title' },
+						h('span', { class: 'dot', style: `background:${g.dot}` }),
+						g.title,
+						h('span', { class: 'cnt' }, rows.length)
+					),
+					g.id === 'needs' && rows.length > 1
+						? h('a', { class: 'btn primary sm', href: issueHref(rows[0].i) }, `Start triaging (${rows.length})`)
+						: null
 				),
-				g.id === 'needs' && rows.length > 1
-					? h('a', { class: 'btn primary sm', href: issueHref(rows[0].i) }, `Start triaging (${rows.length})`)
-					: null
-			),
-			h('div', { class: 'card' },
-				h('div', { class: 'q-head' },
-					h('span', {}, 'Issue'),
-					h('span', { title: 'Research · Plan · Implement · Review · Land' }, 'Pipeline'),
-					h('span', {}, 'Next step'),
-					h('span', { style: 'text-align:right' }, 'Action')
-				),
-				...rows.map((r) => queueRow(r.i))
+				h('div', { class: 'card' },
+					h('div', { class: 'q-head' },
+						h('span', {}, 'Issue'),
+						h('span', { title: 'Research · Plan · Implement · Review · Land' }, 'Pipeline'),
+						h('span', {}, 'Next step'),
+						h('span', { style: 'text-align:right' }, 'Action')
+					),
+					...rows.map((r) => queueRow(r.i))
+				)
 			)
+		}).filter(Boolean)
+		return groupSections.length ? groupSections : h('section', { class: 'card' },
+			!scoped.length
+				? h('div', { class: 'empty' },
+					h('h3', {}, repoScope ? `No open issues in ${repoScope}` : 'No issues in work'),
+					h('p', {}, 'Start a new issue here, pick one from Intake, or tell a T3 Code thread to work an issue with the factory skill.'),
+					h('div', { class: 'row', style: 'justify-content:center;margin-top:14px' },
+						h('button', { type: 'button', class: 'btn primary', onclick: () => openNewSheet() }, icon('plus', 'sm'), 'New issue'),
+						h('a', { class: 'btn', href: '#/intake' }, icon('inbox', 'sm'), 'Open Intake')
+					)
+				)
+				: h('div', { class: 'empty' },
+					h('h3', {}, 'No matching issues'),
+					h('p', {}, 'Try clearing your search or stage filters.'),
+					h('button', { type: 'button', class: 'btn', onclick: () => { Object.assign(boardFilter, { quick: '', stage: '', query: '' }); drawBoard() } }, 'Reset filters')
+				)
 		)
-	}).filter(Boolean)
+	}
 
-	render(h('div', { class: 'page-enter' },
+	const hasFiltersNow = () => !!(boardFilter.quick || boardFilter.stage || boardFilter.query.trim())
+	const resultsEl = h('div', { id: 'board-results' }, buildResults())
+	const kbdEl = h('span', { class: 'kbd', hidden: !!boardFilter.query }, '/')
+	const resetBtn = h('button', {
+		type: 'button',
+		class: 'btn quiet sm',
+		hidden: !hasFiltersNow(),
+		onclick: () => { Object.assign(boardFilter, { quick: '', stage: '', query: '' }); drawBoard() }
+	}, icon('close', 'sm'), 'Reset')
+	const syncSearch = (val) => {
+		boardFilter.query = val
+		fill(resultsEl, buildResults())
+		kbdEl.hidden = !!val
+		resetBtn.hidden = !hasFiltersNow()
+		putCachedView('board', boardSig(), boardRoot)
+	}
+
+	const boardRoot = h('div', { class: 'page-enter' },
 		h('div', { class: 'page-head' },
 			h('div', {},
 				h('h1', {}, 'Board', h('span', { class: 'count-pill' }, scoped.length)),
@@ -2152,10 +2367,10 @@ function drawBoard() {
 						'aria-label': 'Filter issues',
 						'data-draft': 'board-search',
 						value: boardFilter.query,
-						oninput: (e) => { boardFilter.query = e.target.value; drawBoard() },
-						onkeydown: (e) => { if (e.key === 'Escape' && boardFilter.query) { e.preventDefault(); boardFilter.query = ''; drawBoard() } }
+						oninput: (e) => syncSearch(e.target.value),
+						onkeydown: (e) => { if (e.key === 'Escape' && boardFilter.query) { e.preventDefault(); e.target.value = ''; syncSearch('') } }
 					}),
-					!boardFilter.query ? h('span', { class: 'kbd' }, '/') : null
+					kbdEl
 				),
 				cntCiFail > 0 ? h('button', {
 					type: 'button',
@@ -2184,65 +2399,101 @@ function drawBoard() {
 						['largest', 'Largest diff']
 					].map(([k, lbl]) => h('option', { value: k, selected: boardFilter.sort === k }, lbl))
 				),
-				hasFilters ? h('button', {
-					type: 'button',
-					class: 'btn quiet sm',
-					onclick: () => { Object.assign(boardFilter, { quick: '', stage: '', query: '' }); drawBoard() }
-				}, icon('close', 'sm'), 'Reset') : null
+				resetBtn
 			)
 		) : null,
 		board.limited?.length ? h('div', { class: 'notice', style: 'margin:0 0 16px' },
 			`${count(board.limited.length, 'issue')} paused on a provider usage limit: `,
 			board.limited.map((l) => `${l.title} (until ${clock(l.until)})`).join(', ')
 		) : null,
-		groupSections.length ? groupSections : h('section', { class: 'card' },
-			!scoped.length
-				? h('div', { class: 'empty' },
-					h('h3', {}, repoScope ? `No open issues in ${repoScope}` : 'No issues in work'),
-					h('p', {}, 'Start a new issue here, pick one from Intake, or tell a T3 Code thread to work an issue with the factory skill.'),
-					h('div', { class: 'row', style: 'justify-content:center;margin-top:14px' },
-						h('button', { type: 'button', class: 'btn primary', onclick: () => openNewSheet() }, icon('plus', 'sm'), 'New issue'),
-						h('a', { class: 'btn', href: '#/intake' }, icon('inbox', 'sm'), 'Open Intake')
-					)
-				)
-				: h('div', { class: 'empty' },
-					h('h3', {}, 'No matching issues'),
-					h('p', {}, 'Try clearing your search or stage filters.'),
-					h('button', { type: 'button', class: 'btn', onclick: () => { Object.assign(boardFilter, { quick: '', stage: '', query: '' }); drawBoard() } }, 'Reset filters')
-				)
-		)
-	))
+		resultsEl
+	)
+	putCachedView('board', boardSig(), boardRoot)
+	render(boardRoot)
 }
 
 // ---- Page: Done (#/done) ----
 
+let doneWarmTimer
 async function drawDone() {
 	drawBreadcrumb(repoScope ? [{ label: 'Done', href: '#/done', onclick: () => setRepoScope('') }, { label: repoShort(repoScope) }] : [])
 	if (!loaded) return render()
-	const hist = await loadHistory(30)
+	const local = historyFromBoard(30)
+	const hist = local || await loadHistory(30)
 	if (route().page !== 'done') return
+	const histStamp = local ? 1 : historyCache.get(30)?.at || 0
+	const doneSig = () => `${boardVersion}|${repoScope}|${doneFilter.outcome}|${doneFilter.sort}|${doneFilter.query}|${histStamp}`
+	const scheduleDoneWarm = (rows) => {
+		if (navigator.connection?.saveData || !rows.length) return
+		clearTimeout(doneWarmTimer)
+		const ids = rows.slice(0, 10).map((i) => i.id)
+		doneWarmTimer = setTimeout(() => {
+			if (route().page === 'done') prefetchIssuesBatch(ids)
+		}, 180)
+	}
+	const cachedView = getCachedView('done', doneSig())
+	if (cachedView) {
+		render(cachedView)
+		scheduleDoneWarm(board.done.filter(inScope))
+		return
+	}
 
-	const histById = new Map((hist.issues || []).map((i) => [i.id, i]))
-	const allDone = board.done.filter(inScope).map((i) => ({ ...i, ...(histById.get(i.id) || {}) }))
+	const allDone = local
+		? board.done.filter(inScope)
+		: (() => {
+			const histById = new Map((hist.issues || []).map((i) => [i.id, i]))
+			return board.done.filter(inScope).map((i) => ({ ...i, ...(histById.get(i.id) || {}) }))
+		})()
 	const outcomes = [...new Set(allDone.map((i) => i.outcome).filter(Boolean))].sort()
 	const shipped = allDone.filter((i) => i.outcome === 'shipped')
 	const avgMin = shipped.length ? Math.round(shipped.reduce((s, i) => s + (i.minutes || 0), 0) / shipped.length) : null
 	const autoMerged = shipped.filter((i) => i.merged === 'factory').length
 	const humanMerged = shipped.filter((i) => i.merged === 'person').length
 
-	const q = doneFilter.query.trim().toLowerCase()
-	const rows = allDone.filter((i) => {
-		if (doneFilter.outcome && i.outcome !== doneFilter.outcome) return false
-		if (q && !`${i.title} ${i.summary || ''} ${i.repo}`.toLowerCase().includes(q)) return false
-		return true
-	}).sort((a, b) => {
-		if (doneFilter.sort === 'fastest') return (a.minutes ?? 1e9) - (b.minutes ?? 1e9)
-		if (doneFilter.sort === 'slowest') return (b.minutes ?? 0) - (a.minutes ?? 0)
-		if (doneFilter.sort === 'largest') return ((b.size?.added || 0) + (b.size?.deleted || 0)) - ((a.size?.added || 0) + (a.size?.deleted || 0))
-		return (b.closedAt || 0) - (a.closedAt || 0)
-	})
+	const filteredDone = () => {
+		const q = doneFilter.query.trim().toLowerCase()
+		return allDone.filter((i) => {
+			if (doneFilter.outcome && i.outcome !== doneFilter.outcome) return false
+			if (q && !`${i.title} ${i.summary || ''} ${i.repo}`.toLowerCase().includes(q)) return false
+			return true
+		}).sort((a, b) => {
+			if (doneFilter.sort === 'fastest') return (a.minutes ?? 1e9) - (b.minutes ?? 1e9)
+			if (doneFilter.sort === 'slowest') return (b.minutes ?? 0) - (a.minutes ?? 0)
+			if (doneFilter.sort === 'largest') return ((b.size?.added || 0) + (b.size?.deleted || 0)) - ((a.size?.added || 0) + (a.size?.deleted || 0))
+			return (b.closedAt || 0) - (a.closedAt || 0)
+		})
+	}
+	const buildDoneRows = (rows) => rows.length ? rows.map((i) => h('div', { class: 'q-row', style: 'grid-template-columns:minmax(0,1fr) auto', 'data-list-row': '' },
+		h('div', { class: 'q-main' },
+			h('a', { class: 'q-title', href: issueHref(i), 'data-row-open': '' }, i.title),
+			i.summary ? h('div', { class: 'q-sub' }, i.summary) : null,
+			h('div', { class: 'q-meta' },
+				repoChip(i.repo),
+				chip(outcomeName(i.outcome), i.outcome === 'shipped' ? 'ok' : ''),
+				i.deploy && i.deploy !== 'none' ? chip(`deploy ${i.deploy}`, i.deploy === 'verified' ? 'ok' : 'warn') : null,
+				i.kind ? chip(i.kind) : null,
+				diffstat(i.size),
+				i.minutes !== undefined ? h('span', { class: 'mono subtle' }, span(i.minutes * 60000)) : null,
+				i.reviewRounds ? h('span', { class: 'subtle' }, count(i.reviewRounds, 'review')) : null,
+				h('span', { class: 'subtle' }, when(i.closedAt))
+			)
+		),
+		h('div', { class: 'q-act' },
+			out(i.prUrl, prNumber(i.prUrl) ? `PR #${prNumber(i.prUrl)}` : 'PR', 'pr', 'btn sm')
+		)
+	)) : h('div', { class: 'empty' }, h('h3', {}, allDone.length ? 'No matching closed issues' : 'Nothing closed yet'))
 
-	render(h('div', { class: 'page-enter' },
+	const rows = filteredDone()
+	const resultsEl = h('section', { class: 'card', id: 'done-results' }, buildDoneRows(rows))
+	const kbdEl = h('span', { class: 'kbd', hidden: !!doneFilter.query }, '/')
+	const syncDoneSearch = (val) => {
+		doneFilter.query = val
+		fill(resultsEl, buildDoneRows(filteredDone()))
+		kbdEl.hidden = !!val
+		putCachedView('done', doneSig(), doneRoot)
+	}
+
+	const doneRoot = h('div', { class: 'page-enter' },
 		h('div', { class: 'page-head' },
 			h('div', {},
 				h('h1', {}, 'Done', h('span', { class: 'count-pill' }, allDone.length)),
@@ -2282,10 +2533,10 @@ async function drawDone() {
 						'aria-label': 'Filter closed issues',
 						'data-draft': 'done-search',
 						value: doneFilter.query,
-						oninput: (e) => { doneFilter.query = e.target.value; drawDone() },
-						onkeydown: (e) => { if (e.key === 'Escape' && doneFilter.query) { e.preventDefault(); doneFilter.query = ''; drawDone() } }
+						oninput: (e) => syncDoneSearch(e.target.value),
+						onkeydown: (e) => { if (e.key === 'Escape' && doneFilter.query) { e.preventDefault(); e.target.value = ''; syncDoneSearch('') } }
 					}),
-					!doneFilter.query ? h('span', { class: 'kbd' }, '/') : null
+					kbdEl
 				),
 				h('select', { class: 'select-ctrl', 'aria-label': 'Sort closed', onchange: (e) => { doneFilter.sort = e.target.value; drawDone() } },
 					...[['recent', 'Recently closed'], ['fastest', 'Fastest'], ['slowest', 'Slowest'], ['largest', 'Largest diff']]
@@ -2301,28 +2552,11 @@ async function drawDone() {
 				}, outcomeName(o), h('span', { class: 'cnt' }, allDone.filter((i) => i.outcome === o).length)))
 			) : null
 		) : null,
-		h('section', { class: 'card' },
-			rows.length ? rows.map((i) => h('div', { class: 'q-row', style: 'grid-template-columns:minmax(0,1fr) auto', 'data-list-row': '' },
-				h('div', { class: 'q-main' },
-					h('a', { class: 'q-title', href: issueHref(i), 'data-row-open': '' }, i.title),
-					i.summary ? h('div', { class: 'q-sub' }, i.summary) : null,
-					h('div', { class: 'q-meta' },
-						repoChip(i.repo),
-						chip(outcomeName(i.outcome), i.outcome === 'shipped' ? 'ok' : ''),
-						i.deploy && i.deploy !== 'none' ? chip(`deploy ${i.deploy}`, i.deploy === 'verified' ? 'ok' : 'warn') : null,
-						i.kind ? chip(i.kind) : null,
-						diffstat(i.size),
-						i.minutes !== undefined ? h('span', { class: 'mono subtle' }, span(i.minutes * 60000)) : null,
-						i.reviewRounds ? h('span', { class: 'subtle' }, count(i.reviewRounds, 'review')) : null,
-						h('span', { class: 'subtle' }, when(i.closedAt))
-					)
-				),
-				h('div', { class: 'q-act' },
-					out(i.prUrl, prNumber(i.prUrl) ? `PR #${prNumber(i.prUrl)}` : 'PR', 'pr', 'btn sm')
-				)
-			)) : h('div', { class: 'empty' }, h('h3', {}, allDone.length ? 'No matching closed issues' : 'Nothing closed yet'))
-		)
-	))
+		resultsEl
+	)
+	putCachedView('done', doneSig(), doneRoot)
+	render(doneRoot)
+	scheduleDoneWarm(rows)
 }
 
 // ---- Page: Issue Detail (#/issue/:id[/tab]) ----
@@ -2330,7 +2564,7 @@ async function drawDone() {
 const planSheet = { el: null }
 function openPlanSheet(title, markdown) {
 	if (!planSheet.el) {
-		planSheet.el = h('dialog', { class: 'sheet wide no-foot', 'aria-label': 'Full plan', onclick: (e) => { if (e.target === planSheet.el) planSheet.el.close() }, onclose: () => planSheet.el.replaceChildren() })
+		planSheet.el = h('dialog', { class: 'sheet wide no-foot', 'aria-label': 'Full plan', onclick: (e) => { if (e.target === planSheet.el) planSheet.el.close() }, tabindex: '-1', onclose: () => emptyAfterClose(planSheet.el) })
 		document.body.append(planSheet.el)
 	}
 	fill(planSheet.el,
@@ -2340,7 +2574,7 @@ function openPlanSheet(title, markdown) {
 		),
 		h('div', { class: 'sheet-body' }, h('div', { class: 'md' }, md(markdown)))
 	)
-	planSheet.el.showModal()
+	showSheet(planSheet.el)
 }
 
 function pickedFor(d) {
@@ -2407,6 +2641,7 @@ function decisionWorkbench(data, pending, planRes) {
 					drafts.delete(fbKey); planChangeOpen.delete(issue.id); autoShipDraft.delete(issue.id)
 					if (res.error) { errorEl.textContent = `Saved, but not delivered: ${res.error}`; for (const b of box.querySelectorAll('button')) b.disabled = false; return }
 					justSubmitted = { issueId: issue.id, label: openPlan ? (willRevise ? 'Sent choices to revise the plan' : 'Plan approved, implementation starting') : 'Answers sent to thread' }
+					markIssueDirty(issue.id)
 					await refreshBoard(); draw()
 				} catch (e) {
 					errorEl.textContent = e.message
@@ -2552,6 +2787,7 @@ function singleDecisionCard(issue, d) {
 			drafts.delete(d.id)
 			if (res.error) { error.textContent = `Saved, but not delivered: ${res.error}`; for (const b of card.querySelectorAll('button')) b.disabled = false; return }
 			justSubmitted = { issueId: issue.id, label: 'Answer sent to thread' }
+			markIssueDirty(issue.id)
 			await refreshBoard(); draw()
 		} catch (e) { error.textContent = e.message; for (const b of card.querySelectorAll('button')) b.disabled = false }
 	}
@@ -2598,6 +2834,7 @@ function mergeDecisionCard(issue, d, blockingBefore = 0) {
 				drafts.delete(noteKey); mergeChangeOpen.delete(d.id)
 				if (res.error) { error.textContent = `Saved, but not delivered: ${res.error}`; for (const b of box.querySelectorAll('button')) b.disabled = false; return }
 				justSubmitted = { issueId: issue.id, label: res.held ? 'Saved, waiting for the remaining blocking decision above' : answer === 'Merge' ? 'Merge approved, landing now' : 'Feedback sent to thread' }
+				markIssueDirty(issue.id)
 				await refreshBoard(); draw()
 			} catch (e) { error.textContent = e.message; for (const b of box.querySelectorAll('button')) b.disabled = false }
 		}
@@ -2811,26 +3048,23 @@ function iterationsCard(data, compact = false) {
 			const stChip = r.state === 'running' ? chip('running', 'accent', true) : r.state === 'failed' ? chip('failed', 'bad') : chip('done', 'ok')
 			const dur = r.endedAt ? span(r.endedAt - r.startedAt) : since(r.startedAt)
 			const key = `iter:${r.id}`
-			return h('details', {
-				class: 'iter-row',
-				id: `iter-${r.id}`,
-				open: opened.has(key),
-				ontoggle: (e) => (e.target.open ? opened.add(key) : opened.delete(key))
-			},
-				h('summary', {},
+			return foldLazy(
+				key,
+				[
 					h('span', { style: `width:8px;height:8px;border-radius:50%;flex:none;background:${r.state === 'failed' ? 'var(--bad)' : STAGE_COLOR[r.stage]}` }),
 					h('strong', { style: 'font-weight:600' }, name),
 					stChip,
 					r.model ? h('span', { class: 'mono subtle', style: 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap' }, r.model) : null,
 					r.head ? h('span', { class: 'mono subtle' }, shortSha(r.head)) : null,
 					h('span', { class: 'iter-end' }, dotted(dur, when(r.startedAt)))
-				),
-				h('div', { class: 'iter-row-body' },
+				],
+				() => h('div', { class: 'iter-row-body' },
 					r.summary ? h('p', { style: 'color:var(--fg)' }, r.summary) : null,
 					r.provider || r.options ? h('div', { class: 'mono subtle' }, dotted(r.provider ? `${r.provider} / ${r.model || ''}` : null, plain(r.options))) : null,
 					r.resultMissing ? h('p', { class: 'muted' }, cap(r.resultMissing)) : null,
-					r.result ? fold(`run-json:${r.id}`, `Structured result (${r.result.outcome})`, h('pre', { style: 'margin-top:6px' }, JSON.stringify(r.result, null, 2))) : null
-				)
+					r.result ? foldLazy(`run-json:${r.id}`, `Structured result (${r.result.outcome})`, () => h('pre', { style: 'margin-top:6px' }, JSON.stringify(r.result, null, 2))) : null
+				),
+				{ class: 'iter-row', id: `iter-${r.id}` }
 			)
 		})
 	)
@@ -3005,6 +3239,7 @@ function steerCard(issue) {
 		btn.disabled = true; error.textContent = ''; status.textContent = ''
 		try {
 			await api('POST', `/api/issues/${encodeURIComponent(issue.id)}/message`, { message })
+			markIssueDirty(issue.id)
 			drafts.delete(key); input.value = ''
 			toast('Sent note to thread')
 			status.textContent = 'Sent to thread'
@@ -3252,25 +3487,127 @@ function dropButton(issue) {
 	const btn = h('button', { type: 'button', class: 'btn quiet danger sm', onclick: async () => {
 		if (!confirm(`Drop "${issue.title}"? It closes as dropped, and its thread is told to stop.`)) return
 		btn.disabled = true
-		try { await api('POST', `/api/issues/${encodeURIComponent(issue.id)}/drop`, {}); toast('Issue dropped'); await refreshBoard(); draw() }
+		try { await api('POST', `/api/issues/${encodeURIComponent(issue.id)}/drop`, {}); toast('Issue dropped'); markIssueDirty(issue.id); await refreshBoard(); draw() }
 		catch (e) { toast(e.message); btn.disabled = false }
 	} }, 'Drop')
 	return btn
 }
 
-async function drawIssue(id, tab = 'overview') {
-	let data
-	try { data = await api('GET', `/api/issues/${encodeURIComponent(id)}`) } catch (e) { render(h('p', { class: 'error' }, e.message)); return }
-	if (route().id !== id) return
-	currentIssueData = data
-	const i = data.issue
-	drawSidebar()
+function markIssueDirty(id) {
+	const entry = issueCache.get(id)
+	if (entry) entry.dirty = true
+}
+
+function storeIssueCache(id, data) {
+	data._seq = ++issueDataSeq
+	issueCache.delete(id)
+	issueCache.set(id, { data, dirty: false, at: Date.now() })
+	while (issueCache.size > ISSUE_CACHE_MAX) {
+		const oldest = issueCache.keys().next().value
+		issueCache.delete(oldest)
+	}
+}
+
+function fetchIssueData(id, { force = false } = {}) {
+	if (!force && issueInflight.has(id)) return issueInflight.get(id)
+	let rawReq
+	if (!force && window.__boot?.issue && window.__boot.issue.id === id) {
+		const p = window.__boot.issue.p
+		window.__boot.issue = null
+		rawReq = p.then(readJsonResponse)
+	} else {
+		rawReq = api('GET', `/api/issues/${encodeURIComponent(id)}`)
+	}
+	const req = rawReq.then((data) => {
+		storeIssueCache(id, data)
+		return data
+	})
+	issueInflight.set(id, req)
+	req.then(
+		() => { if (issueInflight.get(id) === req) issueInflight.delete(id) },
+		() => { if (issueInflight.get(id) === req) issueInflight.delete(id) }
+	)
+	return req
+}
+
+function prefetchIssue(id) {
+	if (!id) return
+	const cached = issueCache.get(id)
+	if ((cached && !cached.dirty) || issueInflight.has(id)) return
+	fetchIssueData(id).catch(() => {})
+}
+
+function prefetchIssuesBatch(ids) {
+	const todo = []
+	for (const id of ids) {
+		if (!id || todo.includes(id)) continue
+		const cached = issueCache.get(id)
+		if ((cached && !cached.dirty) || issueInflight.has(id)) continue
+		todo.push(id)
+		if (todo.length >= 16) break
+	}
+	if (!todo.length) return
+	if (todo.length === 1) return prefetchIssue(todo[0])
+	const batchReq = api('GET', `/api/issues/batch?ids=${todo.map(encodeURIComponent).join(',')}`)
+		.then((res) => {
+			const map = res.issues || {}
+			for (const id of todo) {
+				if (map[id]) storeIssueCache(id, map[id])
+			}
+			return map
+		})
+	for (const id of todo) {
+		const perId = batchReq.then((map) => {
+			if (map[id]) return map[id]
+			throw new Error('issue not found')
+		})
+		issueInflight.set(id, perId)
+		perId.then(
+			() => { if (issueInflight.get(id) === perId) issueInflight.delete(id) },
+			() => { if (issueInflight.get(id) === perId) issueInflight.delete(id) }
+		)
+	}
+}
+
+function boardSummaryOf(id) {
+	return board.issues.find((i) => i.id === id) || board.done.find((i) => i.id === id) || null
+}
+
+function renderIssueShellFromBoard(i) {
 	drawBreadcrumb([
 		{ label: i.state === 'open' ? 'Board' : 'Done', href: i.state === 'open' ? '#/' : '#/done' },
 		{ label: repoShort(i.repo), href: '#/', onclick: () => setRepoScope(i.repo) },
 		{ label: prNumber(i.prUrl) ? `#${prNumber(i.prUrl)} · ${i.title}` : i.title }
 	])
+	const status = i.derived
+	const statusToneChip = i.state !== 'open'
+		? chip(outcomeName(i.outcome || i.state), i.outcome === 'shipped' ? 'ok' : '', true)
+		: status?.tone === 'warn' ? chip('Needs you', 'warn', true)
+		: status?.tone === 'bad' ? chip(statusLabel(status), 'bad', true)
+		: status?.running ? chip('Working', 'accent', true)
+		: chip(statusLabel(status), '', true)
+	render(
+		EMBED ? h('a', { class: 'embed-back', href: i.state === 'open' ? '#/' : '#/done' }, icon('back', 'sm'), i.state === 'open' ? 'Back to Board' : 'Back to Done') : null,
+		h('header', { class: 'issue-head' },
+			h('div', { class: 'issue-head-row' }, h('h1', {}, i.title)),
+			h('div', { class: 'issue-meta' },
+				statusToneChip,
+				repoChip(i.repo),
+				i.kind ? h('span', { class: 'subtle' }, i.kind) : null,
+				prNumber(i.prUrl) ? h('span', { class: 'mono subtle' }, `#${prNumber(i.prUrl)}`) : null,
+				diffstat(i.size),
+				i.prChecks ? ciBadge(i.prChecks) : null,
+				h('span', { class: 'subtle' }, 'started ', when(i.createdAt))
+			)
+		),
+		status ? stationRail(i, status, null) : null
+	)
+}
 
+function renderIssueData(data, tab = 'overview') {
+	const id = data.issue.id
+	currentIssueData = data
+	const i = data.issue
 	const pending = data.decisions.filter((d) => isOpenDec(d) || (d.answeredVia === 'page' && d.delivery !== 'sent'))
 	const activeRun = data.runs.findLast((r) => r.state === 'running')
 	const status = data.derived
@@ -3280,26 +3617,6 @@ async function drawIssue(id, tab = 'overview') {
 	const items = data.items || []
 	if (data.preview?.state === 'up') probe(id)
 	else probes.delete(id)
-
-	// Triage stepper across waiting issues
-	const waitingIssues = board.issues.filter((x) => inScope(x) && x.needsYou)
-	const idxInQueue = waitingIssues.findIndex((x) => x.id === id)
-	const otherWaiting = waitingIssues.filter((x) => x.id !== id)
-	const prevWaiting = idxInQueue > 0 ? waitingIssues[idxInQueue - 1] : null
-	const nextWaiting = idxInQueue >= 0 && idxInQueue + 1 < waitingIssues.length ? waitingIssues[idxInQueue + 1] : otherWaiting[0] || null
-	const triageNav = waitingIssues.length > 1 || (idxInQueue < 0 && otherWaiting.length > 0) ? h('div', { class: 'triage-nav' },
-		h('span', { class: 'triage-badge' }, idxInQueue >= 0 ? `Needs you ${idxInQueue + 1} / ${waitingIssues.length}` : `${otherWaiting.length} waiting`),
-		prevWaiting ? h('a', { class: 'btn sm', href: issueHref(prevWaiting), title: prevWaiting.title }, icon('prev', 'sm'), 'Prev') : null,
-		nextWaiting ? h('a', { class: 'btn sm', href: issueHref(nextWaiting), title: nextWaiting.title }, 'Next', icon('next', 'sm')) : null
-	) : null
-
-	const submittedBanner = justSubmitted && justSubmitted.issueId === id ? h('div', { class: 'banner' },
-		h('span', {}, h('strong', {}, '✓ '), justSubmitted.label),
-		h('div', { class: 'row' },
-			otherWaiting.length ? h('a', { class: 'btn primary sm', href: issueHref(otherWaiting[0]), onclick: () => { justSubmitted = null } }, `Review next (${otherWaiting.length} left)`) : null,
-			h('button', { type: 'button', class: 'btn quiet sm', onclick: () => { justSubmitted = null; draw() } }, 'Dismiss')
-		)
-	) : null
 
 	const reviewCount = findings.length + items.length
 	const openFindings = findings.filter(isOpenFinding)
@@ -3313,9 +3630,146 @@ async function drawIssue(id, tab = 'overview') {
 		{ id: 'activity', label: 'Activity', cnt: data.runs.length },
 		{ id: 'issue', label: 'Issue', cnt: 0 }
 	]
-	// Keep backwards compatibility with older tab links
 	const tabAlias = { decisions: 'activity', runs: 'activity', proof: 'overview', source: 'issue' }[tab] || tab
 	const activeTab = TABS.some((t) => t.id === tabAlias) ? tabAlias : 'overview'
+	const dataSeq = data._seq || (data._seq = ++issueDataSeq)
+	const scheduleClamps = (node) => {
+		const clamps = node.querySelectorAll('.clamp')
+		if (!clamps.length) return
+		requestAnimationFrame(() => {
+			if (!node.isConnected) return
+			for (const el of clamps) el.classList.toggle('cut', el.scrollHeight > el.clientHeight)
+		})
+	}
+	const tabSlot = `issue-tab:${id}:${activeTab}`
+	const tabSig = `${dataSeq}|${activeTab === 'overview' || activeTab === 'reviews' ? (findingSevFilter.get(id) || '') : ''}|${activeTab === 'overview' ? (probes.get(id)?.at || 0) : ''}`
+
+	let tabBody = getCachedView(tabSlot, tabSig)
+	let tabFromCache = !!tabBody
+	if (!tabBody) {
+		if (activeTab === 'overview') {
+			const decisionBlocks = pending.length ? decisionWorkbench(data, pending, brief) : []
+			const visualBlocks = [
+				(shots.length || brief.media) ? galleryCard(shots, brief.media) : null,
+				measuredCard(brief.measured, data.pr?.head),
+				hasOpenMerge ? headsupCard(brief, data.reviewRisk) : null
+			].filter(Boolean)
+
+			tabBody = h('div', { class: 'trail-grid page-enter', id: 'issue-tab-body' },
+				h('div', { class: 'trail-main' },
+					...(hasOpenMerge ? [...visualBlocks, ...decisionBlocks] : [...decisionBlocks]),
+					data.report
+						? h('section', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', {}, 'Closing report')), h('div', { style: 'padding:16px' }, h('div', { class: 'md' }, md(data.report))))
+						: briefCard(data),
+					status.running && activeRun && !pending.length ? liveActivityCard(activeRun, data.events) : null,
+					!hasOpenMerge ? visualBlocks : null,
+					!hasOpenMerge ? headsupCard(brief, data.reviewRisk) : null,
+					openFindings.length ? findingsCard(i.id, openFindings, true) : null,
+					i.state === 'open' && !i.threadGone ? steerCard(i) : null
+				),
+				h('aside', { class: 'trail-side' },
+					mergeGateBox(data, status, pending, activeRun),
+					hasTryIt ? previewCard(i, data.preview, brief.tryIt, data.pr?.head) : null
+				)
+			)
+		} else if (activeTab === 'reviews') {
+			tabBody = h('div', { class: 'stack page-enter', id: 'issue-tab-body', style: 'max-width:960px' },
+				findingsCard(i.id, findings, false),
+				githubItemsCard(items),
+				!findings.length && !items.length ? h('section', { class: 'card' }, h('div', { class: 'empty' }, h('h3', {}, 'No review findings yet'), h('p', {}, 'Internal review findings and GitHub review threads appear here once a review runs.'))) : null
+			)
+		} else if (activeTab === 'activity') {
+			tabBody = h('div', { class: 'stack page-enter', id: 'issue-tab-body', style: 'max-width:960px' },
+				iterationsCard(data, false),
+				data.decisions.length
+					? h('section', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', {}, 'Decisions', h('span', { class: 'count-pill', style: 'height:19px;font-size:11px' }, data.decisions.length))), ...data.decisions.slice().reverse().map(decisionRow))
+					: null,
+				data.events.length ? h('section', { class: 'card' },
+					h('div', { class: 'card-head' }, h('h2', {}, 'Event timeline', h('span', { class: 'count-pill', style: 'height:19px;font-size:11px' }, data.events.length))),
+					h('div', { class: 'tl' }, ...data.events.slice().reverse().map((e) => h('div', {}, cap(e.text), h('time', {}, clock(e.at)))))
+				) : null,
+				!data.runs.length && !data.events.length ? h('section', { class: 'card' }, h('div', { class: 'empty' }, h('h3', {}, 'No activity recorded yet'))) : null
+			)
+		} else {
+			tabBody = h('div', { class: 'stack page-enter', id: 'issue-tab-body', style: 'max-width:860px' },
+				h('section', { class: 'card' },
+					h('div', { class: 'card-head' },
+						h('h2', {}, 'The issue as taken in'),
+						i.source ? (isUrl(i.source) ? out(i.source, 'Open source', 'out') : h('span', { class: 'mono subtle' }, i.source)) : null
+					),
+					h('div', { style: 'padding:18px' }, data.body ? h('div', { class: 'md' }, md(data.body)) : h('p', { class: 'muted' }, '(no description text)'))
+				),
+				claimsCard(brief.claims)
+			)
+		}
+		putCachedView(tabSlot, tabSig, tabBody)
+	}
+
+	const syncTabButtons = (root) => {
+		for (const btn of root.querySelectorAll('.tabs .tab-btn')) {
+			const on = btn.dataset.tab === activeTab
+			btn.classList.toggle('on', on)
+			if (on) btn.setAttribute('aria-current', 'page')
+			else btn.removeAttribute('aria-current')
+		}
+	}
+
+	// Fast path 1: switching tabs on the same issue with unchanged data swaps only the tab body.
+	const existingBody = renderedIssueShellId === id && renderedIssueShellData === data && !justSubmitted
+		? main.querySelector('#issue-tab-body')
+		: null
+	if (existingBody) {
+		syncTabButtons(main)
+		if (existingBody !== tabBody) existingBody.replaceWith(tabBody)
+		if (!tabFromCache) scheduleClamps(tabBody)
+		return
+	}
+
+	drawSidebar()
+	drawBreadcrumb([
+		{ label: i.state === 'open' ? 'Board' : 'Done', href: i.state === 'open' ? '#/' : '#/done' },
+		{ label: repoShort(i.repo), href: '#/', onclick: () => setRepoScope(i.repo) },
+		{ label: prNumber(i.prUrl) ? `#${prNumber(i.prUrl)} · ${i.title}` : i.title }
+	])
+
+	// Fast path 2: returning to an issue whose shell DOM is cached in memory.
+	const shellSlot = `issue:${id}`
+	const shellSig = `${dataSeq}|${boardVersion}|${repoScope}|${justSubmitted?.issueId === id ? justSubmitted.label : ''}`
+	const cachedShell = getCachedView(shellSlot, shellSig)
+	if (cachedShell) {
+		syncTabButtons(cachedShell)
+		const curBody = cachedShell.querySelector('#issue-tab-body')
+		if (curBody && curBody !== tabBody) curBody.replaceWith(tabBody)
+		render(cachedShell)
+		renderedIssueShellId = id
+		renderedIssueShellData = data
+		if (!tabFromCache) scheduleClamps(tabBody)
+		return
+	}
+
+	// Triage stepper across waiting issues
+	const waitingIssues = board.issues.filter((x) => inScope(x) && x.needsYou)
+	const idxInQueue = waitingIssues.findIndex((x) => x.id === id)
+	const otherWaiting = waitingIssues.filter((x) => x.id !== id)
+	const prevWaiting = idxInQueue > 0 ? waitingIssues[idxInQueue - 1] : null
+	const nextWaiting = idxInQueue >= 0 && idxInQueue + 1 < waitingIssues.length ? waitingIssues[idxInQueue + 1] : otherWaiting[0] || null
+	const triageNav = waitingIssues.length > 1 || (idxInQueue < 0 && otherWaiting.length > 0) ? h('div', { class: 'triage-nav' },
+		h('span', { class: 'triage-badge' }, idxInQueue >= 0 ? `Needs you ${idxInQueue + 1} / ${waitingIssues.length}` : `${otherWaiting.length} waiting`),
+		prevWaiting ? h('a', { class: 'btn sm', href: issueHref(prevWaiting), title: prevWaiting.title }, icon('prev', 'sm'), 'Prev') : null,
+		nextWaiting ? h('a', { class: 'btn sm', href: issueHref(nextWaiting), title: nextWaiting.title }, 'Next', icon('next', 'sm')) : null
+	) : null
+
+	// Prefetch triage neighbors so Prev / Next clicks are instant.
+	if (nextWaiting) prefetchIssue(nextWaiting.id)
+	if (prevWaiting) prefetchIssue(prevWaiting.id)
+
+	const submittedBanner = justSubmitted && justSubmitted.issueId === id ? h('div', { class: 'banner' },
+		h('span', {}, h('strong', {}, '✓ '), justSubmitted.label),
+		h('div', { class: 'row' },
+			otherWaiting.length ? h('a', { class: 'btn primary sm', href: issueHref(otherWaiting[0]), onclick: () => { justSubmitted = null } }, `Review next (${otherWaiting.length} left)`) : null,
+			h('button', { type: 'button', class: 'btn quiet sm', onclick: () => { justSubmitted = null; renderIssueData(data, route().tab) } }, 'Dismiss')
+		)
+	) : null
 
 	const overviewLinkBtn = data.overview ? h('a', {
 		class: 'btn sm', href: `/overview/${encodeURIComponent(i.id)}`, target: '_blank', rel: 'noreferrer',
@@ -3329,66 +3783,7 @@ async function drawIssue(id, tab = 'overview') {
 		: status.running ? chip('Working', 'accent', true)
 		: chip(statusLabel(status), '', true)
 
-	// Build tab body
-	let tabBody
-	if (activeTab === 'overview') {
-		const decisionBlocks = pending.length ? decisionWorkbench(data, pending, brief) : []
-		const visualBlocks = [
-			(shots.length || brief.media) ? galleryCard(shots, brief.media) : null,
-			measuredCard(brief.measured, data.pr?.head),
-			hasOpenMerge ? headsupCard(brief, data.reviewRisk) : null
-		].filter(Boolean)
-
-		tabBody = h('div', { class: 'trail-grid page-enter' },
-			h('div', { class: 'trail-main' },
-				// Merge review shows visual proof & caveats BEFORE the Merge button; plans & questions come first.
-				...(hasOpenMerge ? [...visualBlocks, ...decisionBlocks] : [...decisionBlocks]),
-				data.report
-					? h('section', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', {}, 'Closing report')), h('div', { style: 'padding:16px' }, h('div', { class: 'md' }, md(data.report))))
-					: briefCard(data),
-				status.running && activeRun && !pending.length ? liveActivityCard(activeRun, data.events) : null,
-				!hasOpenMerge ? visualBlocks : null,
-				!hasOpenMerge ? headsupCard(brief, data.reviewRisk) : null,
-				openFindings.length ? findingsCard(i.id, openFindings, true) : null,
-				i.state === 'open' && !i.threadGone ? steerCard(i) : null
-			),
-			h('aside', { class: 'trail-side' },
-				mergeGateBox(data, status, pending, activeRun),
-				hasTryIt ? previewCard(i, data.preview, brief.tryIt, data.pr?.head) : null
-			)
-		)
-	} else if (activeTab === 'reviews') {
-		tabBody = h('div', { class: 'stack page-enter', style: 'max-width:960px' },
-			findingsCard(i.id, findings, false),
-			githubItemsCard(items),
-			!findings.length && !items.length ? h('section', { class: 'card' }, h('div', { class: 'empty' }, h('h3', {}, 'No review findings yet'), h('p', {}, 'Internal review findings and GitHub review threads appear here once a review runs.'))) : null
-		)
-	} else if (activeTab === 'activity') {
-		tabBody = h('div', { class: 'stack page-enter', style: 'max-width:960px' },
-			iterationsCard(data, false),
-			data.decisions.length
-				? h('section', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', {}, 'Decisions', h('span', { class: 'count-pill', style: 'height:19px;font-size:11px' }, data.decisions.length))), ...data.decisions.slice().reverse().map(decisionRow))
-				: null,
-			data.events.length ? h('section', { class: 'card' },
-				h('div', { class: 'card-head' }, h('h2', {}, 'Event timeline', h('span', { class: 'count-pill', style: 'height:19px;font-size:11px' }, data.events.length))),
-				h('div', { class: 'tl' }, ...data.events.slice().reverse().map((e) => h('div', {}, cap(e.text), h('time', {}, clock(e.at)))))
-			) : null,
-			!data.runs.length && !data.events.length ? h('section', { class: 'card' }, h('div', { class: 'empty' }, h('h3', {}, 'No activity recorded yet'))) : null
-		)
-	} else {
-		tabBody = h('div', { class: 'stack page-enter', style: 'max-width:860px' },
-			h('section', { class: 'card' },
-				h('div', { class: 'card-head' },
-					h('h2', {}, 'The issue as taken in'),
-					i.source ? (isUrl(i.source) ? out(i.source, 'Open source', 'out') : h('span', { class: 'mono subtle' }, i.source)) : null
-				),
-				h('div', { style: 'padding:18px' }, data.body ? h('div', { class: 'md' }, md(data.body)) : h('p', { class: 'muted' }, '(no description text)'))
-			),
-			claimsCard(brief.claims)
-		)
-	}
-
-	render(
+	const issueShell = h('div', { class: 'issue-shell' },
 		EMBED ? h('a', { class: 'embed-back', href: i.state === 'open' ? '#/' : '#/done' }, icon('back', 'sm'), i.state === 'open' ? 'Back to Board' : 'Back to Done') : null,
 		submittedBanner,
 		h('header', { class: 'issue-head' },
@@ -3419,7 +3814,7 @@ async function drawIssue(id, tab = 'overview') {
 				)
 			)
 		),
-		stationRail(i, status, () => { location.hash = issueHref(i, 'activity') }),
+		stationRail(i, status, () => navigateHash(issueHref(i, 'activity'))),
 		i.configError ? h('p', { class: 'notice bad' }, i.configError) : null,
 		i.threadGone ? h('p', { class: 'notice bad' }, 'T3 Code cannot find this thread any more.') : null,
 		status.alarm ? h('p', { class: 'notice bad' }, status.alarm) : null,
@@ -3428,20 +3823,53 @@ async function drawIssue(id, tab = 'overview') {
 			h('button', {
 				type: 'button',
 				class: `tab-btn${activeTab === t.id ? ' on' : ''}`,
+				'data-tab': t.id,
 				'aria-current': activeTab === t.id ? 'page' : undefined,
-				onclick: () => { location.hash = issueHref(i, t.id) }
+				onclick: () => navigateHash(issueHref(i, t.id))
 			}, t.label, t.cnt ? h('span', { class: `tab-cnt${t.hot ? ' hot' : ''}` }, t.cnt) : null)
 		)),
 		tabBody
 	)
-	for (const el of main.querySelectorAll('.clamp')) el.classList.toggle('cut', el.scrollHeight > el.clientHeight)
+	putCachedView(shellSlot, shellSig, issueShell)
+	render(issueShell)
+	renderedIssueShellId = id
+	renderedIssueShellData = data
+	if (!tabFromCache) scheduleClamps(tabBody)
+}
+
+async function drawIssue(id, tab = 'overview', { force = false } = {}) {
+	const cached = issueCache.get(id)
+	if (cached) {
+		renderIssueData(cached.data, tab)
+		if (!cached.dirty && !force) return
+		try {
+			const fresh = await fetchIssueData(id, { force: true })
+			if (route().page === 'issue' && route().id === id) {
+				renderedIssueShellData = null
+				renderIssueData(fresh, route().tab)
+				notifyHostState()
+			}
+		} catch {}
+		return
+	}
+	const summary = boardSummaryOf(id)
+	if (summary) renderIssueShellFromBoard(summary)
+	let data
+	try { data = await fetchIssueData(id) } catch (e) { if (route().page === 'issue' && route().id === id) render(h('p', { class: 'error' }, e.message)); return }
+	if (route().page !== 'issue' || route().id !== id) return
+	renderIssueData(data, route().tab)
 }
 
 // ---- Page: Intake (#/intake) with multi-select batch start ----
 
+const INTAKE_TTL_MS = 60_000
 const intake = {
+	ver: 0,
 	view: null,
+	fetchedAt: 0,
+	viewInflight: null,
 	lists: new Map(),
+	itemsInflight: new Map(),
 	filter: { source: '', show: 'new', label: '', state: '', assignee: '', query: '' },
 	selected: new Set(), // keys: `${source.id}\n${item.key}`
 	batchBusy: false,
@@ -3454,32 +3882,80 @@ const intake = {
 }
 const sourceSheet = { el: null }
 
-async function loadIntake(force) {
-	try { intake.view = await api('GET', '/api/intake') } catch (e) { intake.view = { error: e.message, sources: [], repos: [] } }
+function persistIntakeSess() {
+	if (!intake.view || intake.view.error) return
+	const lists = {}
+	for (const [id, st] of intake.lists.entries()) {
+		if (!st.loading && !st.error && st.items) lists[id] = { items: st.items, readAt: st.readAt }
+	}
+	writeSess('factory-cache-intake', { view: intake.view, fetchedAt: intake.fetchedAt, lists })
+}
+
+async function loadIntake(force = false) {
+	const fresh = !force && intake.view && !intake.view.error && Date.now() - intake.fetchedAt < INTAKE_TTL_MS
+	let fetchedView = false
+	if (!fresh) {
+		fetchedView = true
+		if (!force && intake.viewInflight) {
+			await intake.viewInflight
+		} else {
+			let rawReq
+			if (!force && window.__boot?.intake) {
+				const p = window.__boot.intake
+				window.__boot.intake = null
+				rawReq = p.then(readJsonResponse)
+			} else {
+				rawReq = api('GET', force ? '/api/intake?refresh=1' : '/api/intake')
+			}
+			const req = rawReq
+				.then((v) => { intake.view = v; intake.fetchedAt = Date.now(); intake.ver++; persistIntakeSess() })
+				.catch((e) => { intake.view = { error: e.message, sources: [], repos: [] }; intake.ver++ })
+			intake.viewInflight = req
+			try { await req } finally { if (intake.viewInflight === req) intake.viewInflight = null }
+		}
+	}
 	const ids = new Set(intake.view.sources.map((s) => s.id))
 	for (const id of intake.lists.keys()) if (!ids.has(id)) intake.lists.delete(id)
 	if (intake.filter.source && !ids.has(intake.filter.source)) intake.filter.source = ''
-	for (const source of intake.view.sources) if (force || !intake.lists.has(source.id)) loadItems(source.id)
-	if (route().page === 'intake') drawIntake()
+	syncIntakeFromBoard()
+	const now = Date.now()
+	let startedAny = false
+	for (const source of intake.view.sources) {
+		const st = intake.lists.get(source.id)
+		if (force || !st || (!st.loading && now - (st.readAt || 0) >= INTAKE_TTL_MS)) {
+			startedAny = true
+			loadItems(source.id, force)
+		}
+	}
+	// Avoid double-rendering Intake when draw() just painted fresh cached data.
+	if (route().page === 'intake' && (fetchedView || !startedAny)) drawIntake()
 	if (sourceSheet.el?.open && intake.form) drawSourceSheet()
 }
 
-async function loadItems(id) {
+async function loadItems(id, force = false) {
+	if (!force && intake.itemsInflight.has(id)) return intake.itemsInflight.get(id)
 	const before = intake.lists.get(id)
 	intake.lists.set(id, { ...(before || { items: [] }), loading: true, error: null })
+	intake.ver++
 	if (route().page === 'intake') drawIntake()
-	try {
-		const res = await api('GET', `/api/intake/sources/${encodeURIComponent(id)}/items`)
-		intake.lists.set(id, { loading: false, error: null, items: res.items, readAt: res.readAt })
-		for (const item of res.items) intake.notes.delete(item.url)
-	} catch (e) {
-		intake.lists.set(id, { ...(before || { items: [] }), loading: false, error: e.message })
-	}
+	const req = api('GET', `/api/intake/sources/${encodeURIComponent(id)}/items${force ? '?refresh=1' : ''}`)
+		.then((res) => {
+			intake.lists.set(id, { loading: false, error: null, items: res.items, readAt: res.readAt })
+			for (const item of res.items) intake.notes.delete(item.url)
+			intake.ver++
+			persistIntakeSess()
+		})
+		.catch((e) => {
+			intake.lists.set(id, { ...(before || { items: [] }), loading: false, error: e.message })
+			intake.ver++
+		})
+	intake.itemsInflight.set(id, req)
+	try { await req } finally { if (intake.itemsInflight.get(id) === req) intake.itemsInflight.delete(id) }
 	if (route().page === 'intake') drawIntake()
 }
 
 async function startItem(source, item, again) {
-	intake.starting.add(item.url); intake.notes.delete(item.url); drawIntake()
+	intake.starting.add(item.url); intake.notes.delete(item.url); intake.ver++; drawIntake()
 	try {
 		const res = await api('POST', `/api/intake/sources/${encodeURIComponent(source.id)}/start`, { item: item.key, again: again || undefined })
 		if (res.duplicateOf) {
@@ -3497,16 +3973,16 @@ async function startItem(source, item, again) {
 	} catch (e) {
 		intake.notes.set(item.url, { text: e.message, bad: true })
 	}
-	intake.starting.delete(item.url); drawIntake()
+	intake.starting.delete(item.url); intake.ver++; drawIntake()
 }
 
 async function startSelectedBatch(rows) {
 	if (intake.batchBusy) return
 	const targets = rows.filter(({ source, item }) => intake.selected.has(`${source.id}\n${item.key}`) && !item.factory)
 	if (!targets.length) return
-	intake.batchBusy = true; drawIntake()
+	intake.batchBusy = true; intake.ver++; drawIntake()
 	for (const { source, item } of targets) await startItem(source, item)
-	intake.batchBusy = false; intake.selected.clear(); drawIntake()
+	intake.batchBusy = false; intake.selected.clear(); intake.ver++; drawIntake()
 }
 
 async function removeSource(s) {
@@ -3514,7 +3990,8 @@ async function removeSource(s) {
 	try {
 		await api('DELETE', `/api/intake/sources/${encodeURIComponent(s.id)}`)
 		if (intake.filter.source === s.id) intake.filter.source = ''
-		await loadIntake(); return true
+		intake.fetchedAt = 0
+		await loadIntake(false); return true
 	} catch (e) { alert(e.message); return false }
 }
 
@@ -3557,11 +4034,11 @@ function openSourceSheet(s) {
 		? { id: s.id, kind: s.kind, repo: s.repo, name: s.name, merge: s.merge || '', ghRepo: s.github?.repo || '', label: (s.github || s.linear)?.label || '', team: s.linear?.team || '', project: s.linear?.project || '' }
 		: { kind: 'github', repo: (repoScope && v.repos.includes(repoScope) ? repoScope : v.repos[0]) || '', name: '', merge: '', ghRepo: '', label: '', team: '', project: '' }
 	if (!sourceSheet.el) {
-		sourceSheet.el = h('dialog', { class: 'sheet', 'aria-label': 'Source settings', onclick: (e) => { if (e.target === sourceSheet.el) sourceSheet.el.close() }, onclose: () => { intake.form = null; sourceSheet.el.replaceChildren() } })
+		sourceSheet.el = h('dialog', { class: 'sheet', 'aria-label': 'Source settings', onclick: (e) => { if (e.target === sourceSheet.el) sourceSheet.el.close() }, tabindex: '-1', onclose: () => { intake.form = null; emptyAfterClose(sourceSheet.el) } })
 		document.body.append(sourceSheet.el)
 	}
 	drawSourceSheet()
-	if (!sourceSheet.el.open) sourceSheet.el.showModal()
+	if (!sourceSheet.el.open) showSheet(sourceSheet.el)
 }
 
 function drawSourceSheet() {
@@ -3598,7 +4075,7 @@ function drawSourceSheet() {
 		}
 		try {
 			const res = d.id ? await api('PUT', `/api/intake/sources/${encodeURIComponent(d.id)}`, payload) : await api('POST', '/api/intake/sources', payload)
-			intake.lists.delete(res.source.id); sourceSheet.el.close(); toast(d.id ? 'Source updated' : 'Source added'); await loadIntake()
+			intake.lists.delete(res.source.id); intake.fetchedAt = 0; sourceSheet.el.close(); toast(d.id ? 'Source updated' : 'Source added'); await loadIntake(false)
 		} catch (err) { error.textContent = err.message; e.target.disabled = false }
 	}
 	const existing = d.id ? v.sources.find((s) => s.id === d.id) : null
@@ -3650,7 +4127,7 @@ function intakeRow(source, item, showSource) {
 			type: 'checkbox',
 			'aria-label': `Select ${item.title}`,
 			checked: intake.selected.has(selKey),
-			onchange: (e) => { if (e.target.checked) intake.selected.add(selKey); else intake.selected.delete(selKey); drawIntake() }
+			onchange: (e) => { if (e.target.checked) intake.selected.add(selKey); else intake.selected.delete(selKey); intake.ver++; drawIntake() }
 		}) : h('span', {}),
 		h('div', { class: 'in-ref', title: source.kind === 'github' ? 'GitHub issue' : 'Linear issue' }, icon(source.kind, 'sm'), h('span', {}, item.ref)),
 		h('div', { class: 'in-main' },
@@ -3667,7 +4144,7 @@ function intakeRow(source, item, showSource) {
 			note ? h('div', { class: note.bad ? 'error' : 'muted', style: 'margin-top:4px;font-size:12px' }, note.text) : null
 		),
 		h('div', { class: 'in-end' },
-			item.updatedAt ? h('span', { class: 'mono subtle', title: `Updated ${clock(item.updatedAt)}` }, when(item.updatedAt)) : null,
+			item.updatedAt ? h('span', { class: 'mono subtle' }, when(item.updatedAt)) : null,
 			h('div', { class: 'row' }, act)
 		)
 	)
@@ -3704,6 +4181,9 @@ function drawIntake() {
 	}
 
 	const f = intake.filter
+	const intakeSig = `${intake.ver}|${boardVersion}|${f.source}|${f.show}|${f.label}|${f.state}|${f.assignee}|${f.query}|${intake.linearFormOpen ? 1 : 0}`
+	const cachedIntake = getCachedView('intake', intakeSig)
+	if (cachedIntake) return render(cachedIntake)
 	const activeSource = f.source ? v.sources.find((s) => s.id === f.source) || null : null
 	const shown = activeSource ? [activeSource] : v.sources
 	const allRows = v.sources.flatMap((s) => (intake.lists.get(s.id)?.items || []).map((item) => ({ source: s, item })))
@@ -3740,7 +4220,7 @@ function drawIntake() {
 	const gh = v.github || { ok: false, error: 'Not read yet' }
 	const linearOn = !!(v.linear && v.linear.connected)
 
-	render(h('div', { class: 'in-grid page-enter' },
+	const intakeRoot = h('div', { class: 'in-grid page-enter' },
 		h('aside', { class: 'in-sources' },
 			h('div', { class: 'in-sec-head' },
 				h('span', {}, 'Sources'),
@@ -3793,7 +4273,7 @@ function drawIntake() {
 				selectedCount ? h('div', { class: 'in-batch' },
 					h('span', { style: 'font-weight:500' }, `${count(selectedCount, 'issue')} selected`),
 					h('div', { class: 'row' },
-						h('button', { type: 'button', class: 'btn quiet sm', onclick: () => { intake.selected.clear(); drawIntake() } }, 'Clear'),
+						h('button', { type: 'button', class: 'btn quiet sm', onclick: () => { intake.selected.clear(); intake.ver++; drawIntake() } }, 'Clear'),
 						h('button', { type: 'button', class: 'btn primary sm', disabled: intake.batchBusy, onclick: () => startSelectedBatch(list) }, icon('play', 'sm'), intake.batchBusy ? 'Starting...' : `Start selected (${selectedCount})`)
 					)
 				) : null,
@@ -3816,7 +4296,9 @@ function drawIntake() {
 				!linearOn && intake.linearFormOpen ? linearConnectBox(() => { intake.linearFormOpen = false; drawIntake() }) : null
 			)
 		)
-	))
+	)
+	putCachedView('intake', intakeSig, intakeRoot)
+	render(intakeRoot)
 }
 
 // ---- Page: Settings (#/settings) ----
@@ -3936,7 +4418,7 @@ function settingsEditor(scope, layer, resolved, locked) {
 			for (const f of fields) f()
 			if (draft.stages && !Object.keys(draft.stages).length) delete draft.stages
 			await api('PUT', `/api/settings/${encodeURIComponent(scope)}`, draft)
-			settingsSeed = null; settingsSaved = scope; toast('Settings saved'); drawSettings()
+			settingsCache.dirty = true; settingsSeed = null; settingsSaved = scope; toast('Settings saved'); drawSettings({ force: true })
 		} catch (e) { error.textContent = e.message }
 	})
 	const part = (title, about, ...body) => h('div', { class: 'part' }, h('h3', {}, title), about ? h('p', {}, about) : null, ...body)
@@ -3971,7 +4453,7 @@ function projectSettings(scope, name, repo) {
 	const error = h('p', { class: 'error', style: 'margin-top:10px' })
 	const choose = async (store) => {
 		if (store === repo.store || (settingsDirty && !confirm('Discard unsaved changes?'))) return
-		try { await api('PUT', `/api/settings/${encodeURIComponent(scope)}`, { store }); settingsSeed = settingsSaved = null; toast('Updated settings location'); drawSettings() }
+		try { await api('PUT', `/api/settings/${encodeURIComponent(scope)}`, { store }); settingsCache.dirty = true; settingsSeed = settingsSaved = null; toast('Updated settings location'); drawSettings({ force: true }) }
 		catch (e) { error.textContent = e.message }
 	}
 	const option = (store, title, text) => h('button', { type: 'button', class: `opt${repo.store === store ? ' on' : ''}`, role: 'radio', 'aria-checked': repo.store === store ? 'true' : 'false', onclick: () => choose(store) }, h('i'), h('span', {}, h('strong', {}, title), h('span', {}, text)))
@@ -4001,12 +4483,53 @@ function projectSettings(scope, name, repo) {
 	]
 }
 
-async function drawSettings() {
-	drawBreadcrumb([])
-	let data, mcpInfo = null, webhookInfo = null
-	try { [data, mcpInfo, webhookInfo] = await Promise.all([api('GET', '/api/settings'), api('GET', '/api/mcp').catch(() => null), api('GET', '/api/webhook').catch(() => null)]) }
-	catch (e) { render(h('p', { class: 'error' }, e.message)); return }
-	if (route().page !== 'settings') return
+function fetchSettingsData({ force = false } = {}) {
+	if (!force && settingsInflight) return settingsInflight
+	let rawReqs
+	if (!force && window.__boot?.settings) {
+		const [p1, p2, p3] = window.__boot.settings
+		window.__boot.settings = null
+		rawReqs = [p1.then(readJsonResponse), p2.then(readJsonResponse).catch(() => null), p3.then(readJsonResponse).catch(() => null)]
+	} else {
+		rawReqs = [api('GET', '/api/settings'), api('GET', '/api/mcp').catch(() => null), api('GET', '/api/webhook').catch(() => null)]
+	}
+	const req = Promise.all(rawReqs).then(([data, mcpInfo, webhookInfo]) => {
+		settingsCache.data = data
+		settingsCache.mcpInfo = mcpInfo
+		settingsCache.webhookInfo = webhookInfo
+		settingsCache.dirty = false
+		settingsCache.at = Date.now()
+		writeSess('factory-cache-settings', { data, mcpInfo, webhookInfo })
+		return settingsCache
+	})
+	settingsInflight = req
+	req.then(
+		() => { if (settingsInflight === req) settingsInflight = null },
+		() => { if (settingsInflight === req) settingsInflight = null }
+	)
+	return req
+}
+
+function prefetchSettings() {
+	if ((settingsCache.data && !settingsCache.dirty) || settingsInflight) return
+	fetchSettingsData().catch(() => {})
+}
+
+function prefetchIntake() {
+	if (intake.view && !intake.view.error && Date.now() - intake.fetchedAt < INTAKE_TTL_MS) {
+		const now = Date.now()
+		for (const source of intake.view.sources) {
+			const st = intake.lists.get(source.id)
+			if (!st || (!st.loading && now - (st.readAt || 0) >= INTAKE_TTL_MS)) loadItems(source.id, false)
+		}
+		return
+	}
+	loadIntake(false)
+}
+
+function renderSettingsView() {
+	const { data, mcpInfo, webhookInfo } = settingsCache
+	if (!data || route().page !== 'settings') return
 	const projects = Object.entries(data.repos)
 	const validScopes = new Set(['appearance', 'integrations', 'global', ...projects.map(([r]) => `repo:${r}`)])
 	if (!validScopes.has(settingsScope)) settingsScope = 'global'
@@ -4017,9 +4540,9 @@ async function drawSettings() {
 
 	const pick = (k) => {
 		if (k === settingsScope || (settingsDirty && !confirm('Discard unsaved changes?'))) return
-		settingsScope = k; settingsSeed = settingsSaved = null; drawSettings()
+		settingsScope = k; settingsSeed = settingsSaved = null; renderSettingsView()
 	}
-	const navItem = (k, label, where) => h('button', { type: 'button', class: k === scope ? 'on' : '', onclick: () => pick(k) },
+	const navItem = (k, label, where) => h('button', { type: 'button', 'data-snav': k, class: k === scope ? 'on' : '', onclick: () => pick(k) },
 		h('span', { style: 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap' }, label),
 		where ? h('span', { class: 'where' }, where) : null
 	)
@@ -4040,14 +4563,14 @@ async function drawSettings() {
 					h('h3', {}, 'Theme'),
 					h('p', {}, 'Choose light, dark, or match your system appearance.'),
 					h('div', { class: 'seg', style: 'margin-top:12px' }, ...[['system', 'System'], ['light', 'Light'], ['dark', 'Dark']].map(([k, lbl]) =>
-						h('button', { type: 'button', class: themePref === k ? 'on' : '', onclick: () => { applyTheme(k); drawSettings() } }, lbl)
+						h('button', { type: 'button', class: themePref === k ? 'on' : '', onclick: () => { applyTheme(k); renderSettingsView() } }, lbl)
 					))
 				),
 				h('div', { class: 'part' },
 					h('h3', {}, 'Start page'),
 					h('p', {}, 'Which view opens when visiting the Factory root URL.'),
 					h('div', { class: 'seg', style: 'margin-top:12px' }, ...[['board', 'Board (Queue)'], ['dashboard', 'Dashboard']].map(([k, lbl]) =>
-						h('button', { type: 'button', class: startPagePref === k ? 'on' : '', onclick: () => { startPagePref = k; writeStore('factory-start-page', k); toast(`Start page set to ${lbl}`); drawSettings() } }, lbl)
+						h('button', { type: 'button', class: startPagePref === k ? 'on' : '', onclick: () => { startPagePref = k; writeStore('factory-start-page', k); toast(`Start page set to ${lbl}`); renderSettingsView() } }, lbl)
 					))
 				)
 			)
@@ -4083,6 +4606,15 @@ async function drawSettings() {
 		]
 	}
 
+	const existingPane = renderedSettingsShell ? main.querySelector('#settings-pane') : null
+	if (existingPane) {
+		for (const btn of main.querySelectorAll('.snav button[data-snav]')) {
+			btn.classList.toggle('on', btn.dataset.snav === scope)
+		}
+		fill(existingPane, rightPane)
+		return
+	}
+
 	render(h('div', { class: 'page-enter' },
 		h('div', { class: 'page-head' }, h('div', {}, h('h1', {}, 'Settings'), h('p', { class: 'sub' }, 'Configure models, review rules, merge behavior and appearance. A running issue keeps the settings it started with.'))),
 		h('div', { class: 'sgrid' },
@@ -4093,11 +4625,33 @@ async function drawSettings() {
 				h('div', { class: 'snav-h' }, projects.length ? 'Projects' : 'Projects appear once worked'),
 				...projects.map(([repo, r]) => navItem(`repo:${repo}`, repo, r.store === 'file' ? 'repo' : 'local'))
 			),
-			h('div', {}, rightPane),
+			h('div', { id: 'settings-pane' }, rightPane),
 			...['provider', 'model'].map((k) => h('datalist', { id: `seen-${k}` }, ...[...seen[k]].sort().map((v) => h('option', { value: v }))))
 		),
 		h('p', { class: 'foot' }, 'Anyone who can open this page can change settings, start threads and answer decisions. Keep the tailnet to people you trust.')
 	))
+	renderedSettingsShell = true
+}
+
+async function drawSettings({ force = false } = {}) {
+	drawBreadcrumb([])
+	if (settingsCache.data) {
+		if (force) renderedSettingsShell = false
+		renderSettingsView()
+		if (!settingsCache.dirty && !force) return
+		try {
+			await fetchSettingsData({ force: true })
+			if (route().page === 'settings' && !settingsDirty) {
+				renderedSettingsShell = false
+				renderSettingsView()
+			}
+		} catch {}
+		return
+	}
+	try { await fetchSettingsData({ force }) }
+	catch (e) { if (route().page === 'settings') render(h('p', { class: 'error' }, e.message)); return }
+	if (route().page !== 'settings') return
+	renderSettingsView()
 }
 
 // ---- New Issue Sheet (accessible from anywhere via + New issue, `n`, ⌘K, or #/new) ----
@@ -4177,7 +4731,7 @@ async function buildNewIssueForm(onDone) {
 
 async function openNewSheet() {
 	if (!newSheet.el) {
-		newSheet.el = h('dialog', { class: 'sheet no-foot', 'aria-label': 'New issue', onclick: (e) => { if (e.target === newSheet.el) newSheet.el.close() }, onclose: () => newSheet.el.replaceChildren() })
+		newSheet.el = h('dialog', { class: 'sheet no-foot', 'aria-label': 'New issue', onclick: (e) => { if (e.target === newSheet.el) newSheet.el.close() }, tabindex: '-1', onclose: () => emptyAfterClose(newSheet.el) })
 		document.body.append(newSheet.el)
 	}
 	const form = await buildNewIssueForm(() => newSheet.el.close())
@@ -4188,7 +4742,7 @@ async function openNewSheet() {
 		),
 		h('div', { class: 'sheet-body' }, form)
 	)
-	newSheet.el.showModal()
+	showSheet(newSheet.el)
 }
 
 async function drawNew() {
@@ -4350,24 +4904,81 @@ function notifyHostState() {
 	})
 }
 
+let lastBoardJson = ''
 async function refreshBoard() {
-	try { board = await api('GET', '/api/board'); loaded = true } catch { return }
-	drawSidebar()
-	notifyHostState()
+	let next
+	try {
+		if (window.__boot?.board) {
+			const p = window.__boot.board
+			window.__boot.board = null
+			next = await p.then(readJsonResponse)
+		} else {
+			next = await api('GET', '/api/board')
+		}
+	} catch { return false }
+	const nextJson = JSON.stringify(next)
+	const changed = !loaded || nextJson !== lastBoardJson
+	board = next
+	lastBoardJson = nextJson
+	loaded = true
+	writeSess('factory-cache-board', board)
+	if (changed) {
+		boardVersion++
+		drawSidebar()
+		notifyHostState()
+	}
+	return changed
 }
 
 async function draw() {
-	currentIssueData = null
-	drawSidebar()
-	notifyHostState()
 	const { page, id, tab } = route()
+	const sameIssue = page === 'issue' && id && renderedIssueShellId === id
+	if (page !== 'issue' || !id) currentIssueData = null
+	if (!sameIssue) drawSidebar()
+	notifyHostState()
 	if (page === 'dashboard') return drawDashboard()
 	if (page === 'issue' && id) { await drawIssue(id, tab); notifyHostState(); return }
 	if (page === 'settings') return drawSettings()
 	if (page === 'new') return drawNew()
-	if (page === 'intake') { drawIntake(); return loadIntake(true) }
+	if (page === 'intake') {
+		if (intake.view && !intake.view.error && Date.now() - intake.fetchedAt < INTAKE_TTL_MS) {
+			syncIntakeFromBoard()
+			drawIntake()
+			const now = Date.now()
+			for (const source of intake.view.sources) {
+				const st = intake.lists.get(source.id)
+				if (!st || (!st.loading && now - (st.readAt || 0) >= INTAKE_TTL_MS)) loadItems(source.id, false)
+			}
+			return
+		}
+		drawIntake()
+		return loadIntake(false)
+	}
 	if (page === 'done') return drawDone()
 	drawBoard()
+}
+
+function invalidateAllCaches() {
+	historyCache.clear()
+	viewCache.clear()
+	for (const entry of issueCache.values()) entry.dirty = true
+	settingsCache.dirty = true
+}
+
+function invalidateForEvent(ev) {
+	if (!ev || ev.issue === null || ev.issue === undefined) {
+		ssePendingGlobal = true
+		if (!ev || ev.kind === 'settings' || ev.kind === 'webhook' || ev.kind === 'global') settingsCache.dirty = true
+		if (!ev || ev.kind === 'intake') intake.fetchedAt = 0
+		if (!ev || ev.kind === 'global') {
+			for (const entry of issueCache.values()) entry.dirty = true
+			historyCache.clear()
+		}
+		return
+	}
+	ssePendingIssues.add(ev.issue)
+	markIssueDirty(ev.issue)
+	if (ev.kind === 'closed') historyCache.clear()
 }
 
 function syncIntakeFromBoard() {
@@ -4375,14 +4986,16 @@ function syncIntakeFromBoard() {
 	const byKey = new Map()
 	for (const i of board.done) if (i.source) byKey.set(`${i.repo}\n${i.source}`, { id: i.id, state: i.state, outcome: i.outcome, threadLink: i.threadLink, closedAt: i.closedAt })
 	for (const i of board.issues) if (i.source) byKey.set(`${i.repo}\n${i.source}`, { id: i.id, state: i.state, outcome: i.outcome, threadLink: i.threadLink, closedAt: i.closedAt })
+	let changed = false
 	for (const s of intake.view.sources) {
 		const st = intake.lists.get(s.id)
 		if (!st) continue
 		for (const item of st.items) {
 			const match = byKey.get(`${s.repo}\n${item.url}`)
-			if (match) item.factory = match
+			if (match) { item.factory = match; changed = true }
 		}
 	}
+	if (changed) intake.ver++
 }
 
 let sseTimer
@@ -4396,12 +5009,16 @@ async function flushLiveUpdate(forceAll = false) {
 	const hadGlobal = ssePendingGlobal || forceAll
 	ssePendingIssues.clear()
 	ssePendingGlobal = false
+	if (forceAll) invalidateAllCaches()
 	await refreshBoard()
-	const { page, id } = route()
+	const { page, id, tab } = route()
 	if (page === 'board' || page === 'dashboard' || page === 'done') return draw()
-	if (page === 'issue' && (hadGlobal || changedIssues.has(id))) return draw()
+	if (page === 'issue' && (hadGlobal || changedIssues.has(id))) {
+		markIssueDirty(id)
+		return drawIssue(id, tab, { force: true })
+	}
 	if (page === 'intake') { syncIntakeFromBoard(); return drawIntake() }
-	if (page === 'settings' && hadGlobal && !settingsDirty) return draw()
+	if (page === 'settings' && hadGlobal && !settingsDirty) return drawSettings({ force: true })
 }
 
 function connectLongPoll() {
@@ -4418,14 +5035,9 @@ function connectLongPoll() {
 			if (!initialized) {
 				initialized = true
 			} else if (res.reset || wasDown) {
-				historyCache.clear()
 				await flushLiveUpdate(true)
 			} else if (res.events && res.events.length) {
-				for (const ev of res.events) {
-					if (ev.issue === null || ev.issue === undefined) ssePendingGlobal = true
-					else ssePendingIssues.add(ev.issue)
-				}
-				historyCache.clear()
+				for (const ev of res.events) invalidateForEvent(ev)
 				await flushLiveUpdate(false)
 			}
 			setTimeout(step, 50)
@@ -4445,7 +5057,6 @@ function connect() {
 	source.onopen = () => {
 		set(true)
 		if (sseOpenedOnce && sseDisconnected) {
-			historyCache.clear()
 			flushLiveUpdate(true)
 		}
 		sseOpenedOnce = true
@@ -4458,9 +5069,7 @@ function connect() {
 	source.addEventListener('change', (e) => {
 		let data = {}
 		try { data = JSON.parse(e.data) } catch {}
-		if (data.issue === null || data.issue === undefined) ssePendingGlobal = true
-		else ssePendingIssues.add(data.issue)
-		historyCache.clear()
+		invalidateForEvent(data)
 		clearTimeout(sseTimer)
 		sseTimer = setTimeout(() => flushLiveUpdate(false), 150)
 	})
@@ -4469,7 +5078,7 @@ function connect() {
 const overviewSheet = { el: null }
 function openOverviewSheet(url) {
 	if (!overviewSheet.el) {
-		overviewSheet.el = h('dialog', { class: 'sheet no-foot', style: 'width:min(1040px,96vw)', 'aria-label': 'PR Overview', onclick: (e) => { if (e.target === overviewSheet.el) overviewSheet.el.close() }, onclose: () => overviewSheet.el.replaceChildren() })
+		overviewSheet.el = h('dialog', { class: 'sheet no-foot', style: 'width:min(1040px,96vw)', 'aria-label': 'PR Overview', onclick: (e) => { if (e.target === overviewSheet.el) overviewSheet.el.close() }, tabindex: '-1', onclose: () => emptyAfterClose(overviewSheet.el) })
 		document.body.append(overviewSheet.el)
 	}
 	fill(overviewSheet.el,
@@ -4479,7 +5088,7 @@ function openOverviewSheet(url) {
 		),
 		h('iframe', { src: url, style: 'width:100%;flex:1;border:0;min-height:70vh;background:#fff' })
 	)
-	overviewSheet.el.showModal()
+	showSheet(overviewSheet.el)
 }
 
 if (EMBED) {
@@ -4488,7 +5097,9 @@ if (EMBED) {
 		if (!msg || typeof msg !== 'object') return
 		if (msg.type === 'factory:navigate' && typeof msg.hash === 'string') {
 			const target = msg.hash.startsWith('#') ? msg.hash : `#${msg.hash}`
-			if ((location.hash || '#/') !== target) location.hash = target
+			if ((location.hash || '#/') !== target) navigateHash(target)
+		} else if (msg.type === 'factory:prefetch' && typeof msg.hash === 'string') {
+			prefetchHref(msg.hash.startsWith('#') ? msg.hash : `#${msg.hash}`)
 		} else if (msg.type === 'factory:theme' && (msg.theme === 'light' || msg.theme === 'dark' || msg.theme === 'system')) {
 			applyTheme(msg.theme, false)
 		} else if (msg.type === 'factory:scope' && typeof msg.repo === 'string') {
@@ -4542,11 +5153,11 @@ window.addEventListener('keydown', (e) => {
 	if (chord === 'g') {
 		clearTimeout(chordTimer); chord = null
 		const k = e.key.toLowerCase()
-		if (k === 'd') { e.preventDefault(); location.hash = '#/dashboard'; return }
-		if (k === 'b') { e.preventDefault(); location.hash = '#/'; return }
-		if (k === 'i') { e.preventDefault(); location.hash = '#/intake'; return }
-		if (k === 'o') { e.preventDefault(); location.hash = '#/done'; return }
-		if (k === 's') { e.preventDefault(); location.hash = '#/settings'; return }
+		if (k === 'd') { e.preventDefault(); navigateHash('#/dashboard'); return }
+		if (k === 'b') { e.preventDefault(); navigateHash('#/'); return }
+		if (k === 'i') { e.preventDefault(); navigateHash('#/intake'); return }
+		if (k === 'o') { e.preventDefault(); navigateHash('#/done'); return }
+		if (k === 's') { e.preventDefault(); navigateHash('#/settings'); return }
 	}
 	if (e.key === 'g') {
 		chord = 'g'
@@ -4584,13 +5195,139 @@ document.getElementById('cmd-btn').addEventListener('click', openCmdPalette)
 document.getElementById('new-btn').append(icon('plus', 'sm'), 'New issue')
 document.getElementById('new-btn').addEventListener('click', openNewSheet)
 
-window.addEventListener('hashchange', () => { justSubmitted = null; window.scrollTo(0, 0); draw() })
+let prevRouteKey = ''
+function onRouteChange() {
+	justSubmitted = null
+	const r = route()
+	const key = `${r.page}:${r.id || ''}`
+	if (key !== prevRouteKey) {
+		prevRouteKey = key
+		if (window.scrollY > 0) window.scrollTo(0, 0)
+	}
+	draw()
+}
+function navigateHash(href) {
+	const target = href.startsWith('#') ? href : `#${href}`
+	if ((location.hash || '#/') === target) return
+	try {
+		history.pushState(null, '', location.pathname + location.search + target)
+	} catch {
+		location.hash = target
+		return
+	}
+	onRouteChange()
+}
+window.addEventListener('hashchange', onRouteChange)
+document.addEventListener('click', (e) => {
+	if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+	const a = e.target?.closest?.('a[href^="#/"]')
+	if (!a || a.target) return
+	const href = a.getAttribute('href')
+	if (!href) return
+	e.preventDefault()
+	navigateHash(href)
+})
+
+// Predictive prefetch on hover, pointerdown, and keyboard focus.
+function prefetchHref(href) {
+	if (!href || !href.startsWith('#')) return
+	if (href.startsWith('#/issue/')) {
+		const raw = href.slice('#/issue/'.length).split('/')[0]
+		if (raw) {
+			try { prefetchIssue(decodeURIComponent(raw)) } catch {}
+		}
+	} else if (href === '#/settings') {
+		prefetchSettings()
+	} else if (href === '#/intake') {
+		prefetchIntake()
+	}
+}
+const onPrefetchTarget = (e) => {
+	const a = e.target?.closest?.('a[href^="#/"]')
+	if (a) prefetchHref(a.getAttribute('href'))
+}
+document.addEventListener('mouseover', onPrefetchTarget, { passive: true })
+document.addEventListener('pointerdown', onPrefetchTarget, { passive: true })
+document.addEventListener('focusin', onPrefetchTarget, { passive: true })
+
+const onTimeTip = (e) => {
+	const t = e.target?.closest?.('time[data-at]')
+	if (t && !t.title) t.title = clock(Number(t.dataset.at))
+}
+document.addEventListener('mouseover', onTimeTip, { passive: true })
+document.addEventListener('focusin', onTimeTip, { passive: true })
+
+// Hydrate Board, Settings, and Intake from sessionStorage so F5 reloads and iframe remounts paint on frame 1.
+function hydrateSessionCaches() {
+	const bc = readSess('factory-cache-board')
+	if (bc?.value?.issues) {
+		board = bc.value
+		lastBoardJson = JSON.stringify(board)
+		loaded = true
+		boardVersion++
+	}
+	const sc = readSess('factory-cache-settings')
+	if (sc?.value?.data) {
+		settingsCache.data = sc.value.data
+		settingsCache.mcpInfo = sc.value.mcpInfo ?? null
+		settingsCache.webhookInfo = sc.value.webhookInfo ?? null
+		settingsCache.at = sc.at
+		settingsCache.dirty = Date.now() - sc.at > 30_000
+	}
+	const ic = readSess('factory-cache-intake')
+	if (ic?.value?.view) {
+		intake.view = ic.value.view
+		intake.fetchedAt = ic.value.fetchedAt || ic.at
+		for (const [id, st] of Object.entries(ic.value.lists || {})) {
+			intake.lists.set(id, { loading: false, error: null, items: st.items || [], readAt: st.readAt || ic.at })
+		}
+		intake.ver++
+	}
+}
+hydrateSessionCaches()
+
+// Background warm-up after first paint in two phases: priority issues + Settings + Intake first,
+// then remaining open issues staggered after initial user navigation settles.
+let warmedOnce = false
+function warmApp() {
+	if (warmedOnce || navigator.connection?.saveData) return
+	warmedOnce = true
+	const openIds = [
+		...board.issues.filter((i) => i.needsYou),
+		...board.issues.filter((i) => !i.needsYou)
+	].slice(0, 16).map((i) => i.id)
+	const runPhase1 = () => {
+		prefetchSettings()
+		prefetchIntake()
+		prefetchIssuesBatch(openIds.slice(0, 4))
+		if (openIds.length > 4) {
+			setTimeout(() => {
+				if (typeof requestIdleCallback === 'function') requestIdleCallback(() => prefetchIssuesBatch(openIds.slice(4)), { timeout: 400 })
+				else prefetchIssuesBatch(openIds.slice(4))
+			}, 450)
+		}
+	}
+	if (typeof requestIdleCallback === 'function') requestIdleCallback(runPhase1, { timeout: 150 })
+	else setTimeout(runPhase1, 40)
+}
 
 // Apply start page preference on initial bare load
 if (!location.hash && startPagePref === 'dashboard') {
 	location.replace('#/dashboard')
 }
-refreshBoard().then(draw)
+if (loaded) {
+	syncIntakeFromBoard()
+	draw()
+	requestAnimationFrame(warmApp)
+	refreshBoard().then((changed) => {
+		if (changed) {
+			syncIntakeFromBoard()
+			draw()
+		}
+	})
+} else {
+	refreshBoard().then(() => draw()).then(() => requestAnimationFrame(warmApp))
+}
 connect()
 </script>
 </body>

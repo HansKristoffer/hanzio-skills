@@ -133,6 +133,12 @@ test("the page sees the store, the file and this machine's settings as a file to
 	expect(api.file).toEqual({ planApproval: 'always' })
 	expect(api.resolved.sources.planApproval).toBe('default')
 	expect(api.resolved.sources.reviewRounds).toBe('repo')
+
+	// Updating origin/main and fetching invalidates the git config stat cache immediately.
+	pushFile(repo.other, 'factory.config.yaml', 'planApproval: never\n')
+	git(repo.work, 'fetch', '--quiet', 'origin', 'main')
+	api = (await h.call('GET', '/api/settings')).body.repos['acme/api']
+	expect(api.file).toEqual({ planApproval: 'never' })
 })
 
 test('the example in references/config.md is valid', () => {

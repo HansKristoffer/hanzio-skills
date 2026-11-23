@@ -38,7 +38,7 @@ import {
 	type Preview,
 	type PreviewUrl
 } from './evidence.ts'
-import { defaultRef, fetchDefault, freeBranch, readConfig, repoInfo, slugify, type ConfigRead } from './git.ts'
+import { defaultRef, fetchDefault, freeBranch, readConfig, readConfigSnapshotAsync, repoInfo, slugify, type ConfigRead } from './git.ts'
 import {
 	STAGES,
 	defaults,
@@ -62,6 +62,7 @@ import {
 	listItems,
 	parseSource,
 	readItem,
+	type IntakeItem,
 	type IntakeSource,
 	type ItemComment
 } from './intake.ts'
@@ -229,6 +230,32 @@ export function startServer(options: ServerOptions) {
 	const version = appVersion()
 	const page = readFileSync(join(APP_DIR, 'page.html'), 'utf8')
 	const encoder = new TextEncoder()
+	const pageGzip = Bun.gzipSync(encoder.encode(page), { level: 9 })
+	const pageEtag = `W/"${version}"`
+	const acceptsGzip = (req: Request) => /\bgzip\b/i.test(req.headers.get('accept-encoding') ?? '')
+	const jsonResponse = (req: Request, value: unknown, status = 200) => {
+		const raw = JSON.stringify(value)
+		if (raw.length >= 1024 && acceptsGzip(req)) {
+			return new Response(Bun.gzipSync(encoder.encode(raw), { level: raw.length >= 8192 ? 4 : 1 }), {
+				status,
+				headers: { 'content-type': 'application/json; charset=utf-8', 'content-encoding': 'gzip', vary: 'accept-encoding' }
+			})
+		}
+		return new Response(raw, { status, headers: { 'content-type': 'application/json; charset=utf-8' } })
+	}
+	const groupBy = <T>(rows: T[], keyOf: (row: T) => string) => {
+		const map = new Map<string, T[]>()
+		for (const row of rows) {
+			const key = keyOf(row)
+			let list = map.get(key)
+			if (!list) {
+				list = []
+				map.set(key, list)
+			}
+			list.push(row)
+		}
+		return map
+	}
 	const clients = new Set<ReadableStreamDefaultController<Uint8Array>>()
 	/** Each MCP call that waits for a change, woken by `emit`. */
 	const waiters = new Set<(issue: string | null) => void>()
@@ -291,10 +318,8 @@ export function startServer(options: ServerOptions) {
 	}
 
 	/** The newest run that still runs, else the newest run: a fix run that ended inside land shows land again. */
-	const stageOf = (id: string): Stage => {
-		const runs = runsOf(id)
-		return (runs.filter((r) => r.state === 'running').at(-1) ?? runs.at(-1))?.stage ?? 'research'
-	}
+	const stageFrom = (runs: RunRow[]): Stage => (runs.filter((r) => r.state === 'running').at(-1) ?? runs.at(-1))?.stage ?? 'research'
+	const stageOf = (id: string): Stage => stageFrom(runsOf(id))
 	const isOpenDecision = (d: DecisionRow) => d.answer === null && d.superseded_by === null
 	const waits = (d: DecisionRow) => isOpenDecision(d) || (d.answered_via === 'page' && d.delivery !== 'sent')
 	const gone = (issue: IssueRow) => issue.thread_missing >= MISSING_LIMIT
@@ -302,12 +327,9 @@ export function startServer(options: ServerOptions) {
 		db.query('select * from sends where issue_id = $id and arrived_at is null order by id').all({ id }) as SendRow[]
 	/** A message the service gave the thread that T3 Code has held for longer than a free thread would. */
 	const undelivered = (id: string) => openSends(id).some((row) => row.flagged_at !== null)
-	const needsYou = (issue: IssueRow) =>
-		decisionsOf(issue.id).some(waits) ||
-		issue.nudges >= MAX_NUDGES ||
-		gone(issue) ||
-		issue.pr_pokes >= MAX_POKES ||
-		undelivered(issue.id)
+	const needsYouFrom = (issue: IssueRow, decisions: DecisionRow[], isUndelivered: boolean) =>
+		decisions.some(waits) || issue.nudges >= MAX_NUDGES || gone(issue) || issue.pr_pokes >= MAX_POKES || isUndelivered
+	const needsYou = (issue: IssueRow) => needsYouFrom(issue, decisionsOf(issue.id), undelivered(issue.id))
 	const blockingOpen = (id: string) => decisionsOf(id).some((d) => isOpenDecision(d) && !d.provisional)
 
 	const base = () => `http://${tailnet?.name ?? tailnet?.ip ?? '127.0.0.1'}:${options.port}`
@@ -335,23 +357,28 @@ export function startServer(options: ServerOptions) {
 	const isOpenFinding = (f: FindingRow) => f.outcome === null || f.outcome === 'upheld'
 
 	/** The `result` of the newest run of a stage that ended done with outcome `done`. */
-	function latestResult(issueId: string, stage: Stage, subject: 'plan' | 'pr' | null = null) {
-		const runs = runsOf(issueId).filter((r) => r.stage === stage && r.subject === subject && r.state === 'done' && r.result)
-		for (const run of runs.reverse()) {
-			const parsed = JSON.parse(run.result!) as { outcome: string; result?: Record<string, any> }
+	function latestResultFrom(runs: RunRow[], stage: Stage, subject: 'plan' | 'pr' | null = null) {
+		for (let i = runs.length - 1; i >= 0; i--) {
+			const run = runs[i]!
+			if (run.stage !== stage || run.subject !== subject || run.state !== 'done' || !run.result) continue
+			const parsed = JSON.parse(run.result) as { outcome: string; result?: Record<string, any> }
 			if (parsed.outcome === 'done' && parsed.result) return { run, result: parsed.result }
 		}
 		return null
 	}
+	function latestResult(issueId: string, stage: Stage, subject: 'plan' | 'pr' | null = null) {
+		return latestResultFrom(runsOf(issueId), stage, subject)
+	}
 
 	/** The risk of the PR as a whole. A later review reads only the new commits, so its verdict alone understates
 	 * the change: a one-way door and the widest reach of any round stand, and every round's focus is kept. */
-	function prRisk(issueId: string) {
-		const rounds = runsOf(issueId).flatMap((r) => {
-			if (r.stage !== 'review' || r.subject !== 'pr' || r.state !== 'done' || !r.result) return []
+	function prRiskFrom(runs: RunRow[]) {
+		const rounds: Risk[] = []
+		for (const r of runs) {
+			if (r.stage !== 'review' || r.subject !== 'pr' || r.state !== 'done' || !r.result) continue
 			const parsed = JSON.parse(r.result) as { outcome: string; result?: { risk?: Risk } }
-			return parsed.outcome === 'done' && parsed.result?.risk ? [parsed.result.risk] : []
-		})
+			if (parsed.outcome === 'done' && parsed.result?.risk) rounds.push(parsed.result.risk)
+		}
 		if (!rounds.length) return null
 		const all = (key: 'focus' | 'unrelated') => [...new Set(rounds.flatMap((r) => r[key] ?? []))]
 		return {
@@ -361,6 +388,7 @@ export function startServer(options: ServerOptions) {
 			unrelated: all('unrelated')
 		}
 	}
+	const prRisk = (issueId: string) => prRiskFrom(runsOf(issueId))
 
 	// ---- evidence and the dev environment ----
 
@@ -521,32 +549,49 @@ export function startServer(options: ServerOptions) {
 		supersededBy: d.superseded_by
 	})
 
-	const publicIssue = (i: IssueRow) => ({
-		id: i.id,
-		title: i.title,
-		kind: i.kind,
-		repo: i.repo,
-		source: i.source,
-		threadLink: i.thread_link,
-		state: i.state,
-		stage: stageOf(i.id),
-		outcome: i.outcome,
-		deploy: i.deploy,
-		summary: i.summary,
-		prUrl: i.pr_url,
-		/** How large the change is: the lines its PR adds and deletes. null until the PR is read. */
-		size: (i.pr_state ? (JSON.parse(i.pr_state) as PrState).size : null) ?? null,
-		takenPr: i.pr_taken ? (JSON.parse(i.pr_taken) as TakenPr) : null,
-		autoShip: !!i.auto_ship,
-		configError: i.config_error,
-		needsYou: i.state === 'open' && needsYou(i),
-		stuck: i.nudges >= MAX_NUDGES || i.pr_pokes >= MAX_POKES,
-		undelivered: undelivered(i.id),
-		threadGone: gone(i),
-		createdAt: i.created_at,
-		updatedAt: i.updated_at,
-		closedAt: i.closed_at
-	})
+	type IssueViewCtx = {
+		runs?: RunRow[]
+		decisions?: DecisionRow[]
+		findings?: FindingRow[]
+		pr?: PrState | null
+		undelivered?: boolean
+		lastEvent?: EventRow | null
+		captures?: number
+		settings?: Settings
+	}
+
+	const publicIssue = (i: IssueRow, ctx: IssueViewCtx = {}) => {
+		const runs = ctx.runs ?? runsOf(i.id)
+		const decisions = ctx.decisions ?? decisionsOf(i.id)
+		const isUndelivered = ctx.undelivered ?? undelivered(i.id)
+		const pr = ctx.pr !== undefined ? ctx.pr : i.pr_state ? (JSON.parse(i.pr_state) as PrState) : null
+		return {
+			id: i.id,
+			title: i.title,
+			kind: i.kind,
+			repo: i.repo,
+			source: i.source,
+			threadLink: i.thread_link,
+			state: i.state,
+			stage: stageFrom(runs),
+			outcome: i.outcome,
+			deploy: i.deploy,
+			summary: i.summary,
+			prUrl: i.pr_url,
+			/** How large the change is: the lines its PR adds and deletes. null until the PR is read. */
+			size: pr?.size ?? null,
+			takenPr: i.pr_taken ? (JSON.parse(i.pr_taken) as TakenPr) : null,
+			autoShip: !!i.auto_ship,
+			configError: i.config_error,
+			needsYou: i.state === 'open' && needsYouFrom(i, decisions, isUndelivered),
+			stuck: i.nudges >= MAX_NUDGES || i.pr_pokes >= MAX_POKES,
+			undelivered: isUndelivered,
+			threadGone: gone(i),
+			createdAt: i.created_at,
+			updatedAt: i.updated_at,
+			closedAt: i.closed_at
+		}
+	}
 
 	const derivedFor = (
 		i: IssueRow,
@@ -554,14 +599,15 @@ export function startServer(options: ServerOptions) {
 		decisions = decisionsOf(i.id),
 		findings = findingsOf(i.id),
 		pr: PrState | null = i.pr_state ? (JSON.parse(i.pr_state) as PrState) : null,
-		waiting = waitingOf(i)
+		waiting = waitingOf(i, pr),
+		isUndelivered = undelivered(i.id)
 	) =>
 		deriveStatus({
 			state: i.state,
 			outcome: i.outcome,
-			stage: (runs.filter((r) => r.state === 'running').at(-1) ?? runs.at(-1))?.stage ?? 'research',
+			stage: stageFrom(runs),
 			threadGone: gone(i),
-			undelivered: undelivered(i.id),
+			undelivered: isUndelivered,
 			stuck: i.nudges >= MAX_NUDGES || i.pr_pokes >= MAX_POKES,
 			decisions,
 			waiting,
@@ -570,28 +616,29 @@ export function startServer(options: ServerOptions) {
 			prChecks: pr?.checks.state ?? null
 		})
 
-	const boardItem = (i: IssueRow) => {
-		const runs = runsOf(i.id)
+	const boardItem = (i: IssueRow, ctx: IssueViewCtx = {}) => {
+		const runs = ctx.runs ?? runsOf(i.id)
 		const running = runs.filter((r) => r.state === 'running').at(-1)
-		const pr = i.pr_state ? (JSON.parse(i.pr_state) as PrState) : null
-		const decisions = decisionsOf(i.id)
-		const findings = findingsOf(i.id)
+		const pr = ctx.pr !== undefined ? ctx.pr : i.pr_state ? (JSON.parse(i.pr_state) as PrState) : null
+		const decisions = ctx.decisions ?? decisionsOf(i.id)
+		const findings = ctx.findings ?? findingsOf(i.id)
+		const isUndelivered = ctx.undelivered ?? undelivered(i.id)
 		const prFindings = findings.filter((f) => f.severity !== 'pre-existing')
-		const waiting = waitingOf(i)
-		const last = lastEvent(i.id)
+		const waiting = waitingOf(i, pr)
+		const last = ctx.lastEvent !== undefined ? ctx.lastEvent : lastEvent(i.id)
 		const latestByStage = new Map<string, RunRow>()
 		for (const r of runs) latestByStage.set(r.stage, r)
 		return {
-			...publicIssue(i),
-			derived: derivedFor(i, runs, decisions, findings, pr, waiting),
-			asked: (latestResult(i.id, 'research')?.result.asked as string | undefined) ?? null,
-			planned: (latestResult(i.id, 'plan')?.result.planned as string | undefined) ?? null,
-			built: (latestResult(i.id, 'implement')?.result.built as string | undefined) ?? null,
+			...publicIssue(i, { runs, decisions, pr, undelivered: isUndelivered }),
+			derived: derivedFor(i, runs, decisions, findings, pr, waiting, isUndelivered),
+			asked: (latestResultFrom(runs, 'research')?.result.asked as string | undefined) ?? null,
+			planned: (latestResultFrom(runs, 'plan')?.result.planned as string | undefined) ?? null,
+			built: (latestResultFrom(runs, 'implement')?.result.built as string | undefined) ?? null,
 			prChecks: pr?.checks.state ?? null,
 			prDraft: pr?.draft ?? null,
 			prApproved: pr?.approvedBy.length ?? 0,
 			prChangesRequested: pr?.changesRequestedBy.length ?? 0,
-			reviewRisk: prRisk(i.id),
+			reviewRisk: prRiskFrom(runs),
 			findings: {
 				total: prFindings.length,
 				open: prFindings.filter(isOpenFinding).length,
@@ -600,7 +647,7 @@ export function startServer(options: ServerOptions) {
 			lastEvent: last ? publicEvent(last) : null,
 			decisions: decisions.filter(waits).map(publicDecision),
 			waiting,
-			captures: evidenceRows(i.id).length,
+			captures: ctx.captures ?? evidenceRows(i.id).length,
 			preview: previewOf(i)?.state ?? null,
 			/** The stages that have had a run, so the page can tell a skipped stage from a finished one. */
 			ran: [...new Set(runs.map((r) => r.stage))],
@@ -609,13 +656,13 @@ export function startServer(options: ServerOptions) {
 		}
 	}
 
-	function waitingOf(i: IssueRow) {
+	function waitingOf(i: IssueRow, parsedPr?: PrState | null, parsedSettings?: Settings) {
 		if (i.wake_at && !i.waiting_on) {
 			return { on: 'limit' as const, note: i.limit_note, since: i.waiting_since, until: i.wake_at, who: [], overdue: false, safetyNet: 'on' }
 		}
 		if (!i.waiting_on || !i.waiting_since) return null
-		const hours = parseResolved(i).settings.reviewOverdueHours
-		const pr = i.pr_state ? (JSON.parse(i.pr_state) as PrState) : null
+		const hours = (parsedSettings ?? parseResolved(i).settings).reviewOverdueHours
+		const pr = parsedPr !== undefined ? parsedPr : i.pr_state ? (JSON.parse(i.pr_state) as PrState) : null
 		const who =
 			i.waiting_on === 'review' && pr
 				? [...new Set([...pr.requested, ...pr.changesRequestedBy])].map((l) => `@${l}`)
@@ -636,10 +683,33 @@ export function startServer(options: ServerOptions) {
 
 	function liveCounts() {
 		const open = db.query(`select * from issues where state = 'open'`).all() as IssueRow[]
+		if (!open.length) return { open: 0, needsYou: 0, needsByRepo: {} as Record<string, number> }
+		const waitingIds = new Set(
+			(
+				db
+					.query(
+						`select distinct d.issue_id from decisions d join issues i on i.id = d.issue_id
+						where i.state = 'open' and ((d.answer is null and d.superseded_by is null) or (d.answered_via = 'page' and d.delivery != 'sent'))`
+					)
+					.all() as { issue_id: string }[]
+			).map((r) => r.issue_id)
+		)
+		const flaggedIds = new Set(
+			(
+				db
+					.query(
+						`select distinct s.issue_id from sends s join issues i on i.id = s.issue_id
+						where i.state = 'open' and s.arrived_at is null and s.flagged_at is not null`
+					)
+					.all() as { issue_id: string }[]
+			).map((r) => r.issue_id)
+		)
 		const needsByRepo: Record<string, number> = {}
 		let needs = 0
 		for (const i of open) {
-			if (!needsYou(i)) continue
+			const isWaiting =
+				waitingIds.has(i.id) || i.nudges >= MAX_NUDGES || gone(i) || i.pr_pokes >= MAX_POKES || flaggedIds.has(i.id)
+			if (!isWaiting) continue
 			needs++
 			needsByRepo[i.repo] = (needsByRepo[i.repo] ?? 0) + 1
 		}
@@ -956,37 +1026,60 @@ export function startServer(options: ServerOptions) {
 		})
 	}
 
-	function issueStatus(issue: IssueRow, { compact = false } = {}) {
-		const decisions = decisionsOf(issue.id)
-		const runs = runsOf(issue.id)
+	function issueStatus(
+		issue: IssueRow,
+		{
+			compact = false,
+			runs = runsOf(issue.id),
+			decisions = decisionsOf(issue.id),
+			findings = findingsOf(issue.id),
+			items = loadItems(issue.id),
+			round = latestRound(issue.id),
+			pr = issue.pr_state ? (JSON.parse(issue.pr_state) as PrState) : null,
+			settings = parseResolved(issue).settings,
+			isUndelivered = undelivered(issue.id),
+			evRows = evidenceRows(issue.id)
+		}: {
+			compact?: boolean
+			runs?: RunRow[]
+			decisions?: DecisionRow[]
+			findings?: FindingRow[]
+			items?: ReturnType<typeof loadItems>
+			round?: RoundRow | null
+			pr?: PrState | null
+			settings?: Settings
+			isUndelivered?: boolean
+			evRows?: EvidenceRow[]
+		} = {}
+	) {
+		const risk = prRiskFrom(runs)
+		const base = repoWebBase(issue.pr_url)
+		const evidence = evRows.map((row) => publicEvidence(row, folderOf(issue.id), base))
 		return {
-			issue: publicIssue(issue),
+			issue: publicIssue(issue, { runs, decisions, pr, undelivered: isUndelivered }),
 			url: pageUrl(issue.id),
-			stage: stageOf(issue.id),
+			stage: stageFrom(runs),
 			runs: compact ? compactRuns(runs) : runs.map(publicRun),
 			decisions: decisions.map(publicDecision),
 			mergeHeld: decisions.some(isOpenDecision),
 			autoShip: !!issue.auto_ship,
-			settings: parseResolved(issue).settings,
-			findings: findingsOf(issue.id).map(publicFinding),
-			reviewRisk: prRisk(issue.id),
-			evidence: evidenceOf(issue.id),
+			settings,
+			findings: findings.map(publicFinding),
+			reviewRisk: risk,
+			evidence,
 			preview: previewOf(issue),
 			overview: overviewOf(issue),
-			warnings: warningsOf(issue),
-			pr: issue.pr_state ? JSON.parse(issue.pr_state) : null,
-			gate: gateOf(issue),
-			waiting: waitingOf(issue),
-			round: (() => {
-				const r = latestRound(issue.id)
-				return r ? publicRound(r) : null
-			})(),
-			merge: effectiveMerge(issue)
+			warnings: warningsOf(issue, settings),
+			pr,
+			gate: gateOf(issue, { pr, items, settings, runs, decisions, findings, round, risk }),
+			waiting: waitingOf(issue, pr, settings),
+			round: round ? publicRound(round) : null,
+			merge: effectiveMerge(issue, settings)
 		}
 	}
 
-	function warningsOf(issue: IssueRow) {
-		const { stages } = parseResolved(issue).settings
+	function warningsOf(issue: IssueRow, parsedSettings?: Settings) {
+		const { stages } = parsedSettings ?? parseResolved(issue).settings
 		const warnings: string[] = []
 		if (stages.review.provider && stages.review.provider === stages.implement.provider) {
 			warnings.push(
@@ -1611,13 +1704,60 @@ export function startServer(options: ServerOptions) {
 	}
 
 	function board() {
+		const now = Date.now()
+		const since = now - 30 * 24 * 60 * 60 * 1000
 		const open = db.query(`select * from issues where state = 'open' order by created_at`).all() as IssueRow[]
-		const since = Date.now() - 30 * 24 * 60 * 60 * 1000
 		const done = db
 			.query(`select * from issues where state != 'open' and closed_at > $since order by closed_at desc`)
 			.all({ since }) as IssueRow[]
-		const issues = open.map(boardItem)
-		const now = Date.now()
+		const scopeSql = `select id from issues where state = 'open' or (state != 'open' and closed_at > $since)`
+		const runsBy = groupBy(
+			db.query(`select * from runs where issue_id in (${scopeSql}) order by started_at, rowid`).all({ since }) as RunRow[],
+			(r) => r.issue_id
+		)
+		const decisionsBy = groupBy(
+			db.query(`select * from decisions where issue_id in (${scopeSql}) order by asked_at, rowid`).all({ since }) as DecisionRow[],
+			(d) => d.issue_id
+		)
+		const findingsBy = groupBy(
+			db.query(`select * from findings where issue_id in (${scopeSql}) order by rowid`).all({ since }) as FindingRow[],
+			(f) => f.issue_id
+		)
+		const flaggedSends = new Set(
+			(
+				db
+					.query(`select distinct issue_id from sends where arrived_at is null and flagged_at is not null and issue_id in (${scopeSql})`)
+					.all({ since }) as { issue_id: string }[]
+			).map((r) => r.issue_id)
+		)
+		const evidenceCountBy = new Map(
+			(
+				db
+					.query(`select issue_id, count(*) as n from evidence where issue_id in (select id from issues where state = 'open') group by issue_id`)
+					.all() as { issue_id: string; n: number }[]
+			).map((r) => [r.issue_id, r.n])
+		)
+		const lastEventBy = new Map(
+			(
+				db
+					.query(
+						`select e.* from events e
+						join (select issue_id, max(id) as max_id from events where issue_id in (select id from issues where state = 'open') group by issue_id) m
+						on e.id = m.max_id`
+					)
+					.all() as EventRow[]
+			).map((e) => [e.issue_id, e])
+		)
+		const issues = open.map((i) =>
+			boardItem(i, {
+				runs: runsBy.get(i.id) ?? [],
+				decisions: decisionsBy.get(i.id) ?? [],
+				findings: findingsBy.get(i.id) ?? [],
+				undelivered: flaggedSends.has(i.id),
+				lastEvent: lastEventBy.get(i.id) ?? null,
+				captures: evidenceCountBy.get(i.id) ?? 0
+			})
+		)
 		const limited = open.filter((i) => i.wake_at && !i.waiting_on && i.wake_at > now)
 		const failed = db
 			// Only open issues: dropping an issue ends its running runs as failed, which is no outage.
@@ -1645,38 +1785,46 @@ export function startServer(options: ServerOptions) {
 				reasons: [...new Set(failed.map((r) => (r.summary ?? '').slice(0, 200)).filter(Boolean))].slice(0, 5)
 			},
 			issues,
-			done: done.map((i) => ({ ...publicIssue(i), derived: derivedFor(i) }))
+			done: done.map((i) => {
+				const runs = runsBy.get(i.id) ?? []
+				const decisions = decisionsBy.get(i.id) ?? []
+				const findings = findingsBy.get(i.id) ?? []
+				const pr = i.pr_state ? (JSON.parse(i.pr_state) as PrState) : null
+				const isUndelivered = flaggedSends.has(i.id)
+				return {
+					...publicIssue(i, { runs, decisions, pr, undelivered: isUndelivered }),
+					derived: derivedFor(i, runs, decisions, findings, pr, waitingOf(i, pr), isUndelivered),
+					minutes: Math.round(((i.closed_at ?? i.updated_at) - i.created_at) / 60000),
+					merged: mergedBy(i, decisions),
+					reviewRounds: runs.filter((r) => r.stage === 'review' && r.subject === 'pr').length
+				}
+			})
 		}
 	}
 
-	function settingsView() {
-		const repos: Record<string, unknown> = {}
+	async function settingsView() {
 		const seen = db.query('select repo, root, max(created_at) from issues group by repo order by repo').all() as { repo: string; root: string }[]
-		for (const { repo, root } of seen) {
-			let config: ReturnType<typeof readConfig> = { file: null }
-			try {
-				config = readConfig(root, { fetch: false })
-			} catch (error) {
-				config = { file: null, error: (error as Error).message }
-			}
-			const page = settingsRow(`repo:${repo}`) ?? {}
-			const store = storeOf(repo, config)
-			let branch: string | null = null
-			try {
-				branch = defaultRef(root)
-			} catch {}
-			repos[repo] = {
-				store,
-				branch,
-				file: config.file,
-				...(config.error && { fileError: config.error }),
-				page,
-				/** This machine's settings as the file would hold them, to commit when the project moves to its repository. */
-				yaml: Object.keys(page).length ? Bun.YAML.stringify(page, null, 2) : '',
-				resolved: projectLayers(repo, store, config)
-			}
-		}
-		return { defaults, global: settingsRow('global') ?? {}, repos }
+		const entries = await Promise.all(
+			seen.map(async ({ repo, root }) => {
+				const { branch, config } = await readConfigSnapshotAsync(root)
+				const page = settingsRow(`repo:${repo}`) ?? {}
+				const store = storeOf(repo, config)
+				return [
+					repo,
+					{
+						store,
+						branch,
+						file: config.file,
+						...(config.error && { fileError: config.error }),
+						page,
+						/** This machine's settings as the file would hold them, to commit when the project moves to its repository. */
+						yaml: Object.keys(page).length ? Bun.YAML.stringify(page, null, 2) : '',
+						resolved: projectLayers(repo, store, config)
+					}
+				] as const
+			})
+		)
+		return { defaults, global: settingsRow('global') ?? {}, repos: Object.fromEntries(entries) }
 	}
 
 	function putStore(repo: string, body: Record<string, unknown>) {
@@ -1881,11 +2029,35 @@ export function startServer(options: ServerOptions) {
 		}
 	}
 
+	const GH_VIEWER_OK_MS = 5 * 60 * 1000
+	const GH_VIEWER_ERR_MS = 10_000
+	const SOURCE_ITEMS_CACHE_MS = 60_000
+	let ghViewerCache: { at: number; value: Awaited<ReturnType<typeof githubViewer>> } | null = null
+	let ghViewerInflight: Promise<Awaited<ReturnType<typeof githubViewer>>> | null = null
+	const sourceItemsCache = new Map<string, { at: number; items: IntakeItem[]; readAt: number }>()
+	const sourceItemsInflight = new Map<string, Promise<{ items: IntakeItem[]; readAt: number }>>()
+
+	async function cachedGithubViewer(refresh = false) {
+		const ttl = ghViewerCache?.value.ok ? GH_VIEWER_OK_MS : GH_VIEWER_ERR_MS
+		if (!refresh && ghViewerCache && Date.now() - ghViewerCache.at < ttl) return ghViewerCache.value
+		if (!refresh && ghViewerInflight) return ghViewerInflight
+		const pending = githubViewer().then((value) => {
+			ghViewerCache = { at: Date.now(), value }
+			return value
+		})
+		ghViewerInflight = pending
+		try {
+			return await pending
+		} finally {
+			if (ghViewerInflight === pending) ghViewerInflight = null
+		}
+	}
+
 	/** The connections and the sources, never the Linear key: the page is open to the whole tailnet. */
-	async function intakeView() {
+	async function intakeView(refresh = false) {
 		const conn = readScope<LinearConnection>('intake:linear')
 		return {
-			github: await githubViewer(),
+			github: await cachedGithubViewer(refresh),
 			linear: conn ? { connected: true, name: conn.name, organization: conn.organization, connectedAt: conn.connectedAt } : { connected: false },
 			sources: intakeSources(),
 			repos: knownRepos()
@@ -1897,6 +2069,7 @@ export function startServer(options: ServerOptions) {
 		if (/\s/.test(key)) fail(400, 'apiKey: an API key has no spaces')
 		const who = await viaIntake(() => linearViewer(key))
 		writeScope('intake:linear', { key, ...who, connectedAt: Date.now() } satisfies LinearConnection)
+		sourceItemsCache.clear()
 		emit(null, { kind: 'intake' })
 		return { ok: true, ...who }
 	}
@@ -1912,6 +2085,7 @@ export function startServer(options: ServerOptions) {
 		}
 		if (before && source.kind !== before.kind) fail(400, 'kind: a source keeps its kind; add a new source instead')
 		writeScope('intake:sources', before ? sources.map((s) => (s.id === before.id ? source : s)) : [...sources, source])
+		sourceItemsCache.delete(source.id)
 		emit(null, { kind: 'intake' })
 		return { ok: true, source }
 	}
@@ -1920,21 +2094,54 @@ export function startServer(options: ServerOptions) {
 		const sources = intakeSources()
 		if (!sources.some((s) => s.id === id)) fail(404, `no intake source ${id}`)
 		writeScope('intake:sources', sources.filter((s) => s.id !== id))
+		sourceItemsCache.delete(id)
 		emit(null, { kind: 'intake' })
 		return { ok: true }
 	}
 
-	/** What the factory did with an item already: the open issue when there is one, else the newest closed one. */
-	function factoryStateOf(repo: string, url: string) {
-		const rows = db.query('select * from issues where repo = $repo and source = $source order by created_at desc').all({ repo, source: url }) as IssueRow[]
-		const row = rows.find((i) => i.state === 'open') ?? rows[0]
-		return row ? { id: row.id, state: row.state, outcome: row.outcome, threadLink: row.thread_link, closedAt: row.closed_at } : null
+	/** What the factory did with each item in a repository: open issue if present, else newest closed one. */
+	function factoryStatesForRepo(repo: string) {
+		const rows = db
+			.query('select id, source, state, outcome, thread_link, closed_at from issues where repo = $repo and source is not null order by created_at desc')
+			.all({ repo }) as Pick<IssueRow, 'id' | 'source' | 'state' | 'outcome' | 'thread_link' | 'closed_at'>[]
+		const bySource = new Map<string, { id: string; state: string; outcome: string | null; threadLink: string | null; closedAt: number | null }>()
+		for (const row of rows) {
+			if (!row.source) continue
+			const existing = bySource.get(row.source)
+			if (!existing || (existing.state !== 'open' && row.state === 'open')) {
+				bySource.set(row.source, { id: row.id, state: row.state, outcome: row.outcome, threadLink: row.thread_link, closedAt: row.closed_at })
+			}
+		}
+		return bySource
 	}
 
-	async function sourceItems(id: string) {
+	async function sourceItems(id: string, refresh = false) {
 		const source = intakeSource(id)
-		const items = await viaIntake(() => listItems(source, linearKey()))
-		return { source: source.id, items: items.map((item) => ({ ...item, factory: factoryStateOf(source.repo, item.url) })), readAt: Date.now() }
+		const cached = sourceItemsCache.get(source.id)
+		let entry: { items: IntakeItem[]; readAt: number }
+		if (!refresh && cached && Date.now() - cached.at < SOURCE_ITEMS_CACHE_MS) {
+			entry = cached
+		} else {
+			let pending = !refresh ? sourceItemsInflight.get(source.id) : undefined
+			let own = false
+			if (!pending) {
+				own = true
+				pending = viaIntake(() => listItems(source, linearKey())).then((items) => {
+					const now = Date.now()
+					const fresh = { at: now, items, readAt: now }
+					sourceItemsCache.set(source.id, fresh)
+					return fresh
+				})
+				sourceItemsInflight.set(source.id, pending)
+			}
+			try {
+				entry = await pending
+			} finally {
+				if (own && sourceItemsInflight.get(source.id) === pending) sourceItemsInflight.delete(source.id)
+			}
+		}
+		const states = factoryStatesForRepo(source.repo)
+		return { source: source.id, items: entry.items.map((item) => ({ ...item, factory: states.get(item.url) ?? null })), readAt: entry.readAt }
 	}
 
 	/** Reads the item again in full, so the thread gets its text and comments as the tracker holds them now. */
@@ -1961,13 +2168,37 @@ export function startServer(options: ServerOptions) {
 		const closed = db
 			.query(`select * from issues where state != 'open' and closed_at > $since order by closed_at`)
 			.all({ since }) as IssueRow[]
+		if (!closed.length) return { days, issues: [] }
+		const scopeSql = `select id from issues where state != 'open' and closed_at > $since`
+		const runsBy = groupBy(
+			db.query(`select * from runs where issue_id in (${scopeSql}) order by started_at, rowid`).all({ since }) as RunRow[],
+			(r) => r.issue_id
+		)
+		const decisionsBy = groupBy(
+			db.query(`select * from decisions where issue_id in (${scopeSql}) order by asked_at, rowid`).all({ since }) as DecisionRow[],
+			(d) => d.issue_id
+		)
+		const flaggedSends = new Set(
+			(
+				db
+					.query(`select distinct issue_id from sends where arrived_at is null and flagged_at is not null and issue_id in (${scopeSql})`)
+					.all({ since }) as { issue_id: string }[]
+			).map((r) => r.issue_id)
+		)
+		const nudgesBy = new Map(
+			(
+				db
+					.query(`select issue_id, count(*) as n from events where kind = 'nudge' and issue_id in (${scopeSql}) group by issue_id`)
+					.all({ since }) as { issue_id: string; n: number }[]
+			).map((r) => [r.issue_id, r.n])
+		)
 		return {
 			days,
 			issues: closed.map((i) => {
-				const runs = runsOf(i.id)
-				const decisions = decisionsOf(i.id)
+				const runs = runsBy.get(i.id) ?? []
+				const decisions = decisionsBy.get(i.id) ?? []
 				return {
-					...publicIssue(i),
+					...publicIssue(i, { runs, decisions, undelivered: flaggedSends.has(i.id) }),
 					minutes: Math.round(((i.closed_at ?? i.updated_at) - i.created_at) / 60000),
 					merged: mergedBy(i, decisions),
 					reviewRounds: runs.filter((r) => r.stage === 'review' && r.subject === 'pr').length,
@@ -1976,7 +2207,7 @@ export function startServer(options: ServerOptions) {
 						...publicDecision(d),
 						waitedMinutes: d.answered_at ? Math.round((d.answered_at - d.asked_at) / 60000) : null
 					})),
-					nudges: eventsOf(i.id).filter((e) => e.kind === 'nudge').length
+					nudges: nudgesBy.get(i.id) ?? 0
 				}
 			})
 		}
@@ -2120,10 +2351,9 @@ export function startServer(options: ServerOptions) {
 
 	// ---- the review on GitHub ----
 
-	function loadItems(issueId: string) {
-		const rows = db.query('select * from pr_items where issue_id = $id order by created_at, rowid').all({ id: issueId }) as ItemRow[]
+	function normalizeItemsFromRows(rows: ItemRow[], commentsBy: Map<string, CommentRow[]>) {
 		return rows.map((row) => {
-			const comments = db.query('select * from pr_comments where item_id = $id order by created_at, rowid').all({ id: row.id }) as CommentRow[]
+			const comments = commentsBy.get(row.id) ?? []
 			const item: Item = {
 				id: row.id,
 				kind: row.kind,
@@ -2151,48 +2381,70 @@ export function startServer(options: ServerOptions) {
 		})
 	}
 
+	function loadItems(issueId: string) {
+		const rows = db.query('select * from pr_items where issue_id = $id order by created_at, rowid').all({ id: issueId }) as ItemRow[]
+		if (!rows.length) return []
+		const commentsBy = groupBy(
+			db
+				.query(
+					`select c.* from pr_comments c join pr_items p on p.id = c.item_id
+					where p.issue_id = $id order by c.created_at, c.rowid`
+				)
+				.all({ id: issueId }) as CommentRow[],
+			(c) => c.item_id
+		)
+		return normalizeItemsFromRows(rows, commentsBy)
+	}
+
 	const latestRound = (issueId: string) =>
 		db.query('select * from pr_rounds where issue_id = $id order by n desc limit 1').get({ id: issueId }) as RoundRow | null
 	const sameCommit = (a: string | null | undefined, b: string | null | undefined) =>
 		!!a && !!b && a.length >= 7 && b.length >= 7 && (a.startsWith(b) || b.startsWith(a))
 
 	/** Decision 12: the project's setting, tightened by the issue's own (`factory update --merge`). */
-	function effectiveMerge(issue: IssueRow): Settings['merge'] {
+	function effectiveMerge(issue: IssueRow, parsedSettings?: Settings): Settings['merge'] {
 		const order = ['auto', 'ask', 'never'] as const
-		const setting = parseResolved(issue).settings.merge
+		const setting = (parsedSettings ?? parseResolved(issue).settings).merge
 		return order[Math.max(order.indexOf(setting), issue.merge_cap ? order.indexOf(issue.merge_cap) : 0)]!
 	}
 
-	const mergeApproved = (issueId: string, head: string) =>
-		decisionsOf(issueId).some((d) => d.kind === 'merge' && d.answer === 'Merge' && sameCommit(d.head, head))
+	const mergeApprovedFrom = (decisions: DecisionRow[], head: string) =>
+		decisions.some((d) => d.kind === 'merge' && d.answer === 'Merge' && sameCommit(d.head, head))
 
 	/** Decision 14: the head is covered by a trusted approval on it, by a clean internal review of it, or by a recorded nit fix after a clean review. */
-	function internalCovered(issue: IssueRow, pr: PrState) {
-		if (parseResolved(issue).settings.reviewRounds === 0) return true
+	function internalCovered(
+		issue: IssueRow,
+		pr: PrState,
+		ctx: { settings?: Settings; runs?: RunRow[]; decisions?: DecisionRow[]; findings?: FindingRow[] } = {}
+	) {
+		const settings = ctx.settings ?? parseResolved(issue).settings
+		if (settings.reviewRounds === 0) return true
 		if (pr.approvedBy.some((a) => sameCommit(a.commit, pr.head))) return true
-		if (mergeApproved(issue.id, pr.head)) return true
-		const doneReviews = runsOf(issue.id).filter((r) => {
+		const decisions = ctx.decisions ?? decisionsOf(issue.id)
+		if (mergeApprovedFrom(decisions, pr.head)) return true
+		const runs = ctx.runs ?? runsOf(issue.id)
+		const doneReviews = runs.filter((r) => {
 			if (r.stage !== 'review' || r.subject !== 'pr' || r.state !== 'done' || !r.result) return false
 			return (JSON.parse(r.result) as { outcome: string }).outcome === 'done'
 		})
 		if (!doneReviews.length) return false
-		if (findingsOf(issue.id).some((f) => f.subject === 'pr' && f.severity === 'important' && isOpenFinding(f))) return false
+		const findings = ctx.findings ?? findingsOf(issue.id)
+		if (findings.some((f) => f.subject === 'pr' && f.severity === 'important' && isOpenFinding(f))) return false
 		const reviewedHead = doneReviews.some((r) => {
 			const result = JSON.parse(r.result!) as { result?: { commit?: string } }
 			return sameCommit(result.result?.commit, pr.head) || sameCommit(r.head, pr.head)
 		})
 		if (reviewedHead) return true
 		// A head pushed only to fix nit findings from a clean review needs no second review round.
-		return findingsOf(issue.id).some(
+		return findings.some(
 			(f) => f.subject === 'pr' && f.severity === 'nit' && f.outcome === 'fixed' && sameCommit(f.outcome_note, pr.head)
 		)
 	}
 
 	/** Decision 11: three pushes in a round and three rounds, unless the user said to go on. */
-	function roundBudget(issueId: string) {
-		const round = latestRound(issueId)
+	function roundBudget(issueId: string, round: RoundRow | null = latestRound(issueId), decisions: DecisionRow[] = decisionsOf(issueId)) {
 		if (!round) return null
-		if (decisionsOf(issueId).some((d) => d.round === round.n && d.answer === 'Go on')) return null
+		if (decisions.some((d) => d.round === round.n && d.answer === 'Go on')) return null
 		if (round.n > MAX_ROUNDS) {
 			return `round ${round.n} is past the limit of ${MAX_ROUNDS}: ask a blocked decision with --round about going on`
 		}
@@ -2202,21 +2454,40 @@ export function startServer(options: ServerOptions) {
 		return null
 	}
 
-	function gateOf(issue: IssueRow): Gate {
-		const pr = issue.pr_state ? (JSON.parse(issue.pr_state) as PrState) : null
+	function gateOf(
+		issue: IssueRow,
+		ctx: {
+			pr?: PrState | null
+			items?: ReturnType<typeof loadItems>
+			settings?: Settings
+			runs?: RunRow[]
+			decisions?: DecisionRow[]
+			findings?: FindingRow[]
+			round?: RoundRow | null
+			risk?: ReturnType<typeof prRiskFrom>
+		} = {}
+	): Gate {
+		const pr = ctx.pr !== undefined ? ctx.pr : issue.pr_state ? (JSON.parse(issue.pr_state) as PrState) : null
+		const settings = ctx.settings ?? parseResolved(issue).settings
+		const decisions = ctx.decisions ?? decisionsOf(issue.id)
+		const runs = ctx.runs ?? runsOf(issue.id)
+		const findings = ctx.findings ?? findingsOf(issue.id)
+		const items = ctx.items ?? loadItems(issue.id)
+		const round = ctx.round !== undefined ? ctx.round : latestRound(issue.id)
+		const risk = ctx.risk !== undefined ? ctx.risk : prRiskFrom(runs)
 		return computeGate({
 			pr,
-			items: loadItems(issue.id),
-			settings: parseResolved(issue).settings,
-			merge: effectiveMerge(issue),
-			internalCovered: pr ? internalCovered(issue, pr) : false,
-			openDecisions: decisionsOf(issue.id).filter(isOpenDecision).length,
-			mergeApproved: pr ? mergeApproved(issue.id, pr.head) : false,
+			items,
+			settings,
+			merge: effectiveMerge(issue, settings),
+			internalCovered: pr ? internalCovered(issue, pr, { settings, runs, decisions, findings }) : false,
+			openDecisions: decisions.filter(isOpenDecision).length,
+			mergeApproved: pr ? mergeApprovedFrom(decisions, pr.head) : false,
 			autoShip: !!issue.auto_ship,
-			hasUnrelated: (prRisk(issue.id)?.unrelated.length ?? 0) > 0,
+			hasUnrelated: (risk?.unrelated.length ?? 0) > 0,
 			riskHead: issue.risk_head && pr && sameCommit(issue.risk_head, pr.head) ? pr.head : issue.risk_head,
 			riskRule: issue.risk_rule,
-			roundBudget: roundBudget(issue.id)
+			roundBudget: roundBudget(issue.id, round, decisions)
 		})
 	}
 
@@ -2893,34 +3164,124 @@ export function startServer(options: ServerOptions) {
 		})
 	}
 
-	/** An issue as its page shows it; `lastEvents` keeps only that many of the newest events. */
-	function issueDetail(id: string, lastEvents?: number) {
-		const issue = getIssue(id) ?? fail(404, `no issue ${id}`)
-		const runs = runsOf(issue.id)
-		const decisions = decisionsOf(issue.id)
-		const findings = findingsOf(issue.id)
-		const events = eventsOf(issue.id)
-		const shownEvents = lastEvents === undefined ? events : lastEvents > 0 ? events.slice(-lastEvents) : []
-		const rounds = db.query('select * from pr_rounds where issue_id = $id order by n').all({ id: issue.id }) as RoundRow[]
+	function buildIssueDetail(
+		issue: IssueRow,
+		ctx: {
+			runs: RunRow[]
+			decisions: DecisionRow[]
+			findings: FindingRow[]
+			events: EventRow[]
+			rounds: RoundRow[]
+			items: ReturnType<typeof loadItems>
+			evRows: EvidenceRow[]
+			isUndelivered: boolean
+		},
+		lastEvents?: number
+	) {
+		const shownEvents = lastEvents === undefined ? ctx.events : lastEvents > 0 ? ctx.events.slice(-lastEvents) : []
+		const pr = issue.pr_state ? (JSON.parse(issue.pr_state) as PrState) : null
+		const settings = parseResolved(issue).settings
+		const round = ctx.rounds.at(-1) ?? null
+		const waiting = waitingOf(issue, pr, settings)
 		return {
-			...issueStatus(issue),
-			derived: derivedFor(issue, runs, decisions, findings),
-			brief: deriveBrief(runs),
+			...issueStatus(issue, {
+				runs: ctx.runs,
+				decisions: ctx.decisions,
+				findings: ctx.findings,
+				items: ctx.items,
+				round,
+				pr,
+				settings,
+				isUndelivered: ctx.isUndelivered,
+				evRows: ctx.evRows
+			}),
+			derived: derivedFor(issue, ctx.runs, ctx.decisions, ctx.findings, pr, waiting, ctx.isUndelivered),
+			brief: deriveBrief(ctx.runs),
 			body: issue.body,
 			report: issue.report,
 			events: shownEvents.map(publicEvent),
-			...(lastEvents !== undefined && events.length > lastEvents && { eventsLeftOut: events.length - lastEvents }),
-			items: loadItems(issue.id).map(({ item, handling, row }) => ({
+			...(lastEvents !== undefined && ctx.events.length > lastEvents && { eventsLeftOut: ctx.events.length - lastEvents }),
+			items: ctx.items.map(({ item, handling, row }) => ({
 				...item,
 				needsAction: needsAction(item, handling),
-				blocksMerge: issue.pr_state ? blocksMerge(item, JSON.parse(issue.pr_state) as PrState) : false,
+				blocksMerge: pr ? blocksMerge(item, pr) : false,
 				handled: row.handled,
 				handledCommit: row.handled_commit,
 				handledNote: row.handled_note,
 				handledAt: row.handled_at
 			})),
-			rounds: rounds.map(publicRound)
+			rounds: ctx.rounds.map(publicRound)
 		}
+	}
+
+	/** An issue as its page shows it; `lastEvents` keeps only that many of the newest events. */
+	function issueDetail(id: string, lastEvents?: number) {
+		const issue = getIssue(id) ?? fail(404, `no issue ${id}`)
+		return buildIssueDetail(
+			issue,
+			{
+				runs: runsOf(issue.id),
+				decisions: decisionsOf(issue.id),
+				findings: findingsOf(issue.id),
+				events: eventsOf(issue.id),
+				rounds: db.query('select * from pr_rounds where issue_id = $id order by n').all({ id: issue.id }) as RoundRow[],
+				items: loadItems(issue.id),
+				evRows: evidenceRows(issue.id),
+				isUndelivered: undelivered(issue.id)
+			},
+			lastEvents
+		)
+	}
+
+	/** Batch issue detail loader for predictive prefetching: 9 SQLite queries total for up to 20 issues. */
+	function issueDetailBatch(ids: string[]) {
+		if (!ids.length) return { issues: {} as Record<string, ReturnType<typeof issueDetail>> }
+		const params: Record<string, string> = {}
+		const slots = ids.map((id, idx) => {
+			params[`i${idx}`] = id
+			return `$i${idx}`
+		}).join(', ')
+		const rows = db.query(`select * from issues where id in (${slots})`).all(params) as IssueRow[]
+		if (!rows.length) return { issues: {} as Record<string, ReturnType<typeof issueDetail>> }
+		const runsBy = groupBy(db.query(`select * from runs where issue_id in (${slots}) order by started_at, rowid`).all(params) as RunRow[], (r) => r.issue_id)
+		const decisionsBy = groupBy(db.query(`select * from decisions where issue_id in (${slots}) order by asked_at, rowid`).all(params) as DecisionRow[], (d) => d.issue_id)
+		const findingsBy = groupBy(db.query(`select * from findings where issue_id in (${slots}) order by rowid`).all(params) as FindingRow[], (f) => f.issue_id)
+		const eventsBy = groupBy(db.query(`select * from events where issue_id in (${slots}) order by id`).all(params) as EventRow[], (e) => e.issue_id)
+		const roundsBy = groupBy(db.query(`select * from pr_rounds where issue_id in (${slots}) order by n`).all(params) as RoundRow[], (r) => r.issue_id)
+		const evidenceBy = groupBy(db.query(`select * from evidence where issue_id in (${slots}) order by created_at, rowid`).all(params) as EvidenceRow[], (e) => e.issue_id)
+		const flagged = new Set(
+			(db.query(`select distinct issue_id from sends where arrived_at is null and flagged_at is not null and issue_id in (${slots})`).all(params) as { issue_id: string }[]).map(
+				(r) => r.issue_id
+			)
+		)
+		const prItemRows = db.query(`select * from pr_items where issue_id in (${slots}) order by created_at, rowid`).all(params) as ItemRow[]
+		const prItemsByIssue = groupBy(prItemRows, (r) => r.issue_id)
+		const commentsByItem = prItemRows.length
+			? groupBy(
+					db
+						.query(
+							`select c.* from pr_comments c join pr_items p on p.id = c.item_id
+							where p.issue_id in (${slots}) order by c.created_at, c.rowid`
+						)
+						.all(params) as CommentRow[],
+					(c) => c.item_id
+				)
+			: new Map<string, CommentRow[]>()
+
+		const issues: Record<string, ReturnType<typeof issueDetail>> = {}
+		for (const issue of rows) {
+			issues[issue.id] = buildIssueDetail(issue, {
+				runs: runsBy.get(issue.id) ?? [],
+				decisions: decisionsBy.get(issue.id) ?? [],
+				findings: findingsBy.get(issue.id) ?? [],
+				events: eventsBy.get(issue.id) ?? [],
+				rounds: roundsBy.get(issue.id) ?? [],
+				items: normalizeItemsFromRows(prItemsByIssue.get(issue.id) ?? [], commentsByItem),
+				evRows: evidenceBy.get(issue.id) ?? [],
+				isUndelivered: flagged.has(issue.id)
+			})
+		}
+		return { issues }
 	}
 
 	// ---- the webhook and the MCP server ----
@@ -2961,7 +3322,7 @@ export function startServer(options: ServerOptions) {
 	}
 
 	function info() {
-		const counts = board()
+		const counts = liveCounts()
 		const local = `http://127.0.0.1:${options.port}/mcp`
 		const remote = tailnet ? `http://${tailnet.name ?? tailnet.ip}:${options.port}/mcp` : null
 		return {
@@ -3265,8 +3626,8 @@ export function startServer(options: ServerOptions) {
 				waiters.add(wake)
 			})
 		},
-		settings: (repo) => {
-			const view = settingsView()
+		settings: async (repo) => {
+			const view = await settingsView()
 			const only = repo?.toLowerCase()
 			if (only && !view.repos[only]) fail(404, `no settings for ${repo}: the factory knows ${Object.keys(view.repos).join(', ') || 'no repository yet'}`)
 			const repos = Object.fromEntries(
@@ -3362,6 +3723,10 @@ export function startServer(options: ServerOptions) {
 			if (!Number.isFinite(after) || after < 0) fail(400, `after: ${url.searchParams.get('after')} is not a sequence number`)
 			if (!Number.isFinite(wait) || wait < 0) fail(400, `wait: ${url.searchParams.get('wait')} is not a number of seconds`)
 			return waitChanges(after, wait, req.signal)
+		}
+		if (method === 'GET' && parts[0] === 'api' && parts[1] === 'issues' && parts[2] === 'batch' && parts.length === 3) {
+			const ids = [...new Set((url.searchParams.get('ids') ?? '').split(',').map((s) => s.trim()).filter(Boolean))].slice(0, 20)
+			return issueDetailBatch(ids)
 		}
 		if (method === 'GET' && parts[0] === 'api' && parts[1] === 'issues' && parts[2] && parts.length === 3) {
 			return issueDetail(decodeURIComponent(parts[2]))
@@ -3469,10 +3834,12 @@ export function startServer(options: ServerOptions) {
 		}
 		if (parts[0] === 'api' && parts[1] === 'intake') {
 			const id = parts[3] ? decodeURIComponent(parts[3]) : null
-			if (method === 'GET' && parts.length === 2) return intakeView()
+			const refresh = url.searchParams.get('refresh') === '1'
+			if (method === 'GET' && parts.length === 2) return intakeView(refresh)
 			if (method === 'PUT' && url.pathname === '/api/intake/linear') return connectLinear(await body())
 			if (method === 'DELETE' && url.pathname === '/api/intake/linear') {
 				writeScope('intake:linear', null)
+				sourceItemsCache.clear()
 				emit(null, { kind: 'intake' })
 				return { ok: true }
 			}
@@ -3484,7 +3851,7 @@ export function startServer(options: ServerOptions) {
 				if (method === 'POST' && parts.length === 3) return saveSource(null, await body())
 				if (method === 'PUT' && id && parts.length === 4) return saveSource(id, await body())
 				if (method === 'DELETE' && id && parts.length === 4) return removeSource(id)
-				if (method === 'GET' && id && parts[4] === 'items' && parts.length === 5) return sourceItems(id)
+				if (method === 'GET' && id && parts[4] === 'items' && parts.length === 5) return sourceItems(id, refresh)
 				if (method === 'POST' && id && parts[4] === 'start' && parts.length === 5) return startFromSource(id, await body())
 			}
 		}
@@ -3517,7 +3884,23 @@ export function startServer(options: ServerOptions) {
 		const loopback = isLoopback(server.requestIP(req)?.address)
 
 		if (req.method === 'GET' && url.pathname === '/') {
-			return new Response(page, { headers: { 'content-type': 'text/html; charset=utf-8' } })
+			if (req.headers.get('if-none-match') === pageEtag) {
+				return new Response(null, { status: 304, headers: { etag: pageEtag, 'cache-control': 'no-cache', vary: 'accept-encoding' } })
+			}
+			if (acceptsGzip(req)) {
+				return new Response(pageGzip, {
+					headers: {
+						'content-type': 'text/html; charset=utf-8',
+						'content-encoding': 'gzip',
+						vary: 'accept-encoding',
+						etag: pageEtag,
+						'cache-control': 'no-cache'
+					}
+				})
+			}
+			return new Response(page, {
+				headers: { 'content-type': 'text/html; charset=utf-8', vary: 'accept-encoding', etag: pageEtag, 'cache-control': 'no-cache' }
+			})
 		}
 		if (req.method === 'GET' && url.pathname.startsWith('/evidence/')) return serveEvidence(url.pathname)
 		if (req.method === 'GET' && url.pathname.startsWith('/overview/')) return serveOverview(url.pathname)
@@ -3554,8 +3937,9 @@ export function startServer(options: ServerOptions) {
 			}
 		}
 		if (url.pathname === '/mcp') return serveMcp(req, tools, version, loopback)
+		if (req.method === 'GET' && url.pathname === '/api/changes') server.timeout(req, 0)
 		try {
-			return Response.json(await route(req, url, loopback))
+			return jsonResponse(req, await route(req, url, loopback))
 		} catch (error) {
 			if (error instanceof HttpError) return Response.json({ error: error.message }, { status: error.status })
 			return Response.json({ error: (error as Error).message }, { status: 500 })
