@@ -35,16 +35,34 @@ describe('GitHub sources', () => {
 		expect(saved.body.source.github).toEqual({ repo: 'acme/api', label: 'factory' })
 
 		h.gh.replies({
-			'issue-list': { out: [issue, { ...issue, number: 43, title: 'Typo', url: 'https://github.com/acme/api/issues/43' }] },
+			'issue-list': {
+				out: [
+					issue,
+					{
+						...issue,
+						number: 43,
+						title: 'Typo',
+						url: 'https://github.com/acme/api/issues/43',
+						blockedBy: {
+							nodes: [
+								{ number: 42, state: 'OPEN', url: 'https://github.com/acme/api/issues/42' },
+								{ number: 7, state: 'CLOSED', url: 'https://github.com/acme/api/issues/7' },
+								{ number: 3, state: 'OPEN', url: 'https://github.com/acme/web/issues/3' }
+							]
+						}
+					}
+				]
+			},
 			'issue-view': {
 				out: { ...issue, body: 'Large accounts time out after 30s.', comments: [{ author: { login: 'lee' }, body: 'Seen on acct 9 too.', createdAt: '2026-11-21T09:00:00Z' }] }
 			}
 		})
 		const listed = await h.call('GET', `/api/intake/sources/${id}/items`)
 		expect(listed.status).toBe(200)
-		expect(listed.body.items.map((i: any) => [i.ref, i.labels, i.factory])).toEqual([
-			['#42', ['bug'], null],
-			['#43', ['bug'], null]
+		// An item waits on the open items that block it; a closed blocker no longer holds it.
+		expect(listed.body.items.map((i: any) => [i.ref, i.labels, i.factory, i.blockedBy])).toEqual([
+			['#42', ['bug'], null, []],
+			['#43', ['bug'], null, ['#42', 'acme/web#3']]
 		])
 		const list = h.gh.calls().find((c) => c.args[0] === 'issue' && c.args[1] === 'list')!
 		expect(list.args).toContain('--label')
@@ -112,7 +130,17 @@ describe('Linear sources', () => {
 		assignee: null,
 		creator: { name: 'Kim' },
 		project: null,
-		team: { key: team }
+		team: { key: team },
+		inverseRelations: {
+			nodes:
+				identifier === 'ENG-13'
+					? [
+							{ type: 'blocks', issue: { identifier: 'ENG-12', state: { type: 'unstarted' } } },
+							{ type: 'blocks', issue: { identifier: 'ENG-1', state: { type: 'completed' } } },
+							{ type: 'related', issue: { identifier: 'ENG-2', state: { type: 'started' } } }
+						]
+					: []
+		}
 	})
 
 	beforeEach(() => {
@@ -172,9 +200,9 @@ describe('Linear sources', () => {
 		const { id } = (await h.call('POST', '/api/intake/sources', { kind: 'linear', repo: 'acme/api', linear: { team: 'eng', label: 'Bug' } })).body.source
 
 		const listed = await h.call('GET', `/api/intake/sources/${id}/items`)
-		expect(listed.body.items.map((i: any) => [i.ref, i.url, i.priority])).toEqual([
-			['ENG-12', 'https://linear.app/acme/issue/ENG-12', 'High'],
-			['ENG-13', 'https://linear.app/acme/issue/ENG-13', 'High']
+		expect(listed.body.items.map((i: any) => [i.ref, i.url, i.priority, i.blockedBy])).toEqual([
+			['ENG-12', 'https://linear.app/acme/issue/ENG-12', 'High', []],
+			['ENG-13', 'https://linear.app/acme/issue/ENG-13', 'High', ['ENG-12']]
 		])
 		const list = seen.find((s) => s.query.includes('issues('))!
 		expect(list.auth).toBe('lin_api_good')
@@ -209,4 +237,51 @@ describe('Linear sources', () => {
 test("Linear's URL loses the title's slug, which changes with the title", () => {
 	expect(linearSource('https://linear.app/acme/issue/ENG-12/checkout-fails')).toBe('https://linear.app/acme/issue/ENG-12')
 	expect(linearSource('https://linear.app/acme/issue/ENG-12')).toBe('https://linear.app/acme/issue/ENG-12')
+})
+
+describe('new comments on the item an issue came from', () => {
+	const url = 'https://github.com/acme/api/issues/42'
+	const at = (minutes: number) => new Date(Date.now() + minutes * 60_000).toISOString()
+	const sends = () => h.calls().filter((c) => c.args[1] === 'send' && c.args[2] === 't9')
+	const comments = (...list: { login: string; body: string; createdAt: string }[]) =>
+		h.gh.replies({ 'issue-view': { out: { comments: list.map((c) => ({ author: { login: c.login }, body: c.body, createdAt: c.createdAt })) } } })
+
+	beforeEach(async () => {
+		await h.as('t9')('POST', '/api/issue/start', { cwd: work, title: 'Exports time out', body: 'Large accounts time out.', source: url })
+	})
+
+	test('reach the thread once and stay in the issue text, without the factory\'s own', async () => {
+		comments(
+			{ login: 'kim', body: 'Reported it last week.', createdAt: at(-60 * 24) },
+			{ login: 'factory-bot', body: 'The factory took this.\n\n<!-- factory:t9 -->', createdAt: at(1) },
+			{ login: 'lee', body: 'Only on accounts over 10k rows.', createdAt: at(2) }
+		)
+		await h.server.checkSources()
+		expect(sends()).toHaveLength(1)
+		const message = sends()[0]!.stdin!
+		expect(message).toContain(`Factory: a new comment on ${url}`)
+		expect(message).toContain('**lee**')
+		expect(message).toContain('```untrusted')
+		expect(message).not.toContain('Reported it last week')
+		expect(message).not.toContain('The factory took this')
+		expect(h.gh.calls().at(-1)!.args).toEqual(['issue', 'view', '42', '-R', 'acme/api', '--json', 'comments'])
+
+		await h.server.checkSources()
+		expect(sends()).toHaveLength(1)
+
+		comments({ login: 'lee', body: 'Only on accounts over 10k rows.', createdAt: at(2) }, { login: 'kim', body: 'And on Safari.', createdAt: at(3) })
+		await h.server.checkSources()
+		expect(sends()).toHaveLength(2)
+		const body = (await h.call('GET', '/api/issues/t9')).body.body as string
+		expect(body.startsWith('Large accounts time out.')).toBe(true)
+		expect(body.match(/Comments added to the item after the factory took it in:/g)).toHaveLength(1)
+		expect(body.indexOf('10k rows')).toBeLessThan(body.indexOf('And on Safari.'))
+	})
+
+	test('an item the service cannot read is left alone', async () => {
+		await h.as('t8')('POST', '/api/issue/start', { cwd: work, title: 'From feedback', source: 'feedreply:123' })
+		h.gh.replies({ 'issue-view': { code: 1, out: 'not found' } })
+		await h.server.checkSources()
+		expect(h.calls().filter((c) => c.args[1] === 'send')).toHaveLength(0)
+	})
 })

@@ -49,7 +49,8 @@ The review on GitHub (gh runs here, as this thread's login):
   pr round -                     post the round's summary, ask again who requested changes, close the round
   gate                           sync, then print the merge gate
   risk --head <sha> --none | --rule <text>
-  wait --on checks|bots|review|merge|deploy [--note <text>] | wait --clear
+  wait --on checks|bots|review|merge|deploy [--until <ISO time>] [--note <text>] | wait --clear
+      --until: the service wakes this thread then to check again, unless it has reported since.
   wait --on limit --until <ISO time> [--note <text>]
       A stage stopped by its provider's usage limit: the service wakes this thread once the limit resets.
 

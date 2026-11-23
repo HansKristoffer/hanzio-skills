@@ -117,6 +117,23 @@ test('history lists issues closed in the window with their rounds and waits', as
 	expect(history.body.issues.map((i: { id: string }) => i.id)).toEqual(['thread-new-1'])
 	expect(history.body.issues[0].reviewRounds).toBe(1)
 	expect(history.body.issues[0].decisions[0].waitedMinutes).toBe(0)
+	expect(history.body.issues[0].merged).toBeNull()
+})
+
+test('history says who merged a shipped PR: the factory, or a person who approved it', async () => {
+	for (const [n, merge] of [[1, null], [2, 'Merge']] as const) {
+		const id = `m${n}`
+		const as = h.as(id)
+		await as('POST', '/api/issue/start', { cwd: repo.work, title: `Issue ${n}` })
+		h.server.db.query('update issues set pr_url = $url where id = $id').run({ url: `https://github.com/acme/api/pull/${n}`, id })
+		if (merge) {
+			const decision = (await as('POST', '/api/issue/ask', { kind: 'merge', head: 'abc1234', question: 'Merge?', recommend: 'Merge' })).body.decision
+			await as('POST', '/api/issue/answer', { decision, text: merge })
+		}
+		await as('POST', '/api/issue/close', { outcome: 'shipped', deploy: 'none', summary: 'ok' })
+	}
+	const history = await h.call('GET', '/api/history?days=7')
+	expect(history.body.issues.map((i: { merged: string }) => i.merged)).toEqual(['factory', 'person'])
 })
 
 test('the id t3 thread start prints is read from JSON or plain text', () => {

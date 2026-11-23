@@ -10,19 +10,19 @@ Weekly review of the factory on this machine. The factory works issues in T3 Cod
 This run is read-only. Its only writes are proposals in this thread; it applies nothing until a developer says yes here.
 
 1. Run `bun <factory skill folder>/app/cli.ts history --days 7`. Leave a repository alone until it has 10 closed issues in total.
-2. The metric, per repository: issues shipped with deploy verified and no blocking decision, over issues closed. Give it with the counts.
+2. The metric, per repository: issues shipped with deploy verified and no blocking decision, over issues closed. Give it with the counts. Beside it, the merge share: shipped PRs the factory merged itself (`merged: factory`) over all shipped PRs. A repository whose merge setting holds every PR for a person has no share; say so instead of 0%.
 3. For each miss (closed as dropped, a merge decision, a deploy that is unverified, a stage run that failed, more than one review round, a nudge, a message stuck in a thread's queue), read the issue's page and thread and trace it to the ruling, stage note or stage text that caused it or was missing. Leave out misses caused by code, outages or bad data.
 4. An answer the user gave the same way three times or more is a candidate ruling. A command, setup step or gotcha that stage runs in two issues of one repository each had to work out (how to start it, a flaky test to rerun, a step its README leaves out), and that its `AGENTS.md` / `CLAUDE.md` does not hold, is a candidate learning.
 5. Propose at most three edits, each only for a miss or a learning seen twice, or once with the user's written reason. Each quotes the text before and after, links the issues that show it, and names the metric it should move. A ruling or a note is a PR to that repository's factory.config.yaml; a learning is a PR adding one bullet to that repository's `AGENTS.md` (or `CLAUDE.md` when it has only that), placed under the section it belongs to; a stage text is a PR to hanzio-skills.
 
 End with:
 **Week:** <dates>
-**Metric:** <per repository: shipped and verified / closed>
+**Metric:** <per repository: shipped and verified / closed; merged by the factory / shipped PRs>
 **Misses:** <one line each, or "None">
 **Proposals:** <one line each, rulings, learnings and stage texts, or "None">
 **Outcome:** ACTED (<proposals made>) | NOOP (<why nothing was needed>) | BLOCKED (<what a person must do>)
 
-Revised: 2026-11-15
+Revised: 2026-11-23
 ```
 
 ## The dry run

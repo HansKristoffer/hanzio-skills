@@ -58,7 +58,8 @@ export const RESULT_SHAPES = {
 		criteria: list(str, 5),
 		proof: str,
 		undecided,
-		later: list(obj({ title: str, body: str }))
+		/** The slices left for later. `after` names the titles of the other later slices that must ship before this one. */
+		later: list(obj({ title: str, body: str, after: list(str) }, ['after']))
 	}),
 	'review-plan': obj({ findings: list(reviewFinding(false)), upheld: list(str) }, ['upheld']),
 	implement: obj(

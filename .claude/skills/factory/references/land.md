@@ -4,7 +4,7 @@ The PR reaches this file when `factory gate` says `ready` (see `review-loop.md`)
 
 1. **`land-pr`'s gate.** Call the Skill tool with `land-pr` and follow its **Merge** section: the branch is not behind its base in a way the repository forbids, the base's newer commits do not overlap the change, the done check has no line short of green, and the head did not move. Anything that fails and you cannot fix is a `blocked` decision.
 2. **Merge** with `land-pr`'s command, guarded by `--match-head-commit` on the head the gate was `ready` for. Never `--admin`, and never past branch protection.
-3. **Check the deploy** with `land-pr`'s **Check the deploy**, as the land run's note says. Ship a release-please release only when the note says so.
+3. **Check the deploy** with `land-pr`'s **Check the deploy**, as the land run's note says. Ship a release-please release only when the note says so. Nothing watches a deploy for you: one that is still running when there is nothing else to do is `factory wait --on deploy --until <when to look again> --note "<what runs>"`, and the turn ends. The service wakes you then; never sleep in the turn.
 4. **End the run:** `factory report --run <land run> --done -` with the merge commit and the deploy result on stdin.
 
 With the project's `merge` set to `never`, people merge: the gate says `merge-setting`, and you wait on the merge (`factory wait --on merge`).

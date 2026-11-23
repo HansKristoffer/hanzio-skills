@@ -28,6 +28,15 @@ test('a quiet issue whose threads have all ended gets one nudge that says what t
 	expect(sends()).toHaveLength(1)
 })
 
+test('a nudge names the stage and how its last run ended, so the thread knows what is open', async () => {
+	const run = (await h.as('t1')('POST', '/api/issue/run', { stage: 'research' })).body.run
+	await h.as('child')('POST', `/api/runs/${run}/report`, { text: 'provider timed out', failed: true })
+	h.replies({ showByThread: { t1: ended } })
+	await h.server.checkQuiet(later(21))
+	expect(sends()).toHaveLength(1)
+	expect(sends()[0]!.stdin).toContain('It is at research, and its last run (research) failed.')
+})
+
 test("an issue whose child's thread still works is not nudged", async () => {
 	const run = (await h.as('t1')('POST', '/api/issue/run', { stage: 'implement' })).body.run
 	await h.as('child')('POST', `/api/runs/${run}/report`, { text: 'tests red' })
@@ -93,7 +102,7 @@ test('wait --on limit takes a reset time that is ahead, and no more than a week 
 	expect((await wait('not a time')).status).toBe(400)
 	expect((await wait(new Date(later(-5)).toISOString())).body.error).toContain('has passed')
 	expect((await wait(new Date(later(10 * 24 * 60)).toISOString())).body.error).toContain('blocked decision')
-	expect((await h.as('t1')('POST', '/api/issue/wait', { on: 'checks', until: '2026-01-01' })).status).toBe(400)
+	expect((await h.as('t1')('POST', '/api/issue/wait', { on: 'checks', until: '2026-01-01' })).body.error).toContain('has passed')
 	expect((await wait(new Date(later(90)).toISOString())).status).toBe(200)
 })
 
@@ -115,6 +124,23 @@ test('an issue paused on a usage limit is left alone until the reset, then woken
 	board = await h.call('GET', '/api/board')
 	expect(board.body.limited).toEqual([])
 	expect(board.body.issues[0].waiting).toBeNull()
+})
+
+test('a wait with a time to check again wakes the thread then, once, and still waits', async () => {
+	const until = later(15)
+	const waited = await h.as('t1')('POST', '/api/issue/wait', { on: 'deploy', until: new Date(until).toISOString(), note: 'Vercel build' })
+	expect(waited.body.waiting).toMatchObject({ on: 'deploy', until, note: 'Vercel build' })
+	expect((await h.call('GET', '/api/board')).body.limited).toEqual([])
+
+	h.replies({ showByThread: { t1: ended } })
+	await h.server.checkQuiet(later(10))
+	expect(sends()).toHaveLength(0)
+	await h.server.checkQuiet(later(16))
+	await h.server.checkQuiet(later(21))
+	expect(sends()).toHaveLength(1)
+	expect(sends()[0]!.stdin).toContain('check again on deploy (Vercel build)')
+	const board = await h.call('GET', '/api/board')
+	expect(board.body.issues[0].waiting).toMatchObject({ on: 'deploy', until: null })
 })
 
 test('a report from the thread ends its wait on a usage limit', async () => {
