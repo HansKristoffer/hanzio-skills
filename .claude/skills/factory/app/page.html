@@ -1698,6 +1698,7 @@ async function drawIssue(id) {
 			h('h1', {}, i.title),
 			h('div', { class: 'row' },
 				out(i.prUrl, prNumber(i.prUrl) ? `PR #${prNumber(i.prUrl)}` : 'PR', 'pr', 'btn'),
+				overviewLink(i, data.overview),
 				out(i.threadLink, 'Open in T3 Code', 'thread', 'btn'),
 				out(i.source, 'Source', 'source', 'btn'),
 				i.state === 'open' ? dropButton(i, () => draw()) : null
@@ -1859,6 +1860,16 @@ async function probe(id) {
 }
 
 /** The dev environment runs in the issue's own checkout, so its thread starts and stops it when asked here. */
+/** The PR's overview page. A relative address, so it opens under the host the page is read at. */
+function overviewLink(i, overview) {
+	if (!overview) return null
+	const title = overview.stale
+		? `Written for ${short(overview.head)}; the PR has moved since`
+		: 'What the PR changes and why, without the full diff'
+	return h('a', { class: 'btn', href: `/overview/${encodeURIComponent(i.id)}`, target: '_blank', rel: 'noreferrer', title },
+		icon('doc'), overview.stale ? 'Overview (older head)' : 'Overview')
+}
+
 function previewPanel(i, preview, tryIt, prHead) {
 	const error = h('p', { class: 'error' })
 	const ask = (action) => async (e) => {
