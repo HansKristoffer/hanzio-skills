@@ -84,6 +84,7 @@ import {
 import { check, outcomeShape } from './results.ts'
 import { isWaiting, isWorking, projectList, showsMessage, threadSend, threadShow, threadStart, type T3Project } from './t3.ts'
 import { factoryTools, serveMcp } from './mcp.ts'
+import { deriveBrief, deriveStatus, publicEvent, publicRound, type StreamEvent } from './view.ts'
 import { createWebhook, parseWebhook, type WebhookEvent } from './webhook.ts'
 
 export type Tailnet = { ip: string; name?: string }
@@ -235,6 +236,9 @@ export function startServer(options: ServerOptions) {
 	const starting = new Set<string>()
 	const hosts = new Set([`127.0.0.1:${options.port}`, `localhost:${options.port}`])
 	let tailnet: Tailnet | null = null
+	let sseSeq = 0
+	const recentChanges: StreamEvent[] = []
+	const changeWaiters = new Set<() => void>()
 	const webhook = createWebhook(db)
 
 	// ---- reads ----
@@ -544,15 +548,42 @@ export function startServer(options: ServerOptions) {
 		closedAt: i.closed_at
 	})
 
+	const derivedFor = (
+		i: IssueRow,
+		runs = runsOf(i.id),
+		decisions = decisionsOf(i.id),
+		findings = findingsOf(i.id),
+		pr: PrState | null = i.pr_state ? (JSON.parse(i.pr_state) as PrState) : null,
+		waiting = waitingOf(i)
+	) =>
+		deriveStatus({
+			state: i.state,
+			outcome: i.outcome,
+			stage: (runs.filter((r) => r.state === 'running').at(-1) ?? runs.at(-1))?.stage ?? 'research',
+			threadGone: gone(i),
+			undelivered: undelivered(i.id),
+			stuck: i.nudges >= MAX_NUDGES || i.pr_pokes >= MAX_POKES,
+			decisions,
+			waiting,
+			runs,
+			findings,
+			prChecks: pr?.checks.state ?? null
+		})
+
 	const boardItem = (i: IssueRow) => {
 		const runs = runsOf(i.id)
 		const running = runs.filter((r) => r.state === 'running').at(-1)
 		const pr = i.pr_state ? (JSON.parse(i.pr_state) as PrState) : null
-		const prFindings = findingsOf(i.id).filter((f) => f.severity !== 'pre-existing')
+		const decisions = decisionsOf(i.id)
+		const findings = findingsOf(i.id)
+		const prFindings = findings.filter((f) => f.severity !== 'pre-existing')
+		const waiting = waitingOf(i)
+		const last = lastEvent(i.id)
 		const latestByStage = new Map<string, RunRow>()
 		for (const r of runs) latestByStage.set(r.stage, r)
 		return {
 			...publicIssue(i),
+			derived: derivedFor(i, runs, decisions, findings, pr, waiting),
 			asked: (latestResult(i.id, 'research')?.result.asked as string | undefined) ?? null,
 			planned: (latestResult(i.id, 'plan')?.result.planned as string | undefined) ?? null,
 			built: (latestResult(i.id, 'implement')?.result.built as string | undefined) ?? null,
@@ -566,9 +597,9 @@ export function startServer(options: ServerOptions) {
 				open: prFindings.filter(isOpenFinding).length,
 				important: prFindings.filter((f) => f.severity === 'important' && isOpenFinding(f)).length
 			},
-			lastEvent: lastEvent(i.id),
-			decisions: decisionsOf(i.id).filter(waits).map(publicDecision),
-			waiting: waitingOf(i),
+			lastEvent: last ? publicEvent(last) : null,
+			decisions: decisions.filter(waits).map(publicDecision),
+			waiting,
 			captures: evidenceRows(i.id).length,
 			preview: previewOf(i)?.state ?? null,
 			/** The stages that have had a run, so the page can tell a skipped stage from a finished one. */
@@ -603,9 +634,38 @@ export function startServer(options: ServerOptions) {
 
 	// ---- writes ----
 
-	function emit(issue: string | null) {
+	function liveCounts() {
+		const open = db.query(`select * from issues where state = 'open'`).all() as IssueRow[]
+		const needsByRepo: Record<string, number> = {}
+		let needs = 0
+		for (const i of open) {
+			if (!needsYou(i)) continue
+			needs++
+			needsByRepo[i.repo] = (needsByRepo[i.repo] ?? 0) + 1
+		}
+		return { open: open.length, needsYou: needs, needsByRepo }
+	}
+
+	function emit(issue: string | null, meta: { kind?: string; summary?: string } = {}) {
 		for (const wake of [...waiters]) wake(issue)
-		const chunk = encoder.encode(`event: change\ndata: ${JSON.stringify({ issue })}\n\n`)
+		const seq = ++sseSeq
+		const counts = liveCounts()
+		const row = issue ? getIssue(issue) : null
+		const payload: StreamEvent = {
+			id: seq,
+			issue,
+			kind: meta.kind ?? (issue ? 'update' : 'global'),
+			open: counts.open,
+			needsYou: counts.needsYou,
+			needsByRepo: counts.needsByRepo,
+			...(row?.title && { title: row.title }),
+			...(meta.summary && { summary: meta.summary.slice(0, 240) })
+		}
+		recentChanges.push(payload)
+		if (recentChanges.length > 200) recentChanges.splice(0, recentChanges.length - 200)
+		for (const wake of [...changeWaiters]) wake()
+		if (!clients.size) return
+		const chunk = encoder.encode(`id: ${seq}\nevent: change\ndata: ${JSON.stringify(payload)}\n\n`)
 		for (const client of clients) {
 			try {
 				client.enqueue(chunk)
@@ -613,6 +673,28 @@ export function startServer(options: ServerOptions) {
 				clients.delete(client)
 			}
 		}
+	}
+
+	/** Long-poll change feed for embedded or relayed clients that cannot stream SSE. */
+	function waitChanges(after: number, waitSeconds: number, signal?: AbortSignal) {
+		const snapshot = () => {
+			const events = recentChanges.filter((e) => e.id > after)
+			const reset = after > 0 && recentChanges.length > 0 && recentChanges[0]!.id > after + 1
+			return { seq: sseSeq, events, ...(reset && { reset: true }) }
+		}
+		const waitMs = Math.min(Math.max(waitSeconds, 0), 25) * 1000
+		if (sseSeq > after || waitMs === 0 || signal?.aborted) return Promise.resolve(snapshot())
+		return new Promise<ReturnType<typeof snapshot>>((resolve) => {
+			const done = () => {
+				clearTimeout(timer)
+				changeWaiters.delete(done)
+				signal?.removeEventListener('abort', done)
+				resolve(snapshot())
+			}
+			const timer = setTimeout(done, waitMs)
+			changeWaiters.add(done)
+			signal?.addEventListener('abort', done, { once: true })
+		})
 	}
 
 	function addEvent(issueId: string, kind: string, message: string, runId: string | null = null) {
@@ -625,7 +707,7 @@ export function startServer(options: ServerOptions) {
 			text: message.slice(0, MAX_EVENT)
 		})
 		db.query('update issues set updated_at = $now, nudges = 0 where id = $issueId').run({ now, issueId })
-		emit(issueId)
+		emit(issueId, { kind, summary: message })
 	}
 
 	/** An event the service itself notes: unlike `addEvent`, it is no sign of life from the thread, so it keeps
@@ -895,7 +977,10 @@ export function startServer(options: ServerOptions) {
 			pr: issue.pr_state ? JSON.parse(issue.pr_state) : null,
 			gate: gateOf(issue),
 			waiting: waitingOf(issue),
-			round: latestRound(issue.id),
+			round: (() => {
+				const r = latestRound(issue.id)
+				return r ? publicRound(r) : null
+			})(),
 			merge: effectiveMerge(issue)
 		}
 	}
@@ -1351,27 +1436,8 @@ export function startServer(options: ServerOptions) {
 		return { ok: true }
 	}
 
-	/** An answer from the page or the MCP server: both are the user's, and both are held for the thread. */
-	async function pageAnswer(decisionId: string, body: Record<string, unknown>, from: 'page' | 'mcp' = 'page') {
-		const decision = decisionOf(decisionId)
-		const issue = getIssue(decision.issue_id)!
-		if (issue.state !== 'open') fail(409, `issue ${issue.id} is ${issue.state}`)
-		const answer = text(body.answer, 'answer', { required: true, max: MAX_EVENT })!
-		if (decision.kind === 'plan') {
-			const open = decisionsOf(issue.id).filter((d) => d.kind === 'question' && isOpenDecision(d)).length
-			if (open) fail(409, `answer the ${open === 1 ? 'open question' : `${open} open questions`} of this issue first: the plan is built on ${open === 1 ? 'its answer' : 'their answers'}`)
-		}
-		db.query(
-			`update decisions set answer = $answer, answered_via = 'page', answered_from = $from, delivery = 'held', answered_at = $now where id = $id`
-		).run({ answer, from: from === 'mcp' ? 'mcp' : null, now: Date.now(), id: decisionId })
-		addEvent(issue.id, 'answer', `Answered ${from === 'mcp' ? 'through the MCP' : 'on the page'}: ${decision.question} → ${answer}`)
-		acceptWithMerge(decision, answer, 'page')
-		planFollowsAnswers(issue.id, 'page')
-		return deliver(issue.id)
-	}
-
-	/** Answers a batch of decisions on one issue atomically (questions + plan approval in one click from the page). */
-	async function pageAnswers(issueId: string, body: Record<string, unknown>) {
+	/** Answers one or more decisions on an issue atomically (from the page, native app, or MCP server). */
+	async function pageAnswers(issueId: string, body: Record<string, unknown>, from: 'page' | 'mcp' = 'page') {
 		const issue = getIssue(issueId) ?? fail(404, `no issue ${issueId}`)
 		if (issue.state !== 'open') fail(409, `issue ${issue.id} is ${issue.state}`)
 		if (!Array.isArray(body.answers) || !body.answers.length) fail(400, 'answers: give at least one { decision, answer }')
@@ -1397,13 +1463,15 @@ export function startServer(options: ServerOptions) {
 		}
 		const now = Date.now()
 		const nonPlan = entries.filter((e) => e.decision.kind !== 'plan')
+		const viaLabel = from === 'mcp' ? 'through the MCP' : 'on the page'
+		const fromCol = from === 'mcp' ? 'mcp' : null
 		let enabledAutoShip = false
 		db.transaction(() => {
 			for (const { decision, answer } of nonPlan) {
 				db.query(
-					`update decisions set answer = $answer, answered_via = 'page', answered_from = null, delivery = 'held', answered_at = $now where id = $id`
-				).run({ answer, now, id: decision.id })
-				addEvent(issue.id, 'answer', `Answered on the page: ${decision.question} → ${answer}`)
+					`update decisions set answer = $answer, answered_via = 'page', answered_from = $from, delivery = 'held', answered_at = $now where id = $id`
+				).run({ answer, from: fromCol, now, id: decision.id })
+				addEvent(issue.id, 'answer', `Answered ${viaLabel}: ${decision.question} → ${answer}`)
 				acceptWithMerge(decision, answer, 'page')
 			}
 			const extraNote = planEntry && planEntry.answer !== 'Approve' && planEntry.answer !== 'Change' ? planEntry.answer : undefined
@@ -1412,9 +1480,9 @@ export function startServer(options: ServerOptions) {
 				const freshPlan = db.query('select * from decisions where id = $id').get({ id: planEntry.decision.id }) as DecisionRow
 				if (isOpenDecision(freshPlan)) {
 					db.query(
-						`update decisions set answer = $answer, answered_via = 'page', answered_from = null, delivery = 'held', answered_at = $now where id = $id`
-					).run({ answer: planEntry.answer, now, id: freshPlan.id })
-					addEvent(issue.id, 'answer', `Answered on the page: ${freshPlan.question} → ${planEntry.answer}`)
+						`update decisions set answer = $answer, answered_via = 'page', answered_from = $from, delivery = 'held', answered_at = $now where id = $id`
+					).run({ answer: planEntry.answer, from: fromCol, now, id: freshPlan.id })
+					addEvent(issue.id, 'answer', `Answered ${viaLabel}: ${freshPlan.question} → ${planEntry.answer}`)
 					if (autoShip && planEntry.answer === 'Approve') {
 						db.query('update issues set auto_ship = 1 where id = $id').run({ id: issue.id })
 						addEvent(issue.id, 'report', 'Auto-ship enabled: will merge automatically once CI and reviews pass')
@@ -1558,9 +1626,16 @@ export function startServer(options: ServerOptions) {
 				where r.state = 'failed' and r.ended_at > $after and i.state = 'open' order by r.ended_at`
 			)
 			.all({ after: now - FAILING_WINDOW_MS }) as RunRow[]
+		const needsByRepo: Record<string, number> = {}
+		for (const i of issues) {
+			if (!i.needsYou) continue
+			needsByRepo[i.repo] = (needsByRepo[i.repo] ?? 0) + 1
+		}
 		return {
 			open: issues.length,
 			needsYou: issues.filter((i) => i.needsYou).length,
+			needsByRepo,
+			repos: knownRepos(),
 			/** Issues paused on a provider's usage limit: a new thread would most likely meet it too. */
 			limited: limited.map((i) => ({ issue: i.id, title: i.title, until: i.wake_at, note: i.limit_note })),
 			/** Stage runs that failed in the last hour, and in how many issues; two or more issues look like an outage. */
@@ -1570,7 +1645,7 @@ export function startServer(options: ServerOptions) {
 				reasons: [...new Set(failed.map((r) => (r.summary ?? '').slice(0, 200)).filter(Boolean))].slice(0, 5)
 			},
 			issues,
-			done: done.map(publicIssue)
+			done: done.map((i) => ({ ...publicIssue(i), derived: derivedFor(i) }))
 		}
 	}
 
@@ -1606,31 +1681,47 @@ export function startServer(options: ServerOptions) {
 
 	function putStore(repo: string, body: Record<string, unknown>) {
 		if (!REPO_NAME.test(repo)) fail(400, `repo: ${repo} is not <owner/name>`)
-		const store = oneOf(body.store, ['file', 'machine'] as const, 'store')
-		db.query('insert into settings (scope, value) values ($scope, $value) on conflict (scope) do update set value = $value').run({
-			scope: `store:${repo.toLowerCase()}`,
-			value: JSON.stringify(store)
-		})
-		emit(null)
-		return { ok: true, store }
+		return putSettings(`repo:${repo}`, { store: body.store }) as { ok: true; store: Store }
 	}
 
 	function putSettings(scope: string, body: unknown) {
 		if (scope !== 'global' && !(scope.startsWith('repo:') && REPO_NAME.test(scope.slice('repo:'.length)))) {
 			fail(400, `scope: ${scope} is not global or repo:<owner/name>`)
 		}
-		let layer: PartialSettings
-		try {
-			layer = validate(body)
-		} catch (error) {
-			return fail(400, (error as Error).message)
+		let store: Store | undefined
+		let layerBody: unknown = body
+		let writeLayer = true
+		if (body && typeof body === 'object' && !Array.isArray(body) && 'store' in body) {
+			if (scope === 'global') fail(400, 'store: only repo:<owner/name> has a store')
+			const { store: rawStore, ...rest } = body as Record<string, unknown>
+			store = oneOf(rawStore, ['file', 'machine'] as const, 'store')
+			layerBody = rest
+			writeLayer = Object.keys(rest).length > 0
 		}
-		db.query('insert into settings (scope, value) values ($scope, $value) on conflict (scope) do update set value = $value').run({
-			scope: scope.toLowerCase(),
-			value: JSON.stringify(layer)
-		})
-		emit(null)
-		return { ok: true }
+		let layer: PartialSettings | undefined
+		if (writeLayer) {
+			try {
+				layer = validate(layerBody)
+			} catch (error) {
+				return fail(400, (error as Error).message)
+			}
+		}
+		db.transaction(() => {
+			if (store) {
+				db.query('insert into settings (scope, value) values ($scope, $value) on conflict (scope) do update set value = $value').run({
+					scope: `store:${scope.slice('repo:'.length).toLowerCase()}`,
+					value: JSON.stringify(store)
+				})
+			}
+			if (writeLayer) {
+				db.query('insert into settings (scope, value) values ($scope, $value) on conflict (scope) do update set value = $value').run({
+					scope: scope.toLowerCase(),
+					value: JSON.stringify(layer)
+				})
+			}
+		})()
+		emit(null, { kind: 'settings' })
+		return { ok: true, ...(store && { store }) }
 	}
 
 	async function newThread(body: Record<string, unknown>, loopback: boolean) {
@@ -1806,7 +1897,7 @@ export function startServer(options: ServerOptions) {
 		if (/\s/.test(key)) fail(400, 'apiKey: an API key has no spaces')
 		const who = await viaIntake(() => linearViewer(key))
 		writeScope('intake:linear', { key, ...who, connectedAt: Date.now() } satisfies LinearConnection)
-		emit(null)
+		emit(null, { kind: 'intake' })
 		return { ok: true, ...who }
 	}
 
@@ -1821,7 +1912,7 @@ export function startServer(options: ServerOptions) {
 		}
 		if (before && source.kind !== before.kind) fail(400, 'kind: a source keeps its kind; add a new source instead')
 		writeScope('intake:sources', before ? sources.map((s) => (s.id === before.id ? source : s)) : [...sources, source])
-		emit(null)
+		emit(null, { kind: 'intake' })
 		return { ok: true, source }
 	}
 
@@ -1829,7 +1920,7 @@ export function startServer(options: ServerOptions) {
 		const sources = intakeSources()
 		if (!sources.some((s) => s.id === id)) fail(404, `no intake source ${id}`)
 		writeScope('intake:sources', sources.filter((s) => s.id !== id))
-		emit(null)
+		emit(null, { kind: 'intake' })
 		return { ok: true }
 	}
 
@@ -2805,12 +2896,19 @@ export function startServer(options: ServerOptions) {
 	/** An issue as its page shows it; `lastEvents` keeps only that many of the newest events. */
 	function issueDetail(id: string, lastEvents?: number) {
 		const issue = getIssue(id) ?? fail(404, `no issue ${id}`)
+		const runs = runsOf(issue.id)
+		const decisions = decisionsOf(issue.id)
+		const findings = findingsOf(issue.id)
 		const events = eventsOf(issue.id)
+		const shownEvents = lastEvents === undefined ? events : lastEvents > 0 ? events.slice(-lastEvents) : []
+		const rounds = db.query('select * from pr_rounds where issue_id = $id order by n').all({ id: issue.id }) as RoundRow[]
 		return {
 			...issueStatus(issue),
+			derived: derivedFor(issue, runs, decisions, findings),
+			brief: deriveBrief(runs),
 			body: issue.body,
 			report: issue.report,
-			events: lastEvents === undefined ? events : lastEvents > 0 ? events.slice(-lastEvents) : [],
+			events: shownEvents.map(publicEvent),
 			...(lastEvents !== undefined && events.length > lastEvents && { eventsLeftOut: events.length - lastEvents }),
 			items: loadItems(issue.id).map(({ item, handling, row }) => ({
 				...item,
@@ -2821,7 +2919,7 @@ export function startServer(options: ServerOptions) {
 				handledNote: row.handled_note,
 				handledAt: row.handled_at
 			})),
-			rounds: db.query('select * from pr_rounds where issue_id = $id order by n').all({ id: issue.id })
+			rounds: rounds.map(publicRound)
 		}
 	}
 
@@ -2831,7 +2929,7 @@ export function startServer(options: ServerOptions) {
 		const before = webhook.config()
 		if (body.url === null) {
 			webhook.set(null)
-			emit(null)
+			emit(null, { kind: 'webhook' })
 			return { ok: true, webhook: null }
 		}
 		let next: ReturnType<typeof parseWebhook>
@@ -2841,7 +2939,7 @@ export function startServer(options: ServerOptions) {
 			return fail(400, (error as Error).message)
 		}
 		webhook.set(next)
-		emit(null)
+		emit(null, { kind: 'webhook' })
 		return {
 			ok: true,
 			...webhook.view(0),
@@ -3081,9 +3179,9 @@ export function startServer(options: ServerOptions) {
 			return issue ? { ...started, title: issue.title, repo: issue.repo, source: issue.source } : started
 		},
 		answer: async (id, given) => {
-			const decision = db.query('select * from decisions where id = $id').get({ id }) as DecisionRow | null
-			const answer = given === 'recommended' && decision ? decision.recommendation : given
-			return { answer, ...deliveryOf(await pageAnswer(id, { answer }, 'mcp')) }
+			const decision = decisionOf(id)
+			const answer = given === 'recommended' ? decision.recommendation : given
+			return { answer, ...deliveryOf(await pageAnswers(decision.issue_id, { answers: [{ decision: id, answer }] }, 'mcp')) }
 		},
 		decision: (given) => {
 			const id = given.startsWith('d_') ? given : `d_${given}`
@@ -3247,8 +3345,24 @@ export function startServer(options: ServerOptions) {
 		}
 		const method = req.method
 
-		if (method === 'GET' && url.pathname === '/health') return { ok: true, version, appDir: APP_DIR }
+		if (method === 'GET' && url.pathname === '/health') {
+			return {
+				ok: true,
+				version,
+				appDir: APP_DIR,
+				pid: process.pid,
+				port: options.port,
+				tailnet: tailnet ? { ip: tailnet.ip, name: tailnet.name ?? null } : null
+			}
+		}
 		if (method === 'GET' && url.pathname === '/api/board') return board()
+		if (method === 'GET' && url.pathname === '/api/changes') {
+			const after = Number(url.searchParams.get('after') ?? 0)
+			const wait = Number(url.searchParams.get('wait') ?? 0)
+			if (!Number.isFinite(after) || after < 0) fail(400, `after: ${url.searchParams.get('after')} is not a sequence number`)
+			if (!Number.isFinite(wait) || wait < 0) fail(400, `wait: ${url.searchParams.get('wait')} is not a number of seconds`)
+			return waitChanges(after, wait, req.signal)
+		}
 		if (method === 'GET' && parts[0] === 'api' && parts[1] === 'issues' && parts[2] && parts.length === 3) {
 			return issueDetail(decodeURIComponent(parts[2]))
 		}
@@ -3337,9 +3451,6 @@ export function startServer(options: ServerOptions) {
 				...(config.offline && { offline: 'git fetch failed; read the default branch as it is' })
 			}
 		}
-		if (method === 'POST' && parts[0] === 'api' && parts[1] === 'decisions' && parts[3] === 'answer' && parts[2]) {
-			return pageAnswer(decodeURIComponent(parts[2]), await body())
-		}
 		if (method === 'POST' && parts[0] === 'api' && parts[1] === 'issues' && parts[3] === 'answers' && parts[2]) {
 			return pageAnswers(decodeURIComponent(parts[2]), await body())
 		}
@@ -3362,7 +3473,7 @@ export function startServer(options: ServerOptions) {
 			if (method === 'PUT' && url.pathname === '/api/intake/linear') return connectLinear(await body())
 			if (method === 'DELETE' && url.pathname === '/api/intake/linear') {
 				writeScope('intake:linear', null)
-				emit(null)
+				emit(null, { kind: 'intake' })
 				return { ok: true }
 			}
 			if (method === 'GET' && url.pathname === '/api/intake/linear/teams') {
@@ -3377,11 +3488,7 @@ export function startServer(options: ServerOptions) {
 				if (method === 'POST' && id && parts[4] === 'start' && parts.length === 5) return startFromSource(id, await body())
 			}
 		}
-		if (method === 'GET' && url.pathname === '/api/repos') return { repos: knownRepos() }
 		if (method === 'POST' && url.pathname === '/api/github/fetch') return fetchGithubItem(await body())
-		if (method === 'PUT' && url.pathname.startsWith('/api/stores/')) {
-			return putStore(decodeURIComponent(url.pathname.slice('/api/stores/'.length)), await body())
-		}
 		if (method === 'PUT' && url.pathname.startsWith('/api/settings/')) {
 			// The scope can hold a slash, as in repo:acme/api, so it is the whole rest of the path.
 			const scope = decodeURIComponent(url.pathname.slice('/api/settings/'.length))
@@ -3516,6 +3623,8 @@ export function startServer(options: ServerOptions) {
 
 	function stop() {
 		for (const timer of timers) clearInterval(timer)
+		for (const wake of [...changeWaiters]) wake()
+		changeWaiters.clear()
 		for (const client of clients) {
 			try {
 				client.close()

@@ -28,7 +28,7 @@ test('a project reads its file or this machine, never both, and the page chooses
 	expect(got.sources.reviewRounds).toBe('file')
 	expect(got.settings.stages.review.note).toBe('Check the migrations.')
 
-	expect((await h.call('PUT', '/api/stores/acme/api', { store: 'machine' })).status).toBe(200)
+	expect((await h.call('PUT', '/api/settings/repo:acme/api', { store: 'machine' })).status).toBe(200)
 	got = await resolved()
 	expect(got.store).toBe('machine')
 	expect(got.settings.reviewRounds).toBe(0)
@@ -40,11 +40,14 @@ test('a project reads its file or this machine, never both, and the page chooses
 	expect(got.settings.reviewRounds).toBe(1)
 	expect(got.sources.reviewRounds).toBe('global')
 
-	await h.call('PUT', '/api/stores/acme/api', { store: 'file' })
+	await h.call('PUT', '/api/settings/repo:acme/api', { store: 'file' })
 	expect((await resolved()).settings.reviewRounds).toBe(3)
-	const bad = await h.call('PUT', '/api/stores/acme/api', { store: 'cloud' })
+	const bad = await h.call('PUT', '/api/settings/repo:acme/api', { store: 'cloud' })
 	expect(bad.status).toBe(400)
 	expect(bad.body.error).toContain('store')
+	const badGlobal = await h.call('PUT', '/api/settings/global', { store: 'file' })
+	expect(badGlobal.status).toBe(400)
+	expect(badGlobal.body.error).toContain('store')
 })
 
 test('a project with no file keeps its settings on this machine, and one moved to its repository waits for the file', async () => {
@@ -53,7 +56,7 @@ test('a project with no file keeps its settings on this machine, and one moved t
 	let got = await resolved()
 	expect(got.store).toBe('machine')
 	expect(got.settings.reviewRounds).toBe(0)
-	await h.call('PUT', '/api/stores/acme/api', { store: 'file' })
+	await h.call('PUT', '/api/settings/repo:acme/api', { store: 'file' })
 	got = await resolved()
 	expect(got.store).toBe('file')
 	expect(got.settings.reviewRounds).toBe(2)
@@ -62,7 +65,7 @@ test('a project with no file keeps its settings on this machine, and one moved t
 
 test('a broken file is no error for a project kept on this machine', async () => {
 	pushFile(repo.other, 'factory.config.yaml', 'stages:\n  reviw:\n    note: x\n')
-	await h.call('PUT', '/api/stores/acme/api', { store: 'machine' })
+	await h.call('PUT', '/api/settings/repo:acme/api', { store: 'machine' })
 	const res = await start('t1')
 	expect(res.body.store).toBe('machine')
 	expect(res.body.configError).toBeUndefined()
@@ -124,7 +127,7 @@ test("the page sees the store, the file and this machine's settings as a file to
 	expect(api.resolved.sources.planApproval).toBe('file')
 	expect(api.resolved.sources.reviewRounds).toBe('default')
 
-	await h.call('PUT', '/api/stores/acme/api', { store: 'machine' })
+	await h.call('PUT', '/api/settings/repo:acme/api', { store: 'machine' })
 	api = (await h.call('GET', '/api/settings')).body.repos['acme/api']
 	expect(api.store).toBe('machine')
 	expect(api.file).toEqual({ planApproval: 'always' })

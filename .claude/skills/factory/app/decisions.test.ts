@@ -15,7 +15,7 @@ afterEach(() => h.close())
 
 const ask = (body: Record<string, unknown>) =>
 	h.as('t1')('POST', '/api/issue/ask', { kind: 'question', recommend: 'Blue', options: ['Blue', 'Green'], ...body })
-const answer = (id: string, value: string) => h.call('POST', `/api/decisions/${id}/answer`, { answer: value })
+const answer = (id: string, value: string) => h.call('POST', '/api/issues/t1/answers', { answers: [{ decision: id, answer: value }] })
 const sends = () => h.calls().filter((c) => c.args[1] === 'send')
 
 test('answers wait until every blocking question is answered, then go as one message', async () => {

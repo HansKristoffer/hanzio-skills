@@ -101,6 +101,10 @@ test('two syncs over the same PR print the same work and change nothing', async 
 	expect(second.needsAction.map((i: { id: string }) => i.id)).toEqual(first.needsAction.map((i: { id: string }) => i.id))
 	expect(second.gate).toEqual(first.gate)
 	expect(second.round).toEqual({ n: 1, pushes: 0 })
+	const detail = (await h.call('GET', '/api/issues/t1')).body
+	expect(detail.round).toMatchObject({ n: 1, pushes: 0, startHead: HEAD, lastHead: HEAD, endedAt: null })
+	expect(detail.rounds[0].startedAt).toBeNumber()
+	expect(detail.rounds[0].started_at).toBeUndefined()
 	expect(first.needsAction[0].isNew).toBe(true)
 	expect(second.needsAction[0].isNew).toBe(false)
 })
@@ -292,7 +296,7 @@ test('a fourth push in a round blocks the gate and round, until the user says go
 	expect((await await cli(['pr', 'round', '-'], 'summary')).err).toContain('round refused')
 	const asked = await as('/api/issue/ask', { kind: 'blocked', round: true, question: 'Go on with round 1?', recommend: 'Go on' })
 	expect((await issue()).decisions[0].options).toEqual(['Go on', 'Stop'])
-	await h.call('POST', `/api/decisions/${asked.body.decision}/answer`, { answer: 'Go on' })
+	await h.call('POST', '/api/issues/t1/answers', { answers: [{ decision: asked.body.decision, answer: 'Go on' }] })
 	expect((await await cli(['gate'])).json.blockers.map((b: { code: string }) => b.code)).not.toContain('round-budget')
 })
 
@@ -318,13 +322,13 @@ test('a merge decision clears ask only when answered Merge on the current head; 
 	const ask = (head: string) => as('/api/issue/ask', { kind: 'merge', head, question: 'Merge?', recommend: 'Merge' })
 	expect((await as('/api/issue/ask', { kind: 'merge', head: HEAD, question: 'Merge?', recommend: 'Merge', options: ['Yes'] })).status).toBe(400)
 	const no = (await ask(HEAD)).body.decision
-	await h.call('POST', `/api/decisions/${no}/answer`, { answer: 'Do not merge' })
+	await h.call('POST', '/api/issues/t1/answers', { answers: [{ decision: no, answer: 'Do not merge' }] })
 	expect((await await cli(['gate'])).json.blockers.map((b: { code: string }) => b.code)).toEqual(['merge-setting'])
 	const old = (await ask('0'.repeat(40))).body.decision
-	await h.call('POST', `/api/decisions/${old}/answer`, { answer: 'Merge' })
+	await h.call('POST', '/api/issues/t1/answers', { answers: [{ decision: old, answer: 'Merge' }] })
 	expect((await await cli(['gate'])).json.blockers.map((b: { code: string }) => b.code)).toEqual(['merge-setting'])
 	const yes = (await ask(HEAD)).body.decision
-	await h.call('POST', `/api/decisions/${yes}/answer`, { answer: 'Merge' })
+	await h.call('POST', '/api/issues/t1/answers', { answers: [{ decision: yes, answer: 'Merge' }] })
 	expect((await await cli(['gate'])).json.ready).toBe(true)
 	await as('/api/issue/update', { merge: 'never' })
 	expect((await as('/api/issue/update', { merge: 'ask' })).status).toBe(400)
