@@ -286,3 +286,58 @@ test('page message sends a note to the thread, board exposes repos, derived stat
 	const sends = h.calls().filter((c) => c.args[1] === 'send')
 	expect(sends.at(-1)!.stdin).toContain('Please also check mobile layout')
 })
+
+test('page and large JSON responses support gzip and ETag conditional requests, and board.done includes cycle metrics', async () => {
+	const first = await fetch(`http://127.0.0.1:${h.port}/`, { headers: { 'accept-encoding': 'gzip' } })
+	expect(first.status).toBe(200)
+	expect(first.headers.get('content-encoding')).toBe('gzip')
+	const etag = first.headers.get('etag')
+	expect(etag).toBeTruthy()
+	const html = await first.text()
+	expect(html).toContain('<!doctype html>')
+
+	const notModified = await fetch(`http://127.0.0.1:${h.port}/`, { headers: { 'if-none-match': etag! } })
+	expect(notModified.status).toBe(304)
+	expect(await notModified.text()).toBe('')
+
+	await start('t1', { body: 'x'.repeat(2000) })
+	await h.as('t1')('POST', '/api/issue/run', { stage: 'review' })
+	await h.as('t1')('POST', '/api/issue/close', { outcome: 'shipped', deploy: 'verified', summary: 'Shipped fast' })
+	const boardRes = await fetch(`http://127.0.0.1:${h.port}/api/board`, { headers: { 'accept-encoding': 'gzip' } })
+	expect(boardRes.status).toBe(200)
+	const boardBody = await boardRes.json()
+	expect(boardBody.done).toHaveLength(1)
+	expect(boardBody.done[0].minutes).toBeGreaterThanOrEqual(0)
+	expect(boardBody.done[0].reviewRounds).toBe(1)
+	expect(boardBody.done[0].merged).toBeNull()
+
+	const detailRes = await fetch(`http://127.0.0.1:${h.port}/api/issues/t1`, { headers: { 'accept-encoding': 'gzip' } })
+	expect(detailRes.status).toBe(200)
+	expect(detailRes.headers.get('content-encoding')).toBe('gzip')
+	const detailBody = await detailRes.json()
+	expect(detailBody.body).toHaveLength(2000)
+})
+
+test('GET /api/issues/batch returns multiple issue details matching single-issue reads and skips missing ids', async () => {
+	await start('t1', { title: 'Batch alpha', body: 'a'.repeat(5000) })
+	await start('t2', { title: 'Batch beta', body: 'b'.repeat(5000) })
+	await h.as('t1')('POST', '/api/issue/report', { text: 'Alpha note' })
+	await h.as('t2')('POST', '/api/issue/report', { text: 'Beta note' })
+
+	const emptyRes = await h.call('GET', '/api/issues/batch')
+	expect(emptyRes.status).toBe(200)
+	expect(emptyRes.body).toEqual({ issues: {} })
+
+	const batchHttp = await fetch(`http://127.0.0.1:${h.port}/api/issues/batch?ids=t1,t2,t1,missing`, {
+		headers: { 'accept-encoding': 'gzip' }
+	})
+	expect(batchHttp.status).toBe(200)
+	expect(batchHttp.headers.get('content-encoding')).toBe('gzip')
+	const batchBody = await batchHttp.json()
+	expect(Object.keys(batchBody.issues).sort()).toEqual(['t1', 't2'])
+
+	const single1 = (await h.call('GET', '/api/issues/t1')).body
+	const single2 = (await h.call('GET', '/api/issues/t2')).body
+	expect(batchBody.issues.t1).toEqual(single1)
+	expect(batchBody.issues.t2).toEqual(single2)
+})
