@@ -1,6 +1,6 @@
 ---
 name: grill
-description: Interview the user in rounds until a plan, design or scope has no open decisions, each question with a recommended answer, looking up every fact instead of asking for it. Use when asked to grill or stress-test a plan, when a plan, spec or scope still has open decisions, or when another skill needs decisions settled before it writes.
+description: Interview the user in rounds until a plan, design or scope has no open decisions, recommending an answer per question and looking up facts first. Use to grill or stress-test a plan, resolve open decisions, or settle a spec before writing.
 ---
 
 # Grill

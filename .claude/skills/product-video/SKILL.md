@@ -1,6 +1,6 @@
 ---
 name: product-video
-description: Make professional product videos in any repository, from code-built motion graphics rendered frame by frame at 60 fps, live Chrome recordings of the real product, ElevenLabs narration and music, a designed sound-effect kit, checked by measurement and an independent critic. Covers SaaS launch films in the style seen on X, feature explainers, product demos and chaptered walkthroughs. Use when asked for a product video, launch video, promo, explainer, demo, walkthrough or screen recording with voice-over.
+description: Produce 60 fps product videos from code-built motion graphics, live Chrome captures, ElevenLabs voice/music and SFX, verified by metrics and a critic. Use for launch films, promos, feature explainers, demos, walkthroughs or narrated screen recordings.
 ---
 
 # Product video

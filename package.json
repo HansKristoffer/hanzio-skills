@@ -1,0 +1,7 @@
+{
+  "name": "hanzio-skills",
+  "private": true,
+  "scripts": {
+    "check": "bash scripts/check.sh"
+  }
+}

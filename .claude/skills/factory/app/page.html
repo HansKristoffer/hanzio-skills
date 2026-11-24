@@ -4323,14 +4323,19 @@ function parseOptions(text) {
 	}
 	return o
 }
-function fallbackText(t) { if (!t?.model) return ''; const o = optionsText(t.options); return `${t.provider}/${t.model}${o ? `, ${o}` : ''}` }
-function parseFallback(text) {
+function fallbackOneText(t) { if (!t?.model) return ''; const o = optionsText(t.options); return `${t.provider}/${t.model}${o ? `, ${o}` : ''}` }
+function fallbackText(t) { return Array.isArray(t) ? t.map(fallbackOneText).filter(Boolean).join('; ') : fallbackOneText(t) }
+function parseFallbackOne(text) {
 	const [first, ...rest] = text.split(',')
 	const slash = first.indexOf('/')
 	if (slash < 1 || slash === first.trim().length - 1) throw new Error(`Fallback: write as "provider/model", not "${first.trim()}"`)
 	const target = { provider: first.slice(0, slash).trim(), model: first.slice(slash + 1).trim() }
 	if (rest.join(',').trim()) target.options = parseOptions(rest.join(',').trim())
 	return target
+}
+function parseFallback(text) {
+	const entries = text.split(';').map((s) => s.trim()).filter(Boolean).map(parseFallbackOne)
+	return entries.length === 1 ? entries[0] : entries
 }
 
 let settingsDirty = false

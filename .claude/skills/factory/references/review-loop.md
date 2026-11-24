@@ -102,7 +102,7 @@ It syncs, then prints `ready` or the blockers, each in words.
   factory ask --kind merge --head <sha> --question "Merge PR #<n>? <why it waits for you>. <what merging sets off>." --recommend "<Merge, or what to change first>"
   ```
 
-  Only the answer Merge on that head clears it; a push since means asking again. An answer starting with `Do not merge:` gives changes the user wants before merging: make those changes (in this worktree for a few lines, or one implement run), push, re-verify, and ask Merge again on the new head.
+  Only the answer Merge on that head clears it; a merge approval (along with internal review coverage and the risk check) survives subsequent clean, conflict-free merges of the base branch when no changed files overlap and no new feature/fix code changes are introduced. Any overlapping file, conflict resolution or new code commit invalidates approval and requires asking Merge again on the new head. An answer starting with `Do not merge:` gives changes the user wants before merging: make those changes (in this worktree for a few lines, or one implement run), push, re-verify, and ask Merge again on the new head.
 - Blocked by `items`, `risk-unchecked`, or `internal-review` on a head no review was tried on: steps 3 and 4.
 - Blocked by `decisions`: answer what came back, or wait for it.
 - Something you cannot fix: a `blocked` decision with what you tried.

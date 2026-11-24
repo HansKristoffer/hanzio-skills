@@ -1,6 +1,6 @@
 ---
 name: build-tasks
-description: Split an agreed plan or technical document into self-contained task documents with a status index, and run them with parallel AI agents, one per ready task in its own git worktree (subagents, or T3 Code threads that each open a PR), merged into one integration branch. Use when asked to split a plan or scope into tasks, to build or run the tasks, to fan work out to parallel agents, or to resume a half-finished task set.
+description: Split an agreed plan or scope into self-contained task docs with a status index and run them with parallel agents in git worktrees, merged into one branch. Use when splitting a plan into tasks, fanning work to parallel agents, or resuming a task set.
 ---
 
 # Build from tasks

@@ -25,9 +25,15 @@ export function factoryPort() {
 
 /** Runs a command and never throws: Bun throws when the program is not installed, and Tailscale, systemd or
  * git can be missing on a machine. */
-export function sh(args: string[], options: { cwd?: string } = {}) {
+export function sh(args: string[], options: { cwd?: string; env?: Record<string, string> } = {}) {
 	try {
-		const result = Bun.spawnSync(args, { cwd: options.cwd, env: { ...process.env }, stdout: 'pipe', stderr: 'pipe' })
+		const result = Bun.spawnSync(args, {
+			cwd: options.cwd,
+			env: { ...process.env, ...options.env },
+			stdin: 'ignore',
+			stdout: 'pipe',
+			stderr: 'pipe'
+		})
 		return { ok: result.exitCode === 0, out: result.stdout.toString().trim(), err: result.stderr.toString().trim() }
 	} catch (error) {
 		return { ok: false, out: '', err: `${args[0]} is not installed: ${(error as Error).message}` }
@@ -35,9 +41,15 @@ export function sh(args: string[], options: { cwd?: string } = {}) {
 }
 
 /** Async version of `sh` for HTTP handlers so subprocesses never block the event loop. */
-export async function shAsync(args: string[], options: { cwd?: string } = {}) {
+export async function shAsync(args: string[], options: { cwd?: string; env?: Record<string, string> } = {}) {
 	try {
-		const proc = Bun.spawn(args, { cwd: options.cwd, env: { ...process.env }, stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' })
+		const proc = Bun.spawn(args, {
+			cwd: options.cwd,
+			env: { ...process.env, ...options.env },
+			stdin: 'ignore',
+			stdout: 'pipe',
+			stderr: 'pipe'
+		})
 		const [out, err, code] = await Promise.all([
 			new Response(proc.stdout as ReadableStream).text(),
 			new Response(proc.stderr as ReadableStream).text(),

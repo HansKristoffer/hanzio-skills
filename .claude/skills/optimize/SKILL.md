@@ -1,6 +1,6 @@
 ---
 name: optimize
-description: Make something measurably faster, smaller, cheaper or better (CI time, page or API speed, bundle size, test suite time, build time, cost, an eval's pass rate) by measuring it yourself first, setting a keep bar above the noise before any change, and testing one change at a time against a control, with every rejected attempt logged. Use when asked to speed up, optimize, reduce or improve something measurable, when the user has pasted two or more screenshots or numbers they measured by hand, when "still slow" or "still broken" has come up twice, or when a win is claimed from a single run. Built for TypeScript monorepos (Bun or Node, Prisma, Zod, oRPC, hanzio, Vue or React/Expo); reads the repository's own rules first and lets them win.
+description: Make something measurably faster, smaller, cheaper or higher-scoring by measuring a baseline, setting a keep bar, and testing one change at a time. Use to optimize any metric, when 2+ manual numbers are pasted, "still slow" repeats, or a single run claims a win.
 ---
 
 # Optimize

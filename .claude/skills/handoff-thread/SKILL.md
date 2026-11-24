@@ -1,6 +1,6 @@
 ---
 name: handoff-thread
-description: Move a T3 Code thread, with its Claude session and its uncommitted code, to another machine through agentgate and carry on there, for example to run or verify work on an always-on server, or to bring a thread back to a laptop. Only applies when the session runs inside T3 Code with agentgate connected, which means the mcp__agentgate__agentgate__handoff_thread and mcp__t3-code__ tools are available; without both, do not use it. Use when asked to move, hand off, switch or continue a thread on the server or another machine, or to run something on a machine this session cannot reach.
+description: Move a T3 Code thread, session and uncommitted code to another machine via agentgate (only when both mcp__agentgate__agentgate__handoff_thread and mcp__t3-code__ exist). Use to hand off, move or continue a thread on a server or another machine.
 ---
 
 # Hand off a thread

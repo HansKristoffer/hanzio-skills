@@ -1,6 +1,6 @@
 ---
 name: unslop
-description: Simplify and refactor working code after a feature or fix, or when a cleanup or type-quality pass is requested: space out dense code, add the comments that say why, and fix the prose in the diff (comments, docs, UI copy, commit and PR text). Also use it to deepen shallow modules and shrink their interfaces (pass-through wrappers, parameters callers should not need), to find implicit state machines and duct-taped fixes a native mechanism would replace, to revise any text for clarity, tone or formulaic AI language, and whenever writing, changing, reviewing or sweeping tests (authoring gate, low-value or implementation-coupled tests, test-only production seams). Built for TypeScript monorepos (Bun or Node, Prisma, Zod, oRPC, hanzio, Vue or React/Expo); reads the repository's own rules first and lets them win.
+description: Simplify and refactor working code, prose and tests by deepening shallow modules, shrinking interfaces, fixing types, spacing and commenting why, and cutting AI tells. Use after a feature/fix, for cleanup or codebase sweeps, to revise copy/docs, or when writing, reviewing or pruning tests.
 ---
 
 # Unslop

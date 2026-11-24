@@ -25,7 +25,7 @@ Issue commands (inside a T3 Code thread; the thread is the issue):
   run --stage research|plan|implement|review|land [--on plan|pr] [--context-file <path>] [--head <sha>] [--fallback]
       Prints the run, its target, and the task to hand the child, which names the file the brief is in.
       The service adds what the stage needs from stored results; a review takes no --context-file.
-      --fallback runs the stage on the fallback target its settings name, after its own provider refused.
+      --fallback runs the stage on the next fallback target in stages.<stage>.fallback after a provider refusal.
   report [--run <id>] [--done [--result-file <path>] | --failed] <text | ->
       - reads the text from stdin. A stage's --done needs its result, checked against the brief's shape.
   finding <id> --fixed <commit> | --declined - | --filed <url>

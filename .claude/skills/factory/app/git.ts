@@ -11,8 +11,13 @@ export const CONFIG_FILE = 'factory.config.yaml'
 export type RepoInfo = { repo: string; root: string; hasOrigin: boolean }
 export type ConfigRead = { file: PartialSettings | null; error?: string; offline?: boolean }
 
-const git = (cwd: string, args: string[]) => sh(['git', ...args], { cwd })
-const gitAsync = (cwd: string, args: string[]) => shAsync(['git', ...args], { cwd })
+// Never block the service on an interactive credential or SSH host-key prompt.
+const gitEnv = () => ({
+	GIT_TERMINAL_PROMPT: '0',
+	GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND || 'ssh -o BatchMode=yes'
+})
+const git = (cwd: string, args: string[]) => sh(['git', ...args], { cwd, env: gitEnv() })
+const gitAsync = (cwd: string, args: string[]) => shAsync(['git', ...args], { cwd, env: gitEnv() })
 
 const CONFIG_CACHE_MS = 30_000
 const configCache = new Map<string, { fp: string; at: number; branch: string | null; config: ConfigRead }>()
@@ -185,4 +190,59 @@ export function slugify(title: string, fallback = 'issue') {
 		.slice(0, 40)
 		.replace(/-$/, '')
 	return slug || fallback
+}
+
+const MAX_BASE_MERGES = 10
+
+/** True when `head` was reached from `fromCommit` strictly through one or more clean, conflict-free
+ * merges of `base` with no overlapping changed files and no extra code edits in the merge commits. */
+export function isCleanBaseMerge(root: string, fromCommit: string | null | undefined, head: string, base: string): boolean {
+	if (!fromCommit || !head || !base) return false
+	const target = git(root, ['rev-parse', '--verify', '--quiet', `${fromCommit}^{commit}`])
+	const tip = git(root, ['rev-parse', '--verify', '--quiet', `${head}^{commit}`])
+	if (!target.ok || !tip.ok) return false
+	if (target.out === tip.out) return true
+
+	const remoteBase = `refs/remotes/origin/${base}`
+	const localBase = `refs/heads/${base}`
+	const baseRef = git(root, ['rev-parse', '--verify', '--quiet', `${remoteBase}^{commit}`]).ok
+		? remoteBase
+		: git(root, ['rev-parse', '--verify', '--quiet', `${localBase}^{commit}`]).ok
+			? localBase
+			: null
+	if (!baseRef) return false
+
+	let cur = tip.out
+	for (let step = 0; step < MAX_BASE_MERGES && cur !== target.out; step++) {
+		const listed = git(root, ['rev-list', '--parents', '-n', '1', cur])
+		if (!listed.ok) return false
+		const parts = listed.out.split(/\s+/).filter(Boolean)
+		if (parts.length !== 3) return false
+		const [, p1, p2] = parts as [string, string, string]
+
+		// Second parent must be a commit on the base branch, not another feature branch.
+		if (!git(root, ['merge-base', '--is-ancestor', p2, baseRef]).ok) return false
+
+		const mb = git(root, ['merge-base', p1, p2])
+		if (!mb.ok || !mb.out) return false
+
+		// --no-renames reports both old and new paths so a rename cannot mask an overlap.
+		const prDiff = git(root, ['-c', 'core.quotePath=false', 'diff', '--no-renames', '--name-only', mb.out, p1])
+		const baseDiff = git(root, ['-c', 'core.quotePath=false', 'diff', '--no-renames', '--name-only', mb.out, p2])
+		if (!prDiff.ok || !baseDiff.ok) return false
+		const prFiles = new Set(prDiff.out.split('\n').filter(Boolean))
+		for (const file of baseDiff.out.split('\n').filter(Boolean)) {
+			if (prFiles.has(file)) return false
+		}
+
+		// A clean 3-way merge produces a single tree identical to the merge commit's tree.
+		const merged = git(root, ['merge-tree', '--write-tree', p1, p2])
+		if (!merged.ok) return false
+		const cleanTree = merged.out.split('\n')[0]?.trim()
+		const actualTree = git(root, ['rev-parse', `${cur}^{tree}`])
+		if (!actualTree.ok || actualTree.out !== cleanTree) return false
+
+		cur = p1
+	}
+	return cur === target.out
 }
