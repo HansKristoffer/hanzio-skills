@@ -1,6 +1,6 @@
 ---
 name: agent-browser
-description: Drive a browser with the agent-browser CLI, our one browser driver for agents. Use when verifying a change in the running app, testing or reproducing a UI flow or bug, or capturing screenshots or a video as evidence for a PR or an issue.
+description: Drive a browser with the agent-browser CLI. Use when verifying a change in a running app, testing or reproducing a UI flow or bug, or capturing screenshots or video evidence for a PR or issue.
 ---
 
 # agent-browser

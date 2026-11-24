@@ -1,6 +1,6 @@
 ---
 name: factory-intake
-description: Run as a scheduled T3 Code task that looks for new work in the systems its prompt names (GitHub issues with a label, an error tracker, a feedback queue) and starts one factory thread per new item, skipping items the factory already has or has finished, within a cap. It starts threads only; each thread works its item with the factory skill. Use when a scheduled prompt says to run factory intake, or when asked to set up or write such a scheduled task.
+description: Run a scheduled T3 Code intake task that polls named trackers (GitHub issues, errors, feedback) and starts one factory thread per new item within a cap. Use when a scheduled prompt runs factory intake, or when setting up or writing that task.
 ---
 
 # Factory intake

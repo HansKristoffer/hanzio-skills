@@ -1,6 +1,6 @@
 ---
 name: across-repos
-description: Make the same change in many repositories at once (upgrade Bun or a shared dependency, adopt one of our libraries, roll out a tool, a config or a CI change), from one brief with the user's words, tried on one repository first, then one thread per repository in its own worktree, each landing its own PR, tracked in one table. Use when asked to do something "in all our repos", in a list of repositories, in every repo that uses a package, or to open one thread or PR per repository.
+description: Roll out one change across many repositories, tried on one repo first, then one worktree thread and PR per repo in a tracked table. Use when asked to change "all our repos", a list of repos, every repo using a package, or open one PR per repo.
 ---
 
 # Across repositories

@@ -1,6 +1,6 @@
 ---
 name: build-engine
-description: Design and build a typed domain engine in TypeScript, sized to the smallest one that is correct - one registry of kinds that every type, route, test and UI renderer is derived from, pure engine logic, and adapters that change an external system (an e-commerce platform, CRM, payments, ERP, IoT fleet). Use when starting an engine or integration like this, adding a kind, adapter or command to one, planning its work packages, or reviewing whether an engine still follows its rules. Built for TypeScript monorepos (Bun or Node, Prisma, Zod, oRPC, hanzio, Vue or React/Expo); reads the repository's own rules first and lets them win.
+description: Design and build a typed TypeScript domain engine with one kind registry driving types, routes, tests and UI, pure logic, and external-system adapters. Use when starting an engine or integration, adding a kind, adapter or command, planning packages, or reviewing one.
 ---
 
 # Build an engine

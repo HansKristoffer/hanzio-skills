@@ -38,11 +38,22 @@ import {
 	type Preview,
 	type PreviewUrl
 } from './evidence.ts'
-import { defaultRef, fetchDefault, freeBranch, readConfig, readConfigSnapshotAsync, repoInfo, slugify, type ConfigRead } from './git.ts'
+import {
+	defaultRef,
+	fetchDefault,
+	freeBranch,
+	isCleanBaseMerge,
+	readConfig,
+	readConfigSnapshotAsync,
+	repoInfo,
+	slugify,
+	type ConfigRead
+} from './git.ts'
 import {
 	STAGES,
 	defaults,
 	resolve,
+	stageFallbacks,
 	stageTarget,
 	validate,
 	type DelegatedStage,
@@ -1233,11 +1244,33 @@ export function startServer(options: ServerOptions) {
 		}
 		const head = text(body.head, 'head', { max: 64 }) ?? null
 		const settings = parseResolved(issue).settings
-		const onFallback = !!body.fallback
+		const rawFallback = body.fallback
+		const onFallback = rawFallback === true || (typeof rawFallback === 'number' && Number.isInteger(rawFallback) && rawFallback >= 1)
 		if (onFallback && stage === 'land') fail(400, 'fallback: land runs in the orchestrator, which has no fallback')
-		const chosen = stage === 'land' ? null : stageTarget(settings, stage, onFallback)
-		if (stage !== 'land' && !chosen) {
-			fail(400, `fallback: the settings name no fallback for ${stage} (stages.${stage}.fallback). Ask a blocked decision instead.`)
+		let chosen = stage === 'land' ? null : stageTarget(settings, stage, false)
+		if (stage !== 'land' && onFallback) {
+			const chain = stageFallbacks(settings, stage)
+			if (!chain.length) {
+				fail(400, `fallback: the settings name no fallback for ${stage} (stages.${stage}.fallback). Ask a blocked decision instead.`)
+			}
+			if (typeof rawFallback === 'number') {
+				chosen = chain[rawFallback - 1] ?? null
+				if (!chosen) {
+					fail(400, `fallback: ${stage} has only ${chain.length} fallback target${chain.length === 1 ? '' : 's'}`)
+				}
+			} else {
+				const prior = runsOf(issue.id)
+				// Step past any fallback target whose latest run on this issue failed, so a chain advances automatically.
+				chosen =
+					chain.find((candidate) => {
+						const last = prior.findLast((r) => r.provider === candidate.provider && r.model === candidate.model)
+						return !last || last.state !== 'failed'
+					}) ?? null
+				if (!chosen) {
+					const names = chain.map((t) => `${t.provider}/${t.model}`).join(', ')
+					fail(400, `fallback: every fallback for ${stage} (${names}) has already failed on this issue. Ask a blocked decision instead.`)
+				}
+			}
 		}
 		clearWaiting(issue.id)
 		const id = randomId('r')
@@ -1669,7 +1702,7 @@ export function startServer(options: ServerOptions) {
 				await sendTo(
 					issue.id,
 					'drop',
-					`Factory: this issue was dropped outside this thread (${reason}). Stop working on it: unwatch its PR and stop what you started. Leave the PR and the branch as they are; run no more factory commands for it.`
+					`Factory: this issue was dropped outside this thread (${reason}). Stop working on it: unwatch its PR, delete any thread-bound scheduled task (such as a "Reporter's replies" webhook) with delete_scheduled_task, and stop what you started. Leave the PR and the branch as they are; run no more factory commands for it.`
 				)
 				told = true
 			} catch {
@@ -2408,10 +2441,13 @@ export function startServer(options: ServerOptions) {
 		return order[Math.max(order.indexOf(setting), issue.merge_cap ? order.indexOf(issue.merge_cap) : 0)]!
 	}
 
-	const mergeApprovedFrom = (decisions: DecisionRow[], head: string) =>
-		decisions.some((d) => d.kind === 'merge' && d.answer === 'Merge' && sameCommit(d.head, head))
+	const coversCommit = (issue: IssueRow, pr: PrState, commit: string | null | undefined) =>
+		sameCommit(commit, pr.head) || isCleanBaseMerge(issue.root, commit, pr.head, pr.base)
 
-	/** Decision 14: the head is covered by a trusted approval on it, by a clean internal review of it, or by a recorded nit fix after a clean review. */
+	const mergeApprovedFrom = (issue: IssueRow, pr: PrState, decisions: DecisionRow[]) =>
+		decisions.some((d) => d.kind === 'merge' && d.answer === 'Merge' && coversCommit(issue, pr, d.head))
+
+	/** Decision 14: the head is covered by a trusted approval on it, by a clean internal review of it, by a recorded nit fix after a clean review, or by a clean non-overlapping merge of the base branch on top of any of those. */
 	function internalCovered(
 		issue: IssueRow,
 		pr: PrState,
@@ -2419,9 +2455,9 @@ export function startServer(options: ServerOptions) {
 	) {
 		const settings = ctx.settings ?? parseResolved(issue).settings
 		if (settings.reviewRounds === 0) return true
-		if (pr.approvedBy.some((a) => sameCommit(a.commit, pr.head))) return true
+		if (pr.approvedBy.some((a) => coversCommit(issue, pr, a.commit))) return true
 		const decisions = ctx.decisions ?? decisionsOf(issue.id)
-		if (mergeApprovedFrom(decisions, pr.head)) return true
+		if (mergeApprovedFrom(issue, pr, decisions)) return true
 		const runs = ctx.runs ?? runsOf(issue.id)
 		const doneReviews = runs.filter((r) => {
 			if (r.stage !== 'review' || r.subject !== 'pr' || r.state !== 'done' || !r.result) return false
@@ -2432,12 +2468,12 @@ export function startServer(options: ServerOptions) {
 		if (findings.some((f) => f.subject === 'pr' && f.severity === 'important' && isOpenFinding(f))) return false
 		const reviewedHead = doneReviews.some((r) => {
 			const result = JSON.parse(r.result!) as { result?: { commit?: string } }
-			return sameCommit(result.result?.commit, pr.head) || sameCommit(r.head, pr.head)
+			return coversCommit(issue, pr, result.result?.commit) || coversCommit(issue, pr, r.head)
 		})
 		if (reviewedHead) return true
 		// A head pushed only to fix nit findings from a clean review needs no second review round.
 		return findings.some(
-			(f) => f.subject === 'pr' && f.severity === 'nit' && f.outcome === 'fixed' && sameCommit(f.outcome_note, pr.head)
+			(f) => f.subject === 'pr' && f.severity === 'nit' && f.outcome === 'fixed' && coversCommit(issue, pr, f.outcome_note)
 		)
 	}
 
@@ -2482,10 +2518,10 @@ export function startServer(options: ServerOptions) {
 			merge: effectiveMerge(issue, settings),
 			internalCovered: pr ? internalCovered(issue, pr, { settings, runs, decisions, findings }) : false,
 			openDecisions: decisions.filter(isOpenDecision).length,
-			mergeApproved: pr ? mergeApprovedFrom(decisions, pr.head) : false,
+			mergeApproved: pr ? mergeApprovedFrom(issue, pr, decisions) : false,
 			autoShip: !!issue.auto_ship,
 			hasUnrelated: (risk?.unrelated.length ?? 0) > 0,
-			riskHead: issue.risk_head && pr && sameCommit(issue.risk_head, pr.head) ? pr.head : issue.risk_head,
+			riskHead: issue.risk_head && pr && coversCommit(issue, pr, issue.risk_head) ? pr.head : issue.risk_head,
 			riskRule: issue.risk_rule,
 			roundBudget: roundBudget(issue.id, round, decisions)
 		})

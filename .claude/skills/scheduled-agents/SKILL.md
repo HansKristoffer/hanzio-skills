@@ -1,6 +1,6 @@
 ---
 name: scheduled-agents
-description: Set up, write or review scheduled agents, prompts that run unattended on a timer or webhook (T3 Code scheduled tasks, cron, CI schedules) to do chores too fuzzy for a script, such as checking merged PRs in production, reporting flaky tests, triaging errors, rage clicks or feedback, and finding docs that code made wrong. Use when asked to automate a recurring chore with an agent, to write or fix a scheduled task's prompt, or to review whether the scheduled agents are doing their job.
+description: Set up, write or review unattended scheduled agents (T3 tasks, cron, CI) for fuzzy chores like prod checks, flaky tests, error/feedback triage and stale docs. Use to automate a recurring chore, write or fix a scheduled prompt, or audit scheduled agents.
 ---
 
 # Scheduled agents

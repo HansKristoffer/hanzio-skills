@@ -35,9 +35,11 @@ stages:
     model: gpt-6-astra
     options: { reasoningEffort: high }
     fallback:
-      provider: claudeAgent
-      model: claude-opus-5-5
-      options: { effort: high }
+      - provider: claudeAgent
+        model: claude-opus-5-5
+        options: { effort: high }
+      - provider: antigravity
+        model: gemini-4-neon
   land:
     note: |
       Merging to main deploys on Railway. Check /health and the worker's logs.
@@ -56,7 +58,7 @@ ignore: [copilot-pull-request-reviewer]
 
 - `orchestrator` is the model of the issue's own thread. `stages.research`, `plan`, `implement` and `review` each run on their own target; a stage without one runs on the orchestrator's. The review target also reviews plans.
 - A target is `provider` and `model` together, as T3 Code's `orchestrator_capabilities` lists them, with optional `options` (Claude's `effort`, Codex's `reasoningEffort`). A layer that sets a target replaces the whole target below it.
-- `fallback` is the target a stage runs on when its own provider refuses the run (a usage limit, a sign-in, a model that is gone). Without one, a usage limit with a reset time pauses the issue until the reset and then goes on by itself; any other refusal stops the issue at a `blocked` decision until the user answers. A layer can set it with or without the stage's own target. For review, pick a provider other than the implementer's when one is offered.
+- `fallback` is a target, or an ordered list of targets (a fallback chain), that a stage runs on when its own provider refuses the run (a usage limit, a sign-in, a model that is gone). Each `factory run --stage <stage> --fallback` after a failed fallback steps to the next target in the chain automatically. Without a fallback left, a usage limit with a reset time pauses the issue until the reset and then goes on by itself; any other refusal stops the issue at a `blocked` decision until the user answers. A layer can set it with or without the stage's own target. For review, configure a chain starting with a provider other than the implementer's (for example, Codex primary with Claude Opus and Gemini fallbacks) so a usage limit never stalls review.
 - `note` is added to that stage's brief under "For this project". `implement.note` is the place for the seeded account to sign in with when the implementer captures the change in the running app. `land.note` says how the project deploys, how to check it, and whether to ship its release.
 - `planApproval`: `auto` (the default) asks the user to approve the plan of a feature, a large change or a one-way door; `always` and `never` do what they say.
 - `reviewRounds`: review rounds on a PR before the merge becomes a decision, 0 to 5, default 2; 0 skips the review.

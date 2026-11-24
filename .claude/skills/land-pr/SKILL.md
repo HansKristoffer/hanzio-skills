@@ -1,6 +1,6 @@
 ---
 name: land-pr
-description: Write or update a pull request's body, watch its CI checks and review bots, resolve merge conflicts, fix failed jobs and real review findings, and repeat verification after authorized pushes until the PR is green; offer to merge it when green, check that the merge deployed and works in production, and, in repositories that use release-please, carry the resulting release PR through to merge. Use when asked to open or land a PR, write its description, watch or babysit a PR, resolve its conflicts, fix failing CI or answer review findings, keep checking until checks pass, check a deploy after merging, or ship a release-please release, and when the user says "full send" (finish the change, prove it, land and merge it unattended) or "full stop" (the same, stopping before the merge).
+description: Open, update and land a PR by writing its body, watching CI and review bots, fixing conflicts, failures and findings, verifying deploys, and shipping release-please PRs. Use to open, describe, babysit, merge or check a deploy for a PR, or on "full send" and "full stop".
 ---
 
 # Land a PR

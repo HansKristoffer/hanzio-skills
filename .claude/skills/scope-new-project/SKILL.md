@@ -1,19 +1,6 @@
 ---
 name: scope-new-project
-description: >-
-  Turn a new consulting project's raw material (emails, meeting notes,
-  transcripts, scope PDFs, designs, API links) into a scope checklist for the
-  customer (price, time, phases and the questions they must answer) and a
-  technical document for us, plus a draft reply when the customer asked for
-  one. It reads the template repository it runs in to see
-  what can be reused and what must be built, and interviews us in rounds
-  about how to build it before writing anything. When the scope is agreed, it
-  splits the technical document into self-contained task documents for
-  parallel AI agents. Use when a new customer project arrives ("here is the
-  email and the transcript, scope it"), when the customer answers questions or
-  the scope changes and the documents must be updated, when asked for an
-  estimate on a new project built from this template, or when asked to split
-  an agreed scope into tasks.
+description: Turn consulting raw material (emails, notes, transcripts, designs) into a customer scope checklist (price, phases, open questions), technical doc and draft reply using this template repo. Use to scope or estimate a new project, update scope on answers, or split agreed scope into tasks.
 ---
 
 # Scope a new project

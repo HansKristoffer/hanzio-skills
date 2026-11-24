@@ -234,12 +234,28 @@ test.fixme('eight', () => {})
 const rest = items.skipWhile(Boolean)
 const parts = value.split(',')
 it('nine', () => {})
+// never leave test.only or fit( in a test file
+/* describe.only('commented', () => {}) */
+ * it.only('jsdoc', () => {})
+TS
+  mkdir -p "$repo/src/__tests__"
+  printf "test.only('in __tests__', () => {})\n" > "$repo/src/__tests__/helper.ts"
+  printf "fit('in spec', () => {})\n" > "$repo/src/b.spec.ts"
+  cat > "$repo/src/canvas.ts" << 'TS'
+export function fit(viewport: { width: number; height: number }) {
+  return viewport.width * viewport.height
+}
+export const scaled = fit({ width: 100, height: 50 })
+export const docNote = 'avoid test.only and it.only in tests'
 TS
   commit_all
   run --base main
   expect_exit 1
   for n in 1 2 3 4 5 6 7 8; do expect_has "[skip] src/a.test.ts:$n"; done
-  for n in 9 10 11; do expect_lacks "[skip] src/a.test.ts:$n"; done
+  for n in 9 10 11 12 13 14; do expect_lacks "[skip] src/a.test.ts:$n"; done
+  expect_has "[skip] src/__tests__/helper.ts:1"
+  expect_has "[skip] src/b.spec.ts:1"
+  expect_lacks "src/canvas.ts"
 
   start "softened CI"
   mkdir -p "$repo/.github/workflows" "$repo/config"

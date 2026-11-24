@@ -1,6 +1,6 @@
 ---
 name: postgres-tuning
-description: Audit and optimize our PostgreSQL 14-18 databases behind Prisma apps, with a read-only audit script, a ranked findings report, safe migrations and before/after measurement. Covers slow-query forensics with pg_stat_statements and EXPLAIN, indexes (B-tree, partial, covering, BRIN, GIN, pgvector HNSW), autovacuum and bloat, async I/O and memory settings, connection pooling, partitioning, keyset pagination and Postgres-backed queues. Use when asked to optimize, audit or health-check a Postgres database, when a query or endpoint is slow, when reading an execution plan, when adding an index or a Prisma migration for one, when tuning postgresql.conf or autovacuum, when setting up PgBouncer, or when a table outgrows a single partition.
+description: Audit and optimize PostgreSQL 14-18 behind Prisma with a read-only audit, EXPLAIN forensics, safe index migrations and before/after checks. Use for DB health checks, slow queries, EXPLAIN plans, indexes, autovacuum, postgresql.conf, PgBouncer, partitioning or queues.
 ---
 
 # PostgreSQL Tuning
