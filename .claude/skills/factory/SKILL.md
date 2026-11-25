@@ -54,7 +54,7 @@ It prints the stage, the runs with their results, every decision with its answer
 
 Each message to the user says what changed since your last one, in a few lines, with the page's `url`; the page holds the rest. A wake that changes nothing gets one line.
 
-End a turn only when something else has the next move: a child runs (step 4), a blocking decision waits for the user, `factory wait` names what you wait on, the step 1 handoff moves the thread, or the issue is closed. Any other end is an early stop, which the service answers with a nudge after 20 quiet minutes: a stage's result came in and the next stage did not start, a message announces the next step instead of taking it, or a message offers to go on. A provisional question is no reason to stop.
+End a turn only when something else has the next move: a child runs (step 4), a blocking decision waits for the user, `factory wait` names what you wait on, the step 1 handoff moves the thread, or the issue is closed. Any other end is an early stop, which the service answers with a nudge, two minutes after the turn ends when it hears T3 Code's events and after 20 quiet minutes when it does not: a stage's result came in and the next stage did not start, a message announces the next step instead of taking it, or a message offers to go on. A provisional question is no reason to stop.
 
 Ask the user only through `factory ask`, never in a plain message or the question tool. Read [references/decisions.md](references/decisions.md) before your first ask: most questions are provisional, and you keep working.
 
