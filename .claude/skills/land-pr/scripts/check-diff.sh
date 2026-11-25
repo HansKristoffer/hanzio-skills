@@ -19,7 +19,7 @@
 #                      outside tests and fixtures, a long value assigned to a key, token or password
 #   suppression        @ts-ignore, @ts-nocheck, bare @ts-expect-error, lint disables, an `as any`
 #                      cast; one more than the file lost, so a moved suppression is not a finding
-#   skip               .skip / .only / .todo / .fixme on tests, xit, fit and friends
+#   skip               .skip / .only / .todo / .fixme on tests, xit, fit and friends (test files only)
 #   ci-soften          continue-on-error: true or `|| true` in a workflow or action
 #   assertion-removed  a test file loses more assertions than it gains
 #   test-deleted       a test file is deleted
@@ -161,9 +161,11 @@ function has_secret(f, t,    low, i) {
   return 0
 }
 
+function is_comment_line(t) { return t ~ /^[ \t]*(\/\/|\/[*]|[*]|<!--)/ }
+
 # An `as any` cast, not the words in a comment or a sentence ("the same as any other call").
 function has_any_cast(t,    rest) {
-  if (t ~ /^[ \t]*(\/\/|\/[*]|[*])/) return 0
+  if (is_comment_line(t)) return 0
   while (match(t, "(^|" NOT_ID ")as[ \t]+any")) {
     rest = substr(t, RSTART + RLENGTH)
     if (rest !~ /^[A-Za-z0-9_$]/ && (rest !~ /^[ \t]+[A-Za-z_$]/ || rest ~ ("^[ \t]+as(" NOT_ID "|$)"))) return 1
@@ -181,6 +183,7 @@ function suppression(t) {
 }
 
 function has_skip(t) {
+  if (is_comment_line(t)) return 0
   if (t ~ ("(^|" NOT_ID ")(describe|it|test|suite|context|bench)(\\.[A-Za-z]+)*\\.(skip|only|todo|fixme)(" NOT_ID "|$)")) return 1
   if (t ~ ("(^|" NOT_ID_DOT ")(xit|xdescribe|xtest|xcontext|fit|fdescribe)[ \t]*\\(")) return 1
   return 0
@@ -199,7 +202,7 @@ function added(f, n, t,    kind) {
   if (is_code(f)) {
     kind = suppression(t)
     if (kind != "") { nsup++; sup_file[nsup] = f; sup_line[nsup] = n; sup_kind[nsup] = kind }
-    if (has_skip(t)) flag("skip", f, n)
+    if (is_test(f) && has_skip(t)) flag("skip", f, n)
     if (is_test(f) && is_assertion(t)) gained[f]++
   }
   if (is_workflow(f) && has_ci_soften(t)) flag("ci-soften", f, n)

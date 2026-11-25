@@ -1,6 +1,6 @@
 ---
 name: unslop-design
-description: Turns vibecoded, AI-looking UI into a designed interface with its own character. Finds a direction from the product itself, then fixes spacing, color, icons, copy, type, layout, details, visuals and motion in that order, and can generate a real hero visual with an image tool when one is available. Use when the user asks to unslop, polish, clean up or redesign a screen so it stops looking AI-generated, or when a UI shows the usual tells like purple gradients, glows, gradient text, emoji labels, "New ✨" badges, glossy blobs, uppercase tracked labels, pulsing elements or uneven spacing. Works on React, Tailwind, HTML and CSS, for dashboards, apps and landing pages.
+description: Turn AI-looking React, Tailwind or HTML/CSS UI into a designed interface with its own direction, fixing spacing, color, icons, copy, type, layout and motion. Use to unslop, polish or redesign a screen, or remove AI tells like glows, gradients and emoji badges.
 license: CC-BY-4.0
 metadata:
   author: Damir Sokolovsky

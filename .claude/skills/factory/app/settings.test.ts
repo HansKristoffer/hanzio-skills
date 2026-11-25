@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { join } from 'node:path'
 import { git, scratchRepo, setup, type Harness } from './fixtures/harness.ts'
-import { defaults, resolve, stageTarget, validate } from './settings.ts'
+import { defaults, resolve, stageFallbacks, stageTarget, validate } from './settings.ts'
 
 describe('resolve', () => {
 	test('a layer that sets a stage target replaces its options and leaves other stages alone', () => {
@@ -123,14 +123,47 @@ test('the review keys validate, resolve by layer with a list replacing the list 
 	expect(resolve({}).settings).toMatchObject({ reviewers: [], bots: [], approval: 'auto', merge: 'auto', trust: [], ignore: [], reviewOverdueHours: 24 })
 })
 
-test('a stage can name a fallback target, which a layer sets with or without the stage target', () => {
-	const fallback = { provider: 'claudeAgent', model: 'claude-opus-5-5', options: { effort: 'high' } }
-	const { settings, sources } = resolve({ global: { stages: { review: { fallback } } }, repo: { stages: { review: { provider: 'codex', model: 'gpt-6-luna' } } } })
-	expect(settings.stages.review).toMatchObject({ provider: 'codex', model: 'gpt-6-luna', fallback })
+test('a stage can name a fallback target or chain, and --fallback steps through the chain after failures', async () => {
+	const first = { provider: 'claudeAgent', model: 'claude-opus-5-5', options: { effort: 'high' } }
+	const second = { provider: 'antigravity', model: 'gemini-4-neon' }
+	const { settings, sources } = resolve({
+		global: { stages: { review: { fallback: first } } },
+		repo: { stages: { review: { provider: 'codex', model: 'gpt-6-luna' } } }
+	})
+	expect(settings.stages.review).toMatchObject({ provider: 'codex', model: 'gpt-6-luna', fallback: first })
 	expect(sources['stages.review.fallback']).toBe('global')
-	expect(stageTarget(settings, 'review', true)).toEqual(fallback)
+	expect(stageTarget(settings, 'review', true)).toEqual(first)
 	expect(stageTarget(settings, 'review')).toEqual({ provider: 'codex', model: 'gpt-6-luna' })
 	expect(stageTarget(resolve({}).settings, 'review', true)).toBeNull()
+
+	const chained = resolve({ file: { stages: { review: { fallback: [first, second] } } } }).settings
+	expect(stageFallbacks(chained, 'review')).toEqual([first, second])
+	expect(stageTarget(chained, 'review', 1)).toEqual(first)
+	expect(stageTarget(chained, 'review', 2)).toEqual(second)
+	expect(stageTarget(chained, 'review', 3)).toBeNull()
+
 	expect(() => validate({ stages: { review: { fallback: { provider: 'codex' } } } })).toThrow('stages.review.fallback: provider and model must be given together')
-	expect(() => validate({ stages: { land: { fallback } } })).toThrow('stages.land.fallback: unknown key')
+	expect(() => validate({ stages: { review: { fallback: [] } } })).toThrow('stages.review.fallback: must be a target or a non-empty list of targets')
+	expect(() => validate({ stages: { review: { fallback: [first, { provider: 'antigravity' }] } } })).toThrow('stages.review.fallback[1]: provider and model must be given together')
+	expect(() => validate({ stages: { land: { fallback: first } } })).toThrow('stages.land.fallback: unknown key')
+
+	const h = setup()
+	try {
+		const work = scratchRepo(h.dir).work
+		await h.call('PUT', '/api/settings/global', { stages: { review: { fallback: [first, second] } } })
+		await h.as('t-chain')('POST', '/api/issue/start', { cwd: work, title: 'Fallback chain' })
+		const r1 = await h.as('t-chain')('POST', '/api/issue/run', { stage: 'review', fallback: true })
+		expect(r1.status).toBe(200)
+		expect(r1.body.target).toEqual(first)
+		await h.as('t-chain')('POST', `/api/runs/${r1.body.run}/report`, { text: 'usage limit', failed: true })
+		const r2 = await h.as('t-chain')('POST', '/api/issue/run', { stage: 'review', fallback: true })
+		expect(r2.status).toBe(200)
+		expect(r2.body.target).toEqual(second)
+		await h.as('t-chain')('POST', `/api/runs/${r2.body.run}/report`, { text: 'usage limit', failed: true })
+		const r3 = await h.as('t-chain')('POST', '/api/issue/run', { stage: 'review', fallback: true })
+		expect(r3.status).toBe(400)
+		expect(r3.body.error).toContain('every fallback for review')
+	} finally {
+		h.close()
+	}
 })

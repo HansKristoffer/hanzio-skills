@@ -1,6 +1,6 @@
 ---
 name: debug
-description: Find the cause of a bug by building a loop that goes red on it first, then testing ranked hypotheses against that loop, and lock the fix in with a regression test. Use when a bug's cause is unknown, a test is flaky, something is broken, throwing or slow, performance regressed, a fix has failed twice, or a CI failure is not explained by its log. Built for TypeScript monorepos (Bun or Node, Prisma, Zod, oRPC, hanzio, Vue or React/Expo); reads the repository's own rules first and lets them win.
+description: Find a bug's root cause with a loop that goes red first, test ranked hypotheses against it, and lock the fix with a regression test. Use for unknown causes, flaky tests, broken or slow behavior, regressions, twice-failed fixes, or opaque CI failures.
 ---
 
 # Debug

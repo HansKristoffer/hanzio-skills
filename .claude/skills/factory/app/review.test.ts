@@ -1,8 +1,9 @@
 // The review loop end to end: the real CLI runs the fake `gh` as the thread would, against the service.
 import { afterEach, beforeEach, expect, setDefaultTimeout, test } from 'bun:test'
+import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { readPr } from './gh.ts'
-import { FAKE_T3, scratchRepo, setup, type Harness } from './fixtures/harness.ts'
+import { FAKE_T3, git, pushFile, scratchRepo, setup, type Harness } from './fixtures/harness.ts'
 import { HEAD, bot, comment, member, outsider, rawPr, review, thread } from './fixtures/pr-builder.ts'
 
 // Each test runs the CLI several times, a few hundred milliseconds each.
@@ -427,4 +428,82 @@ test('autoShip clears ask and planned risk when clean with nothing unrelated, ne
 	// merge: never is never overridden by autoShip.
 	await as('/api/issue/update', { merge: 'never' })
 	expect((await cli(['gate'])).json.blockers.map((b: { code: string }) => b.code)).toContain('merge-setting')
+})
+
+test('merge approval survives a clean, conflict-free base merge with no overlapping files, and invalidates on overlap or new code', async () => {
+	const repo = scratchRepo(join(h.dir, 'merge-survival'))
+	const w = repo.work
+	await h.as('t-merge')('POST', '/api/issue/start', { cwd: w, title: 'Clean merge survival' })
+	await h.as('t-merge')('POST', '/api/issue/update', { pr: PR, merge: 'ask' })
+
+	// Create a PR branch touching only feature.txt.
+	git(w, 'checkout', '-q', '-b', 'factory/clean-merge', 'origin/main')
+	writeFileSync(join(w, 'feature.txt'), 'v1\n')
+	git(w, 'add', 'feature.txt')
+	git(w, 'commit', '-q', '-m', 'add feature')
+	const h1 = git(w, 'rev-parse', 'HEAD')
+
+	const rev = (await h.as('t-merge')('POST', '/api/issue/run', { stage: 'review', head: h1 })).body.run
+	await h.as('c-m')('POST', `/api/runs/${rev}/report`, {
+		text: 'clean',
+		done: true,
+		result: {
+			outcome: 'done',
+			result: { commit: h1, findings: [], reproductionOnHead: 'none', testsFailWithoutFix: true, risk: { door: 'two-way', reach: 'local', unrelated: [], focus: [] } }
+		}
+	})
+	await h.as('t-merge')('POST', '/api/issue/risk', { head: h1, none: true })
+	const ask = (await h.as('t-merge')('POST', '/api/issue/ask', { kind: 'merge', head: h1, question: 'Merge?', recommend: 'Merge' })).body.decision
+	await h.call('POST', '/api/issues/t-merge/answers', { answers: [{ decision: ask, answer: 'Merge' }] })
+
+	const syncHead = async (head: string) => {
+		h.gh.pr(rawPr({ view: { headRefOid: head, baseRefName: 'main' } }))
+		const proc = Bun.spawn(['bun', CLI, 'gate'], {
+			cwd: w,
+			stdin: 'ignore',
+			stdout: 'pipe',
+			stderr: 'pipe',
+			env: { ...process.env, ...h.gh.env, FACTORY_HOME: h.home, FACTORY_PORT: String(h.port), FACTORY_T3: FAKE_T3, T3CODE_THREAD_ID: 't-merge' }
+		})
+		const out = await new Response(proc.stdout).text()
+		await proc.exited
+		return JSON.parse(out) as { ready: boolean; blockers: { code: string }[] }
+	}
+
+	expect((await syncHead(h1)).ready).toBe(true)
+
+	// Main advances on an unrelated file; a clean merge keeps approval, review coverage and risk valid.
+	pushFile(repo.other, 'unrelated.txt', 'from main\n')
+	git(w, 'fetch', '--quiet', 'origin', 'main')
+	git(w, 'merge', '--no-edit', '-q', 'origin/main')
+	const cleanMergeHead = git(w, 'rev-parse', 'HEAD')
+	expect((await syncHead(cleanMergeHead)).ready).toBe(true)
+
+	// A new feature/fix commit invalidates merge approval, internal review and risk.
+	writeFileSync(join(w, 'feature.txt'), 'v2\n')
+	git(w, 'add', 'feature.txt')
+	git(w, 'commit', '-q', '-m', 'more code')
+	const extraCodeHead = git(w, 'rev-parse', 'HEAD')
+	const afterCode = await syncHead(extraCodeHead)
+	expect(afterCode.ready).toBe(false)
+	expect(afterCode.blockers.map((b) => b.code)).toContain('merge-setting')
+
+	// Reset back to h1 and test an overlapping file changed on both main and the PR (even if auto-merged cleanly).
+	git(w, 'reset', '--hard', '-q', h1)
+	pushFile(repo.other, 'a.txt', 'a from main\n')
+	writeFileSync(join(w, 'a.txt'), 'a\nfrom pr\n')
+	git(w, 'add', 'a.txt')
+	git(w, 'commit', '-q', '-m', 'touch a.txt')
+	const hWithA = git(w, 'rev-parse', 'HEAD')
+	await h.as('t-merge')('POST', '/api/issue/risk', { head: hWithA, none: true })
+	const ask2 = (await h.as('t-merge')('POST', '/api/issue/ask', { kind: 'merge', head: hWithA, question: 'Merge v2?', recommend: 'Merge' })).body.decision
+	await h.call('POST', '/api/issues/t-merge/answers', { answers: [{ decision: ask2, answer: 'Merge' }] })
+	expect((await syncHead(hWithA)).ready).toBe(true)
+
+	git(w, 'fetch', '--quiet', 'origin', 'main')
+	git(w, 'merge', '--no-edit', '-q', '-X', 'ours', 'origin/main')
+	const overlapHead = git(w, 'rev-parse', 'HEAD')
+	const afterOverlap = await syncHead(overlapHead)
+	expect(afterOverlap.ready).toBe(false)
+	expect(afterOverlap.blockers.map((b) => b.code)).toContain('merge-setting')
 })

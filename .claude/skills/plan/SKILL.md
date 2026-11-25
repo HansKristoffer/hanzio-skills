@@ -1,6 +1,6 @@
 ---
 name: plan
-description: Plan a feature or change in an existing repository before building it - size it, settle every open decision with the user, and write a plan with numbered decisions, exact interfaces, vertical slices with checkable acceptance criteria and the proof for each slice, reviewed by a second model before any code is written. Use when asked to plan, spec or design a change, when a request is too big or too fuzzy to build directly, or before splitting work for parallel agents. Built for TypeScript monorepos (Bun or Node, Prisma, Zod, oRPC, hanzio, Vue or React/Expo); reads the repository's own rules first and lets them win.
+description: Plan a feature or change before coding by sizing it, settling decisions, writing numbered decisions, interfaces, vertical slices with criteria and proof, and getting second-model review. Use to plan, spec or design work, tame fuzzy requests, or prep parallel tasks.
 ---
 
 # Plan a change

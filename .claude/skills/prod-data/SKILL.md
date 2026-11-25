@@ -1,6 +1,6 @@
 ---
 name: prod-data
-description: Change data in production safely with a one-off script (a backfill, a merge or deduplication, a format fix, a bulk correction, credits or grants to users, moving data to another store): written and reviewed in the repo, dry run by default on a read-only connection, counts and samples read before any write, a way back, small batches and a check afterwards. Use when asked to backfill, fix, clean up, merge, migrate or bulk-edit data in production or staging, to run a script or query against the production database, or to "do it in prod". Built for TypeScript monorepos (Bun or Node, Prisma, Zod, oRPC, hanzio, Vue or React/Expo); reads the repository's own rules first and lets them win.
+description: Change production or staging data safely via a reviewed repo script that dry-runs read-only first, checks counts and samples, plans rollback, batches writes and verifies after. Use to backfill, dedupe, migrate, bulk-edit, or run a one-off script/query in prod.
 ---
 
 # Change production data

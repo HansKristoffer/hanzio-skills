@@ -7,8 +7,8 @@ export type Target = {
 	options?: Record<string, string | boolean>
 }
 
-/** `fallback` is the target a stage runs on when its own provider refuses the run (a usage limit, a sign-in). */
-export type StageSettings = Target & { note?: string; fallback?: Target }
+/** `fallback` is a target, or an ordered list of targets, a stage runs on when its own provider refuses the run (a usage limit, a sign-in). */
+export type StageSettings = Target & { note?: string; fallback?: Target | Target[] }
 
 export const STAGES = ['research', 'plan', 'implement', 'review', 'land'] as const
 export type Stage = (typeof STAGES)[number]
@@ -123,9 +123,19 @@ export function validate(value: unknown, where = 'settings'): PartialSettings {
 			if (stage === 'land') checkKeys(settings, ['note'], `${path}.`)
 			else checkTarget(settings, path, ['note', 'fallback'])
 			if (settings.fallback !== undefined) {
-				if (!isObject(settings.fallback)) throw new Error(`${path}.fallback: must be a mapping`)
-				checkTarget(settings.fallback, `${path}.fallback`)
-				if (settings.fallback.model === undefined) throw new Error(`${path}.fallback: needs provider and model`)
+				if (Array.isArray(settings.fallback)) {
+					if (settings.fallback.length === 0) throw new Error(`${path}.fallback: must be a target or a non-empty list of targets`)
+					settings.fallback.forEach((entry, i) => {
+						const itemPath = `${path}.fallback[${i}]`
+						if (!isObject(entry)) throw new Error(`${itemPath}: must be a mapping`)
+						checkTarget(entry, itemPath)
+						if (entry.model === undefined) throw new Error(`${itemPath}: needs provider and model`)
+					})
+				} else {
+					if (!isObject(settings.fallback)) throw new Error(`${path}.fallback: must be a mapping`)
+					checkTarget(settings.fallback, `${path}.fallback`)
+					if (settings.fallback.model === undefined) throw new Error(`${path}.fallback: needs provider and model`)
+				}
 			}
 			if (settings.note !== undefined) checkString(settings.note, `${path}.note`)
 		}
@@ -202,9 +212,17 @@ export function resolve(layers: Layers): Resolved {
 				settings.stages[stage] = { ...targetOf(given), ...(fallback && { fallback }), ...(note !== undefined && { note }) }
 				mark(`stages.${stage}`, source)
 			}
-			if (stage !== 'land' && 'fallback' in given && given.fallback?.model) {
-				settings.stages[stage].fallback = targetOf(given.fallback)
-				mark(`stages.${stage}.fallback`, source)
+			if (stage !== 'land' && 'fallback' in given && given.fallback) {
+				if (Array.isArray(given.fallback)) {
+					const chain = given.fallback.filter((t) => t?.model).map(targetOf)
+					if (chain.length) {
+						settings.stages[stage].fallback = chain
+						mark(`stages.${stage}.fallback`, source)
+					}
+				} else if (given.fallback.model) {
+					settings.stages[stage].fallback = targetOf(given.fallback)
+					mark(`stages.${stage}.fallback`, source)
+				}
 			}
 			if (given.note !== undefined) {
 				settings.stages[stage].note = given.note
@@ -230,9 +248,17 @@ export function resolve(layers: Layers): Resolved {
 	return { settings, sources }
 }
 
-/** The target a delegated stage runs on, without its note: its own, or its fallback when asked and set. */
-export function stageTarget(settings: Settings, stage: DelegatedStage, fallback = false): Target | null {
+/** The ordered fallback targets configured for a delegated stage (empty when none is set). */
+export function stageFallbacks(settings: Settings, stage: DelegatedStage): Target[] {
+	const raw = settings.stages[stage].fallback
+	if (!raw) return []
+	return Array.isArray(raw) ? raw.map(targetOf) : [targetOf(raw)]
+}
+
+/** The target a delegated stage runs on, without its note: its own, or a fallback (1-based index, or first when `true`). */
+export function stageTarget(settings: Settings, stage: DelegatedStage, fallback: boolean | number = false): Target | null {
 	if (!fallback) return targetOf(settings.stages[stage])
-	const other = settings.stages[stage].fallback
-	return other ? targetOf(other) : null
+	const chain = stageFallbacks(settings, stage)
+	const index = typeof fallback === 'number' ? fallback - 1 : 0
+	return chain[index] ?? null
 }

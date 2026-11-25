@@ -1,6 +1,6 @@
 ---
 name: summarize-pr
-description: Build one page that gives a reviewer the high-level direction of a pull request without reading all of its code (the story, the decisions, shortened diffs, a flow chart, the tests), published as a Claude Artifact or written where a caller says, such as the factory's overview page. Use when asked to summarize a PR, to make a PR overview or summary page, or when a factory brief asks for the overview of its PR.
+description: Build a single-page PR overview (story, decisions, shortened diffs, flow chart, tests) as a Claude Artifact or to a caller's path. Use when asked to summarize a PR, build a PR overview page, or when a factory brief requests one.
 argument-hint: "[PR number, URL or branch; default: the PR of the current branch]"
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: dispatched-run
-description: Work one item a webhook, schedule or dispatcher pushed to an unattended thread (an error-tracking issue, a feedback item, a user's feature request), from its id to a PR, with nobody to ask. Moves to a branch named after the item, decides whether it is ours to fix, fixes the cause with a test that failed first, lands it under the prompt's merge rules, writes the outcome back to the tracker, and ends with a fixed overview. Also fans a queue out to one such thread per item. Use when a prompt says the run is dispatched or pushed by a webhook, when writing such a prompt, or when asked to work or dispatch a queue of errors, feedback or requests.
+description: Work a webhook- or schedule-dispatched item (error, feedback, request) unattended from id to PR, landing under prompt merge rules and updating the tracker, or fan out a queue. Use when a run is dispatched, when writing that prompt, or dispatching a queue.
 ---
 
 # Dispatched run

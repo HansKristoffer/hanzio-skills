@@ -1,6 +1,6 @@
 ---
 name: our-libs
-description: Our own npm packages (hanzio, orpc-fn, better-mastra, better-graphile-worker, measurr, buncargo, expo-release, hono-webhooks, tanstack-router-sfc, website-to-markdown, decision-api, plantr, taurio) and how to adopt them. Use when starting a new project, when asked which of our libraries fit a repo, when local code might be replaced by one of our packages, when upgrading one, or when setting up the backend, AI assistant, job queue, realtime, CLI, i18n, dev environment or Expo releases in a TypeScript repo.
+description: Adopt our npm packages (hanzio, orpc-fn, better-mastra, better-graphile-worker, measurr, buncargo, expo-release, hono-webhooks, tanstack-router-sfc, website-to-markdown, decision-api, plantr, taurio). Use on new repos, upgrades, replacing local code, or backend/AI/queue/dev/Expo setup.
 ---
 
 # Our libraries

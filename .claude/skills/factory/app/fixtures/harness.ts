@@ -98,6 +98,9 @@ export function setup(options: Partial<ServerOptions> = {}) {
 	const t3Home = join(dir, 't3-home')
 	writeFileSync(log, '')
 	writeFileSync(ghLog, '')
+	const prevSsh = process.env.GIT_SSH_COMMAND
+	// Never contact external SSH hosts or prompt for host keys during tests.
+	process.env.GIT_SSH_COMMAND = 'false'
 	process.env.FACTORY_T3 = FAKE_T3
 	// T3 Code's projects are read from its database: a scratch one, never this machine's.
 	process.env.T3CODE_HOME = t3Home
@@ -175,6 +178,8 @@ export function setup(options: Partial<ServerOptions> = {}) {
 		},
 		close() {
 			server.stop()
+			if (prevSsh === undefined) delete process.env.GIT_SSH_COMMAND
+			else process.env.GIT_SSH_COMMAND = prevSsh
 			rmSync(dir, { recursive: true, force: true })
 		}
 	}
