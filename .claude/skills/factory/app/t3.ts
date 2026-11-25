@@ -108,6 +108,34 @@ export const showsMessage = (state: ThreadState, head: string) => {
 	return state.messages.some((m) => m.role === 'user' && squash(m.text).startsWith(start))
 }
 
+/**
+ * Where the running T3 Code server listens, such as `http://127.0.0.1:3773`, or null when none runs here.
+ * FACTORY_T3_URL points at another, which is what the tests use. Observed on 0.1.12-nightly:
+ * `userdata/server-runtime.json` holds the server's `origin`, a loopback address even when it also listens on
+ * other interfaces.
+ */
+export function t3Origin(): string | null {
+	if (process.env.FACTORY_T3_URL) return process.env.FACTORY_T3_URL.replace(/\/+$/, '')
+	try {
+		const runtime = JSON.parse(readFileSync(join(t3Home(), 'userdata', 'server-runtime.json'), 'utf8'))
+		return typeof runtime.origin === 'string' ? runtime.origin.replace(/\/+$/, '') : null
+	} catch {
+		return null
+	}
+}
+
+/**
+ * A one-time code that approves one read-only MCP sign-in, from `t3 auth pairing create`. Only the host can mint
+ * one, so a service on the host can sign itself in with no browser.
+ */
+export async function pairingCode(label: string) {
+	const result = await run(['auth', 'pairing', 'create', '--scope', 'orchestration:read', '--ttl', '5m', '--label', label, '--json'])
+	if (!result.ok) throw new Error(result.err || result.out || 't3 auth pairing create failed')
+	const credential = (JSON.parse(result.out) as { credential?: unknown }).credential
+	if (typeof credential !== 'string' || !credential) throw new Error('t3 auth pairing create printed no credential')
+	return credential
+}
+
 export type T3Project = {
 	id: string
 	title: string

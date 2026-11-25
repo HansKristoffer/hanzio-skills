@@ -2,9 +2,16 @@
 // read every issue, answer what waits for the user, start issues and change the settings and the webhook. It
 // also lists T3 Code's projects and starts plain threads in them, for work that does not go through the factory.
 // It speaks MCP's Streamable HTTP transport without sessions: each POST carries one JSON-RPC message (or a
-// batch) and is answered with JSON. No SDK, since a skill is installed as one folder with no dependencies.
+// batch) and is answered with JSON, except an `events/stream`, which is answered with an event stream
+// (mcp-events.ts). No SDK, since a skill is installed as one folder with no dependencies.
+import { EVENT_ERRORS, EVENTS_EXTENSION, EventError, listEvents, pollEvents, streamEvents, type EventFeed } from './mcp-events.ts'
 
 export const PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05']
+/** The stateless revision, negotiated per request through `_meta` and `server/discover` instead of `initialize`.
+ * SEP-3415's events are defined for it. */
+export const STATELESS_VERSION = '2026-07-28'
+const PROTOCOL_KEY = 'io.modelcontextprotocol/protocolVersion'
+const EVENT_METHODS = ['events/poll', 'events/stream', 'events/subscribe', 'events/unsubscribe']
 
 type Json = Record<string, unknown>
 type Property = {
@@ -64,7 +71,7 @@ export const INSTRUCTIONS = `The factory works issues (bugs and features) throug
 - list_issues and get_issue show every issue. needsYou: true means a person has to act: a decision waits, or the thread is stuck (it stopped answering, so open its threadLink in T3 Code; read_thread shows its latest messages).
 - create_issue starts a thread for a bug, a feature, or an open PR to review or build on, in a repository factory_info lists. A new repository is started once from the factory's own machine, with cwd.
 - list_projects lists T3 Code's projects on the factory's machine, the factory's or not; start_thread starts a plain thread in one of them with your message, for work that does not go through the factory, such as a small library. The factory does not follow that thread: open its threadLink.
-- wait_for_update returns as soon as something changes, with what changed and a cursor to pass back next time, instead of polling. The webhook (set_webhook) posts each change to a URL instead.
+- wait_for_update returns as soon as something changes, with what changed and a cursor to pass back next time, instead of polling. The webhook (set_webhook) posts each change to a URL instead, and a client with the MCP events extension can subscribe to events/list's types.
 - An issue's gate, blockers and warnings are written for its thread, so they name factory CLI commands the thread runs. refresh_pr reads the PR from GitHub again; message_thread tells the thread something.
 
 Ids: an issue's id is its thread's id, which T3 Code makes in a few shapes (a uuid, mcp:<uuid>, mcp:launch:<hash>); a distinct part of it of 6 characters or more is enough. Decisions are d_..., runs r_..., findings f_..., webhook posts wh_.... An issue's state is open, shipped or closed (outcome says how it ended: shipped, reviewed, dropped, not-a-bug, duplicate, already-fixed). Repository names are lowercase owner/name, matched without regard to case. Times are ISO 8601 in UTC.
@@ -491,33 +498,79 @@ function readableTimes(key: string, value: unknown) {
 	return typeof value === 'number' && TIME_KEY.test(key) && value > 1e12 ? new Date(value).toISOString() : value
 }
 
-const rpcError = (id: unknown, code: number, message: string) => ({ jsonrpc: '2.0', id: id ?? null, error: { code, message } })
+const rpcError = (id: unknown, code: number, message: string, data?: unknown) => ({
+	jsonrpc: '2.0',
+	id: id ?? null,
+	error: { code, message, ...(data !== undefined && { data }) }
+})
 const toolError = (message: string) => {
 	const next = nextStep(message)
 	return { content: [{ type: 'text', text: next ? `${message}\nNext: ${next}` : message }], isError: true }
 }
 
+type Served = { tools: Tool[]; version: string; loopback: boolean; events?: EventFeed }
+
 /** Answers one JSON-RPC message, or null for a notification or a response, which need no answer. */
-async function handle(message: unknown, tools: Tool[], version: string, loopback: boolean) {
+async function handle(message: unknown, served: Served) {
 	if (!message || typeof message !== 'object' || Array.isArray(message)) return rpcError(null, -32600, 'not a JSON-RPC message')
 	const { id, method, params } = message as { id?: unknown; method?: unknown; params?: Json }
 	if (typeof method !== 'string') return null
+	const { tools, version, loopback, events } = served
 	const isNotification = id === undefined
-	const ok = (result: unknown) => (isNotification ? null : { jsonrpc: '2.0', id, result })
+	// Every result says it is complete, as the stateless revision asks; earlier revisions ignore the field.
+	const ok = (result: Json) => (isNotification ? null : { jsonrpc: '2.0', id, result: { ...result, resultType: 'complete' } })
+	const asked = (params?._meta as Json | undefined)?.[PROTOCOL_KEY]
+	if (asked !== undefined && asked !== STATELESS_VERSION && !PROTOCOL_VERSIONS.includes(String(asked))) {
+		return rpcError(id, -32022, `protocol version ${String(asked)} is not supported`, { supported: [STATELESS_VERSION, ...PROTOCOL_VERSIONS] })
+	}
+	const capabilities = { tools: { listChanged: false }, ...(events && { extensions: { [EVENTS_EXTENSION]: {} } }) }
 	switch (method) {
 		case 'initialize': {
-			const asked = String(params?.protocolVersion ?? '')
+			const wanted = String(params?.protocolVersion ?? '')
 			return ok({
-				protocolVersion: PROTOCOL_VERSIONS.includes(asked) ? asked : PROTOCOL_VERSIONS[0],
-				capabilities: { tools: { listChanged: false } },
+				protocolVersion: PROTOCOL_VERSIONS.includes(wanted) ? wanted : PROTOCOL_VERSIONS[0],
+				capabilities,
 				serverInfo: { name: 'factory', title: 'Factory', version },
 				instructions: INSTRUCTIONS
 			})
 		}
+		case 'server/discover':
+			return ok({
+				supportedVersions: [STATELESS_VERSION, ...PROTOCOL_VERSIONS],
+				capabilities,
+				instructions: INSTRUCTIONS,
+				ttlMs: 0,
+				cacheScope: 'public',
+				_meta: { 'io.modelcontextprotocol/serverInfo': { name: 'factory', title: 'Factory', version } }
+			})
 		case 'ping':
 			return ok({})
+		case 'events/list':
+			if (!events) break
+			return ok(listEvents(events))
+		case 'events/poll':
+			if (!events) break
+			try {
+				return ok(pollEvents(events, params))
+			} catch (error) {
+				if (error instanceof EventError) return rpcError(id, error.code, error.message, error.data)
+				throw error
+			}
+		case 'events/stream':
+			if (!events) break
+			// serveMcp answers a stream itself; one inside a batch cannot have its own response stream.
+			return rpcError(id, -32600, 'events/stream must be the only message in its request')
+		case 'events/subscribe':
+		case 'events/unsubscribe':
+			if (!events) break
+			return rpcError(id, EVENT_ERRORS.unsupported, 'webhook delivery needs a signed-in client, and this server has no sign-in: use events/poll or events/stream, or set_webhook for signed posts', {
+				feature: 'deliveryMode',
+				value: 'webhook'
+			})
 		case 'tools/list':
 			return ok({
+				ttlMs: 0,
+				cacheScope: 'public',
 				tools: tools.map((t) => ({
 					name: t.name,
 					title: t.title,
@@ -541,14 +594,38 @@ async function handle(message: unknown, tools: Tool[], version: string, loopback
 				return ok(toolError((error as Error).message))
 			}
 		}
-		default:
-			if (isNotification) return null
-			return rpcError(id, -32601, `no method ${method}`)
 	}
+	if (isNotification) return null
+	return rpcError(id, -32601, `no method ${method}`)
+}
+
+/**
+ * The transport's header checks for one message: `MCP-Protocol-Version` agrees with the `_meta` version, and an
+ * events request's `Mcp-Name` names its event type. A missing `Mcp-Name` is let through, since clients written
+ * before SEP-3415 send none. Returns the error to answer with HTTP 400, or null.
+ */
+function headerMismatch(req: Request, message: unknown) {
+	if (!message || typeof message !== 'object' || Array.isArray(message)) return null
+	const { id, method, params } = message as { id?: unknown; method?: unknown; params?: Json }
+	const header = req.headers.get('mcp-protocol-version')
+	const asked = (params?._meta as Json | undefined)?.[PROTOCOL_KEY]
+	if (header && asked !== undefined && header !== asked) return rpcError(id, EVENT_ERRORS.headerMismatch, 'MCP-Protocol-Version does not match the request')
+	const name = req.headers.get('mcp-name')
+	if (typeof method === 'string' && EVENT_METHODS.includes(method) && name !== null && name !== params?.name) {
+		return rpcError(id, EVENT_ERRORS.headerMismatch, 'Mcp-Name does not match the event type in params.name')
+	}
+	return null
+}
+
+export type McpOptions = {
+	/** The factory's event types, served by the events extension. */
+	events?: EventFeed
+	/** Lifts the server's idle timeout for this request, which an event stream needs. */
+	keepOpen?: () => void
 }
 
 /** The /mcp endpoint. The caller has already checked the Host, the Origin and the content type. */
-export async function serveMcp(req: Request, tools: Tool[], version: string, loopback: boolean) {
+export async function serveMcp(req: Request, tools: Tool[], version: string, loopback: boolean, options: McpOptions = {}) {
 	if (req.method !== 'POST') {
 		// No server-to-client stream and no sessions: everything comes back in the POST's answer.
 		return new Response(null, { status: 405, headers: { allow: 'POST' } })
@@ -559,8 +636,24 @@ export async function serveMcp(req: Request, tools: Tool[], version: string, loo
 	} catch {
 		return Response.json(rpcError(null, -32700, 'the body is not JSON'), { status: 400 })
 	}
-	const batch = Array.isArray(body)
-	const answers = (await Promise.all((batch ? body : [body]).map((m) => handle(m, tools, version, loopback)))).filter((a) => a !== null)
+	const messages = Array.isArray(body) ? body : [body]
+	for (const message of messages) {
+		const mismatch = headerMismatch(req, message)
+		if (mismatch) return Response.json(mismatch, { status: 400 })
+	}
+	const single = !Array.isArray(body) ? (body as { id?: unknown; method?: unknown; params?: Json } | null) : null
+	if (options.events && single && typeof single === 'object' && single.method === 'events/stream' && single.id !== undefined) {
+		try {
+			const stream = streamEvents(options.events, single.id, single.params)
+			options.keepOpen?.()
+			return new Response(stream, { headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' } })
+		} catch (error) {
+			if (error instanceof EventError) return Response.json(rpcError(single.id, error.code, error.message, error.data))
+			throw error
+		}
+	}
+	const served = { tools, version, loopback, events: options.events }
+	const answers = (await Promise.all(messages.map((m) => handle(m, served)))).filter((a) => a !== null)
 	if (!answers.length) return new Response(null, { status: 202 })
-	return Response.json(batch ? answers : answers[0])
+	return Response.json(Array.isArray(body) ? answers : answers[0])
 }

@@ -219,11 +219,41 @@ export const MIGRATIONS = [
 	// A thread can ask to be woken at a time for any wait, not only a usage limit's reset, and new comments on
 	// the item the issue came from reach the thread.
 	`alter table issues rename column limit_until to wake_at;
-	alter table issues add column source_seen integer;`
+	alter table issues add column source_seen integer;`,
+	// What the service tells the webhook, kept whether or not a webhook is set, so an MCP client can read it as
+	// events. An issue's notices outlive it, as its webhook posts do.
+	`create table notices (
+		id integer primary key autoincrement,
+		event text not null,
+		issue_id text,
+		at integer not null,
+		payload text not null
+	);
+	create index notices_event on notices (event, id);`
 ]
 
 export const MAX_EVENT = 2000
 const RETENTION_DAYS = 90
+const NOTICE_DAYS = 30
+const DAY_MS = 24 * 60 * 60 * 1000
+
+/** The highest row id pruning deleted from a table, so an event cursor below it knows it may have missed rows. */
+export function prunedThrough(db: Database, table: 'events' | 'notices') {
+	const row = db.query('select value from settings where scope = $scope').get({ scope: `pruned:${table}` }) as { value: string } | null
+	return row ? Number(row.value) : 0
+}
+
+function deleteRows(db: Database, table: 'events' | 'notices', where: string, params: Record<string, number>) {
+	const top = db.query(`select max(id) as n from ${table} where ${where}`).get(params) as { n: number | null }
+	if (top.n === null) return
+	db.query(`delete from ${table} where ${where}`).run(params)
+	if (top.n > prunedThrough(db, table)) {
+		db.query('insert into settings (scope, value) values ($scope, $value) on conflict (scope) do update set value = $value').run({
+			scope: `pruned:${table}`,
+			value: String(top.n)
+		})
+	}
+}
 
 export type IssueRow = {
 	id: string
@@ -432,9 +462,10 @@ export function settleDeliveries(db: Database) {
 
 /** Drops the timeline of issues closed long ago. The issue row stays, so its source is still known. */
 export function pruneOld(db: Database, now = Date.now()) {
-	const before = now - RETENTION_DAYS * 24 * 60 * 60 * 1000
+	const before = now - RETENTION_DAYS * DAY_MS
 	const old = `select id from issues where state != 'open' and closed_at < $before`
-	db.query(`delete from events where issue_id in (${old})`).run({ before })
+	deleteRows(db, 'events', `issue_id in (${old})`, { before })
+	deleteRows(db, 'notices', 'at < $at', { at: now - NOTICE_DAYS * DAY_MS })
 	db.query(`delete from decisions where issue_id in (${old})`).run({ before })
 	for (const table of ['pr_items', 'pr_written', 'pr_rounds', 'findings', 'evidence', 'sends']) {
 		db.query(`delete from ${table} where issue_id in (${old})`).run({ before })

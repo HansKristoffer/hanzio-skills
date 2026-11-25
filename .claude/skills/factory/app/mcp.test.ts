@@ -625,3 +625,168 @@ describe('round three', () => {
 		expect((await tool('get_settings', { repo: 'acme/api' })).repos['acme/api'].effective.reviewRounds).toBe(2)
 	})
 })
+
+describe('MCP events (SEP-3415)', () => {
+	const STATELESS = { 'mcp-protocol-version': '2026-07-28' }
+	const meta = { 'io.modelcontextprotocol/protocolVersion': '2026-07-28' }
+	const poll = (name: string, extra: Record<string, unknown> = {}, headers: Record<string, string> = { 'mcp-name': name }) =>
+		rpc('events/poll', { name, arguments: {}, cursor: null, ...extra, _meta: meta }, { ...STATELESS, ...headers })
+
+	/** Opens an events/stream and hands back each notification as it arrives, until `stop`. */
+	async function stream(name: string, params: Record<string, unknown> = {}) {
+		const abort = new AbortController()
+		const res = await fetch(`http://127.0.0.1:${h.port}/mcp`, {
+			method: 'POST',
+			signal: abort.signal,
+			headers: { 'content-type': 'application/json', accept: 'text/event-stream', 'mcp-name': name, ...STATELESS },
+			body: JSON.stringify({ jsonrpc: '2.0', id: 'sub-1', method: 'events/stream', params: { name, arguments: {}, cursor: null, ...params, _meta: meta } })
+		})
+		expect(res.headers.get('content-type')).toBe('text/event-stream')
+		const reader = res.body!.getReader()
+		const decoder = new TextDecoder()
+		let buffer = ''
+		/** The next notification, or null when none comes within `ms`. */
+		async function next(ms = 3000): Promise<Record<string, any> | null> {
+			const deadline = Date.now() + ms
+			for (;;) {
+				const end = buffer.indexOf('\n\n')
+				if (end >= 0) {
+					const frame = buffer.slice(0, end)
+					buffer = buffer.slice(end + 2)
+					return JSON.parse(frame.replace(/^data: /, ''))
+				}
+				const left = deadline - Date.now()
+				if (left <= 0) return null
+				const chunk = await Promise.race([reader.read(), Bun.sleep(left).then(() => null)])
+				if (!chunk || chunk.done) return null
+				buffer += decoder.decode(chunk.value)
+			}
+		}
+		return { next, stop: () => abort.abort() }
+	}
+
+	test('discover and initialize advertise the extension, and each event type offers poll and push', async () => {
+		const discover = (await rpc('server/discover', { _meta: meta }, STATELESS)).body.result
+		expect(discover.supportedVersions).toContain('2026-07-28')
+		expect(discover.capabilities.extensions['io.modelcontextprotocol/events']).toEqual({})
+		expect(discover.resultType).toBe('complete')
+		const init = (await rpc('initialize', { protocolVersion: '2025-11-25', capabilities: {} })).body.result
+		expect(init.capabilities.extensions['io.modelcontextprotocol/events']).toEqual({})
+
+		const { events } = (await rpc('events/list', { _meta: meta }, STATELESS)).body.result
+		expect(events.map((e: { name: string }) => e.name)).toEqual([
+			'issue.update',
+			'issue.decision',
+			'issue.question',
+			'issue.stuck',
+			'issue.started',
+			'issue.pr',
+			'issue.closed'
+		])
+		for (const event of events) expect(event.delivery).toEqual(['poll', 'push'])
+	})
+
+	test('a poll from null starts at now; the next one returns what happened since, filtered by issue', async () => {
+		await start('t1')
+		const first = (await poll('issue.update')).body.result
+		expect(first).toMatchObject({ events: [], truncated: false, hasMore: false, nextPollMs: 30000 })
+
+		await start('t2', { title: 'Other issue' })
+		await h.as('t1')('POST', '/api/issue/report', { text: 'Found the slow query' })
+		const all = (await poll('issue.update', { cursor: first.cursor })).body.result
+		expect(all.events.map((e: { data: { issue: string } }) => e.data.issue)).toEqual(['t2', 't1'])
+		expect(all.events[1]).toMatchObject({ eventId: expect.stringMatching(/^ev_\d+$/), name: 'issue.update', data: { issue: 't1', kind: 'report', text: 'Found the slow query', repo: 'acme/api' } })
+		expect(Date.parse(all.events[1].timestamp)).toBeGreaterThan(0)
+
+		const one = (await poll('issue.update', { cursor: first.cursor, arguments: { issue: 't1' } })).body.result
+		expect(one.events).toHaveLength(1)
+		const none = (await poll('issue.update', { cursor: all.cursor })).body.result
+		expect(none.events).toEqual([])
+		expect(none.cursor).toBe(all.cursor)
+	})
+
+	test('maxEvents pages the backlog with hasMore', async () => {
+		await start('t1')
+		const from = (await poll('issue.update')).body.result.cursor
+		for (const text of ['one', 'two', 'three']) await h.as('t1')('POST', '/api/issue/report', { text })
+		const page = (await poll('issue.update', { cursor: from, maxEvents: 2 })).body.result
+		expect(page.events.map((e: { data: { text: string } }) => e.data.text)).toEqual(['one', 'two'])
+		expect(page.hasMore).toBe(true)
+		const rest = (await poll('issue.update', { cursor: page.cursor, maxEvents: 2 })).body.result
+		expect(rest.events.map((e: { data: { text: string } }) => e.data.text)).toEqual(['three'])
+		expect(rest.hasMore).toBe(false)
+	})
+
+	test('a blocking decision is an issue.decision event with the webhook body, with or without a webhook, and its cursor outlives a restart', async () => {
+		const from = (await poll('issue.decision')).body.result.cursor
+		await start('t1')
+		const blocking = (await ask('t1', { kind: 'blocked', question: 'No staging access', recommend: 'Grant it', options: [] })).body.decision
+		h.restart()
+		const { events } = (await poll('issue.decision', { cursor: from })).body.result
+		expect(events).toHaveLength(1)
+		expect(events[0]).toMatchObject({
+			eventId: expect.stringMatching(/^nt_\d+$/),
+			data: { event: 'decision', issue: { id: 't1', repo: 'acme/api' }, decision: { id: blocking }, act: { tool: 'answer_decision', arguments: { decision: blocking } } }
+		})
+	})
+
+	test('a stream confirms first, sends each event as it happens, and a heartbeat with the cursor when quiet', async () => {
+		await start('t1')
+		const sub = await stream('issue.update', { heartbeatMs: 1000 })
+		try {
+			const active = (await sub.next())!
+			expect(active.method).toBe('notifications/events/active')
+			expect(active.params).toMatchObject({ truncated: false, heartbeatMs: 5000, _meta: { 'io.modelcontextprotocol/subscriptionId': 'sub-1' } })
+			await h.as('t1')('POST', '/api/issue/report', { text: 'Pushed the fix' })
+			const event = (await sub.next())!
+			const cursor = event.params.cursor
+			expect(event.method).toBe('notifications/events/event')
+			expect(cursor).toMatch(/^\d+$/)
+			expect(event.params).toMatchObject({ name: 'issue.update', data: { issue: 't1', text: 'Pushed the fix' } })
+			const beat = (await sub.next(7000))!
+			expect(beat.method).toBe('notifications/events/heartbeat')
+			expect(beat.params.cursor).toBe(cursor)
+		} finally {
+			sub.stop()
+		}
+	}, 15_000)
+
+	test('a stream from a cursor replays what it missed first', async () => {
+		await start('t1')
+		const from = (await poll('issue.update')).body.result.cursor
+		await h.as('t1')('POST', '/api/issue/report', { text: 'While you were away' })
+		const sub = await stream('issue.update', { cursor: from })
+		try {
+			expect((await sub.next())!.method).toBe('notifications/events/active')
+			expect((await sub.next())!.params.data.text).toBe('While you were away')
+		} finally {
+			sub.stop()
+		}
+	})
+
+	test('a cursor from another database, or below what was pruned, says truncated', async () => {
+		await start('t1')
+		expect((await poll('issue.update', { cursor: '999999' })).body.result.truncated).toBe(true)
+		const db = h.server.db
+		db.query(`insert into notices (event, issue_id, at, payload) values ('closed', 't1', 1, '{}')`).run()
+		const { pruneOld } = await import('./db.ts')
+		pruneOld(db)
+		expect((await poll('issue.closed', { cursor: '0' })).body.result.truncated).toBe(true)
+	})
+
+	test('wrong requests get the spec errors, and webhook delivery is refused as unsupported', async () => {
+		expect((await poll('issue.nope')).body.error.code).toBe(-32023)
+		expect((await poll('issue.update', { arguments: { colour: 'red' } })).body.error.code).toBe(-32602)
+		expect((await poll('issue.update', { arguments: { issue: 'nope' } })).body.error.message).toContain('no issue nope')
+		expect((await poll('issue.update', { cursor: 'abc' })).body.error.code).toBe(-32602)
+		const mismatch = await poll('issue.update', {}, { 'mcp-name': 'issue.closed' })
+		expect(mismatch.status).toBe(400)
+		expect(mismatch.body.error.code).toBe(-32020)
+		// Clients written before SEP-3415 send no Mcp-Name.
+		expect((await poll('issue.update', {}, {})).body.result.events).toEqual([])
+		const subscribe = await rpc('events/subscribe', { name: 'issue.update', arguments: {}, delivery: { mode: 'webhook', url: 'https://x.example/h', secret: 'whsec_x' } }, { 'mcp-name': 'issue.update' })
+		expect(subscribe.body.error).toMatchObject({ code: -32026, data: { feature: 'deliveryMode', value: 'webhook' } })
+		const version = await rpc('tools/list', { _meta: { 'io.modelcontextprotocol/protocolVersion': '1999-01-01' } })
+		expect(version.body.error).toMatchObject({ code: -32022, data: { supported: expect.arrayContaining(['2026-07-28']) } })
+	})
+})

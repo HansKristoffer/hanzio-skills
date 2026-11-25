@@ -110,7 +110,7 @@ export function setup(options: Partial<ServerOptions> = {}) {
 	process.env.FAKE_GH_LOG = ghLog
 	process.env.FAKE_GH_PR = ghPr
 	process.env.FAKE_GH_REPLY = ghReply
-	let server = startServer({ home, port, nudgeEveryMs: 0, reconcileEveryMs: 0, onShutdown: () => {}, ...options })
+	let server = startServer({ home, port, nudgeEveryMs: 0, reconcileEveryMs: 0, t3Events: false, onShutdown: () => {}, ...options })
 
 	const call = async (method: string, path: string, body?: unknown, headers: Record<string, string> = {}) => {
 		const res = await fetch(`http://127.0.0.1:${port}${path}`, {
@@ -174,7 +174,7 @@ export function setup(options: Partial<ServerOptions> = {}) {
 		},
 		restart() {
 			server.stop()
-			server = startServer({ home, port, nudgeEveryMs: 0, reconcileEveryMs: 0, onShutdown: () => {}, ...options })
+			server = startServer({ home, port, nudgeEveryMs: 0, reconcileEveryMs: 0, t3Events: false, onShutdown: () => {}, ...options })
 		},
 		close() {
 			server.stop()
