@@ -167,6 +167,13 @@ test('preview up starts the detached buncargo run in the checkout and puts its a
 	expect(status()).toMatchObject({ state: 'up', head: git(work, 'rev-parse', 'HEAD') })
 	expect(status().stopsAt).toBeGreaterThanOrEqual(before + 7_200_000)
 
+	expect(cli(['preview', 'up', '--profile', 'lite'], env).err).toBe('')
+	expect(calls().at(-3)!.args).toEqual(['dev', '--detach', '--profile=lite'])
+	const both = cli(['preview', 'up', '--apps', 'web', '--profile', 'lite'], env)
+	expect(both.code).toBe(1)
+	expect(both.err).toContain('--apps or --profile, not both')
+	expect(calls().at(-1)!.args).toEqual(['status', '--json'])
+
 	const failed = cli(['preview', 'up'], { ...env, FAKE_BUNCARGO_FAIL: '1' })
 	expect(failed.code).toBe(1)
 	expect(failed.err).toContain('did not start')

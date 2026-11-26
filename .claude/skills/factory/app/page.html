@@ -4396,6 +4396,8 @@ function settingsEditor(scope, layer, resolved, locked) {
 	const reviewApproval = choice('approval', ['auto', 'required', 'off'])
 	const merge = choice('merge', ['auto', 'ask', 'never'])
 	const overdue = number('reviewOverdueHours', 1, 720)
+	const setup = h('textarea', { placeholder: resolved.settings.setup?.join('\n') || 'One command per line, e.g. pnpm install --frozen-lockfile', 'aria-label': 'setup commands', disabled: off }, (draft.setup || []).join('\n'))
+	const profile = h('input', { value: draft.previewProfile || '', placeholder: resolved.settings.previewProfile || "buncargo's default", 'aria-label': 'preview profile', disabled: off })
 	const lists = Object.fromEntries(['reviewers', 'bots', 'trust', 'ignore'].map((k) => [k, h('input', { value: (draft[k] || []).join(', '), placeholder: resolved.settings[k]?.join(', ') || 'None', disabled: off })]))
 	fields.push(() => {
 		if (approval.value) draft.planApproval = approval.value; else delete draft.planApproval
@@ -4404,6 +4406,9 @@ function settingsEditor(scope, layer, resolved, locked) {
 		if (reviewApproval.value) draft.approval = reviewApproval.value; else delete draft.approval
 		if (merge.value) draft.merge = merge.value; else delete draft.merge
 		if (overdue.value !== '') draft.reviewOverdueHours = Number(overdue.value); else delete draft.reviewOverdueHours
+		const commands = setup.value.split('\n').map((v) => v.trim()).filter(Boolean)
+		if (commands.length) draft.setup = commands; else delete draft.setup
+		if (profile.value.trim()) draft.previewProfile = profile.value.trim(); else delete draft.previewProfile
 		for (const [k, inp] of Object.entries(lists)) {
 			const values = inp.value.split(',').map((v) => v.trim()).filter(Boolean)
 			if (values.length) draft[k] = values; else delete draft[k]
@@ -4438,6 +4443,10 @@ function settingsEditor(scope, layer, resolved, locked) {
 				field('Review rounds', rounds, 'Rounds before merge becomes your decision (0 skips review)')
 			),
 			field('Rulings', rulings, 'Standing rules included in every brief')
+		)),
+		part('Checkout', null, h('div', { class: 'stack' },
+			field('Setup', setup, `Commands every new checkout runs first, in order${shared('setup') ? ', from all projects' : ''}`),
+			h('div', { class: 'fields' }, field('Preview profile', profile, 'buncargo profile the reviewer\'s dev environment starts'))
 		)),
 		part('Review on GitHub', null, h('div', { class: 'stack' },
 			h('div', { class: 'fields' },

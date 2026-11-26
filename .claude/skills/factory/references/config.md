@@ -44,6 +44,10 @@ stages:
     note: |
       Merging to main deploys on Railway. Check /health and the worker's logs.
       Ship the release-please release after the merge.
+setup:
+  - pnpm install --frozen-lockfile
+  - bunx buncargo setup --yes
+previewProfile: lite
 planApproval: always
 reviewRounds: 3
 rulings: |
@@ -60,6 +64,8 @@ ignore: [copilot-pull-request-reviewer]
 - A target is `provider` and `model` together, as T3 Code's `orchestrator_capabilities` lists them, with optional `options` (Claude's `effort`, Codex's `reasoningEffort`). A layer that sets a target replaces the whole target below it.
 - `fallback` is a target, or an ordered list of targets (a fallback chain), that a stage runs on when its own provider refuses the run (a usage limit, a sign-in, a model that is gone). Each `factory run --stage <stage> --fallback` after a failed fallback steps to the next target in the chain automatically. Without a fallback left, a usage limit with a reset time pauses the issue until the reset and then goes on by itself; any other refusal stops the issue at a `blocked` decision until the user answers. A layer can set it with or without the stage's own target. For review, configure a chain starting with a provider other than the implementer's (for example, Codex primary with Claude Opus and Gemini fallbacks) so a usage limit never stalls review.
 - `note` is added to that stage's brief under "For this project". `implement.note` is the place for the seeded account to sign in with when the implementer captures the change in the running app. `land.note` says how the project deploys, how to check it, and whether to ship its release.
+- `setup`: commands a new checkout runs, in order, before its first command that needs them: the orchestrator in its worktree, each stage's child in its own (a review's is a fresh one), and the implementer in a checkout of the base for before captures. Every stage's brief carries them. Without it, a child sets a checkout up as the repository's `AGENTS.md` or README says.
+- `previewProfile`: the buncargo profile `factory preview up` starts when it is given neither `--apps` nor `--profile`. Empty starts buncargo's default.
 - `planApproval`: `auto` (the default) asks the user to approve the plan of a feature, a large change or a one-way door; `always` and `never` do what they say.
 - `reviewRounds`: review rounds on a PR before the merge becomes a decision, 0 to 5, default 2; 0 skips the review.
 - `rulings`: standing rules added to every brief.

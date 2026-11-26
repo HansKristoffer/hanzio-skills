@@ -5,10 +5,10 @@ import { existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from 'no
 import { join, resolve } from 'node:path'
 import { parseArgs, type ParseArgsOptionsConfig } from 'node:util'
 import { APP_DIR, DEFAULT_PORT, appVersion, factoryHome, factoryPort, hasSystemd, sh } from './env.ts'
-import { onHost, parseUrlFlags, repoWebBase, type PreviewUrl } from './evidence.ts'
+import { parseUrlFlags, repoWebBase, type PreviewUrl } from './evidence.ts'
 import * as gh from './gh.ts'
 import { prepare, pushEvidence } from './media.ts'
-import { answers, buncargoDown, buncargoUp, ownAlive, ownLog, ownStart, ownStop, usesBuncargo } from './preview.ts'
+import { answers, buncargoDown, buncargoUp, devSelection, ownAlive, ownLog, ownStart, ownStop, reach, usesBuncargo } from './preview.ts'
 import { withOverview, withSections } from './pr.ts'
 import { pushTaken, takeIn, type TakenPr } from './takein.ts'
 import { detectTailnet, startServer } from './server.ts'
@@ -70,12 +70,15 @@ What the reviewer looks at (git, ffmpeg and buncargo run here, in this checkout)
   evidence publish [--to <issue or PR url>]
       Push the captures to a ref on GitHub and show them in the PR's body; --to also posts them as one
       comment there. pr ready publishes too.
-  preview up [--apps <a,b>]
+  preview up [--apps <a,b> | --profile <name>]
       With a dev.config.ts: start this checkout's buncargo run, detached, and put its URLs on the page.
+      Neither flag starts the settings' previewProfile, or buncargo's default without one.
   preview up --url <name>=<url>... [--timeout <seconds>] -- <command>
       Without one: run the project's start command outside this session, with this environment, wait
-      until every URL answers (180 seconds), and put them on the page. A localhost URL goes on the page
-      under the host the page is read at. Without a command, the URLs of an app you started are registered.
+      until every URL answers (180 seconds), and put them on the page. Without a command, the URLs of an
+      app you started are registered.
+  Either way a localhost URL goes on the page under the host the page is read at when it answers there;
+  one that answers on this machine only stays, with a warning that gives the ssh -L line to reach it.
   preview down                   stop what preview up started
   preview failed <reason | ->    say on the page why it did not start
 
@@ -740,6 +743,7 @@ async function previewCommand(argv: string[]) {
 	if (action === 'up') {
 		const { values, positionals: command } = args(rest, {
 			apps: { type: 'string' },
+			profile: { type: 'string' },
 			url: { type: 'string', multiple: true },
 			timeout: { type: 'string' }
 		})
@@ -758,20 +762,30 @@ async function previewCommand(argv: string[]) {
 				`preview up: ${top} has no dev.config.ts, so there is no buncargo run to start. Give the start command the repository's AGENTS.md names and each address it serves: --url <name>=http://localhost:<port> -- <command>`
 			)
 		}
-		const started = buncargoUp(top, str(values.apps))
-		const warning = started.output
-		if (!started.urls.length) {
-			await call('POST', '/api/issue/preview', { state: 'failed', error: (warning || 'buncargo printed no URL').slice(-MAX_PREVIEW_ERROR) })
-			throw new Error(`the dev environment did not start, and the page says so.\n${warning}`)
+		let selection: string[]
+		// Asked before anything starts, so a thread without an issue starts nothing.
+		const status = await call('POST', '/api/issue/status', {})
+		try {
+			selection = devSelection({ apps: str(values.apps), profile: str(values.profile) }, status.settings?.previewProfile)
+		} catch (error) {
+			throw new UsageError((error as Error).message)
 		}
+		const started = buncargoUp(top, selection)
+		if (!started.urls.length) {
+			const output = started.output
+			await call('POST', '/api/issue/preview', { state: 'failed', error: (output || 'buncargo printed no URL').slice(-MAX_PREVIEW_ERROR) })
+			throw new Error(`the dev environment did not start, and the page says so.\n${output}`)
+		}
+		const reached = await reach(started.urls, new URL(String(status.url)).hostname)
+		const warning = [started.output, ...reached.notes].filter(Boolean).join('\n')
 		const result = await call('POST', '/api/issue/preview', {
 			state: 'up',
-			urls: started.urls,
+			urls: reached.urls,
 			head: head(),
 			stopsAt: started.stopsAt ?? undefined,
 			error: warning ? warning.slice(-MAX_PREVIEW_ERROR) : undefined
 		})
-		return { ...result, urls: started.urls, ...(started.stopsAt && { stopsAt: new Date(started.stopsAt).toISOString() }), ...(warning && { warning }) }
+		return { ...result, urls: reached.urls, ...(started.stopsAt && { stopsAt: new Date(started.stopsAt).toISOString() }), ...(warning && { warning }) }
 	}
 	if (action === 'down') {
 		const before = (await call('POST', '/api/issue/status', {})).preview as { state?: string } | null
@@ -834,20 +848,7 @@ async function previewOwn(top: string, given: PreviewUrl[], command: string[], t
 		await call('POST', '/api/issue/preview', { state: 'failed', error: shown.slice(0, MAX_PREVIEW_ERROR) })
 		throw new Error(`the dev environment did not start, and the page says so.\n${reason}`)
 	}
-	const notes: string[] = []
-	const urls: PreviewUrl[] = []
-	for (const entry of given) {
-		const there = onHost(entry.url, pageHost)
-		if (there && (await answers(there))) urls.push({ name: entry.name, url: there })
-		else {
-			urls.push(entry)
-			if (there) {
-				notes.push(
-					`${entry.name} answers at ${entry.url} on this machine only: ${there} does not answer, so a reviewer on another machine cannot open it. Start it listening on 0.0.0.0.`
-				)
-			}
-		}
-	}
+	const { urls, notes } = await reach(given, pageHost)
 	const warning = notes.join('\n')
 	const result = await call('POST', '/api/issue/preview', { state: 'up', urls, head: head(), error: warning || undefined })
 	return { ...result, urls, ...(own && { log: own.log }), ...(warning && { warning }) }

@@ -167,3 +167,15 @@ test('a stage can name a fallback target or chain, and --fallback steps through 
 		h.close()
 	}
 })
+
+test('setup and previewProfile validate, and resolve by layer with a setup list replacing the list below', () => {
+	const file = validate({ setup: ['pnpm install --frozen-lockfile', 'bunx buncargo setup --yes'], previewProfile: 'lite' })
+	const { settings, sources } = resolve({ global: { setup: ['bun install'] }, file, repo: { previewProfile: 'full' } })
+	expect(settings.setup).toEqual(['pnpm install --frozen-lockfile', 'bunx buncargo setup --yes'])
+	expect(settings.previewProfile).toBe('full')
+	expect(sources).toMatchObject({ setup: 'file', previewProfile: 'repo' })
+	expect(resolve({}).settings).toMatchObject({ setup: [], previewProfile: '' })
+	expect(() => validate({ setup: 'pnpm install' })).toThrow('setup: must be a list of commands')
+	expect(() => validate({ setup: ['pnpm install', ' '] })).toThrow('setup[1]: must be a command')
+	expect(() => validate({ previewProfile: 'lite --apps=x' })).toThrow('previewProfile: lite --apps=x is not a profile name')
+})

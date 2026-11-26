@@ -25,6 +25,15 @@ test('a stage with no note, context or rulings leaves those parts out', () => {
 	expect(brief).not.toContain('## Rulings')
 })
 
+test("the project's setup commands come before its note, fenced, and are left out when there are none", () => {
+	const { settings } = resolve({ file: { setup: ['pnpm install --frozen-lockfile', 'bunx buncargo setup --yes'], stages: { review: { note: 'Check the RBAC.' } } } })
+	const brief = buildBrief({ stage: 'review', runId: 'r_1', settings, issue })
+	expect(brief).toContain('## Set up the checkout')
+	expect(brief).toContain('```bash\npnpm install --frozen-lockfile\nbunx buncargo setup --yes\n```')
+	expect(brief.indexOf('## Set up the checkout')).toBeLessThan(brief.indexOf('## For this project'))
+	expect(buildBrief({ stage: 'review', runId: 'r_1', settings: defaults, issue })).not.toContain('## Set up the checkout')
+})
+
 test("the implement brief names the CLI and the skill's capture guide by their real paths", () => {
 	const brief = buildBrief({ stage: 'implement', runId: 'r_1', settings: defaults, issue })
 	expect(brief).not.toContain('{{')
