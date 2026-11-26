@@ -32,15 +32,21 @@ export type Settings = {
 	/** Logins never acted on. */
 	ignore: string[]
 	reviewOverdueHours: number
+	/** Commands that set up a new checkout (install, local setup), run in order before its first command. */
+	setup: string[]
+	/** The buncargo profile `preview up` starts when it names neither apps nor a profile. Empty: buncargo's default. */
+	previewProfile: string
 }
 
 const LISTS = ['reviewers', 'bots', 'trust', 'ignore'] as const
 const SCALARS = ['planApproval', 'reviewRounds', 'rulings', 'approval', 'merge', 'reviewOverdueHours'] as const
+/** How the factory sets up and starts a checkout. */
+const CHECKOUT = ['setup', 'previewProfile'] as const
 
 export type PartialSettings = {
 	orchestrator?: Target
 	stages?: { [S in Stage]?: Settings['stages'][S] }
-} & Partial<Pick<Settings, (typeof LISTS)[number] | (typeof SCALARS)[number]>>
+} & Partial<Pick<Settings, (typeof LISTS)[number] | (typeof SCALARS)[number] | (typeof CHECKOUT)[number]>>
 
 export type Source = 'default' | 'global' | 'file' | 'repo'
 export type Resolved = { settings: Settings; sources: Record<string, Source> }
@@ -64,7 +70,9 @@ export const defaults: Settings = {
 	merge: 'auto',
 	trust: [],
 	ignore: [],
-	reviewOverdueHours: 24
+	reviewOverdueHours: 24,
+	setup: [],
+	previewProfile: ''
 }
 
 const APPROVALS = ['auto', 'always', 'never']
@@ -109,7 +117,7 @@ function checkTarget(value: Record<string, unknown>, path: string, extra: string
 export function validate(value: unknown, where = 'settings'): PartialSettings {
 	if (value === null || value === undefined) return {}
 	if (!isObject(value)) throw new Error(`${where}: must be a mapping`)
-	checkKeys(value, ['orchestrator', 'stages', ...LISTS, ...SCALARS], '')
+	checkKeys(value, ['orchestrator', 'stages', ...LISTS, ...SCALARS, ...CHECKOUT], '')
 	if (value.orchestrator !== undefined) {
 		if (!isObject(value.orchestrator)) throw new Error('orchestrator: must be a mapping')
 		checkTarget(value.orchestrator, 'orchestrator')
@@ -158,6 +166,16 @@ export function validate(value: unknown, where = 'settings'): PartialSettings {
 			}
 		})
 	}
+	if (value.setup !== undefined) {
+		if (!Array.isArray(value.setup)) throw new Error('setup: must be a list of commands')
+		value.setup.forEach((command, i) => {
+			if (typeof command !== 'string' || !command.trim()) throw new Error(`setup[${i}]: must be a command`)
+		})
+	}
+	if (value.previewProfile !== undefined) {
+		checkString(value.previewProfile, 'previewProfile')
+		if (!/^[\w.-]*$/.test(value.previewProfile as string)) throw new Error(`previewProfile: ${value.previewProfile} is not a profile name`)
+	}
 	return value as PartialSettings
 }
 
@@ -191,7 +209,7 @@ export function resolve(layers: Layers): Resolved {
 		if (stage !== 'land') mark(`stages.${stage}.fallback`, 'default')
 		mark(`stages.${stage}.note`, 'default')
 	}
-	for (const key of [...SCALARS, ...LISTS]) mark(key, 'default')
+	for (const key of [...SCALARS, ...LISTS, ...CHECKOUT]) mark(key, 'default')
 
 	const ordered: [Source, PartialSettings | null | undefined][] = [
 		['global', layers.global],
@@ -230,7 +248,7 @@ export function resolve(layers: Layers): Resolved {
 			}
 		}
 		// A list replaces the list below it, like any other value.
-		for (const key of [...SCALARS, ...LISTS]) {
+		for (const key of [...SCALARS, ...LISTS, ...CHECKOUT]) {
 			if (layer[key] === undefined) continue
 			;(settings as Record<string, unknown>)[key] = layer[key]
 			mark(key, source)

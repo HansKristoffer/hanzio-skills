@@ -40,7 +40,9 @@ factory start --title "<title>" --body-file /tmp/<file> --source "<the item's UR
 - A starting message that says never to merge, or to ask before merging: `factory update --merge never` (or `ask`). It can only tighten the project's setting.
 - `sources.merge` is `default`, so nobody chose who merges in this project, and the repository's `AGENTS.md` asks for authorization before a merge or a deploy: `factory update --merge ask`.
 
-**Done when** `factory start` answered with an issue id, and you have its page `url`.
+Then run the answer's `settings.setup` commands in this worktree, in order. Each stage's brief gives them to its child for its own checkout.
+
+**Done when** `factory start` answered with an issue id, you have its page `url`, and every `settings.setup` command passed.
 
 ## 2. Set the models
 
@@ -139,9 +141,9 @@ For an item on GitHub or Linear (Linear once its key is on the Intake page), the
 The issue's page has a button that asks this thread to start the app, so the reviewer can try the change. The ask arrives as a message that starts with `Factory: the reviewer asked`, at any stage, and needs no `factory status` first.
 
 - **Start:** put this worktree on the PR's head (`git pull --ff-only` when its branch on origin is ahead), then run one of these with a 10-minute timeout:
-  - In a checkout with a `dev.config.ts`: `factory preview up`. It starts buncargo's detached run and puts every address `bunx buncargo url` prints on the page, the primary app first. Add `--apps <a,b>` when the change needs only those apps.
+  - In a checkout with a `dev.config.ts`: `factory preview up`. It starts buncargo's detached run on the settings' `previewProfile` (buncargo's default without one) and puts every address `bunx buncargo url` prints on the page, the primary app first. Add `--apps <a,b>` when the change needs only those apps, or `--profile <name>` for another profile; buncargo takes one of the two.
   - In any other checkout: `factory preview up --url <name>=http://localhost:<port> -- <command>`, with the start command and the port the repository's `AGENTS.md` names, and one `--url` per app the reviewer opens, named as they know it (`web`, `api`). The command gets this shell's environment, so a variable set in front of `factory` reaches it (`PORT=3100 factory preview up ...`); take a port nothing listens on. The call returns once every address answers, and puts each on the page under the host the reviewer reads the page at.
-- **A `warning` in the answer:** an app that answers "on this machine only" is started again listening on `0.0.0.0`, with the dev server's own flag (Vite's `--host`). An app that did not come up counts as not started when the reviewer needs it for this change.
+- **A `warning` in the answer:** an app that answers "on this machine only" keeps that when the repository binds it to loopback (127.0.0.1 in its `dev.config.ts`, start command or `AGENTS.md`): such a server is kept off the network on purpose, and the warning's `ssh -L` line on the page is how the reviewer reaches it. Any other app that answers on this machine only is started again listening on `0.0.0.0`, with the dev server's own flag (Vite's `--host`). An app that did not come up counts as not started when the reviewer needs it for this change.
 - **It did not start:** fix what the output names when that is setup (dependencies not installed, a missing local file the repository documents) and run it once more. Otherwise `factory preview failed -` with the reason on stdin. Change no code for it.
 - **Stop:** `factory preview down`. It stops what `factory preview up` started.
 

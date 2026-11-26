@@ -4,7 +4,7 @@
 import { chmodSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { factoryHome, factoryPort, hasSystemd, sh } from './env.ts'
-import { parseRun, parseUrlLines, primaryFirst } from './evidence.ts'
+import { onHost, parseRun, parseUrlLines, primaryFirst, type PreviewUrl } from './evidence.ts'
 
 /** buncargo puts the cause and the next command at the end of its output, in a block of up to 40 lines. */
 const tail = (text: string, lines = 40) => text.trim().split('\n').slice(-lines).join('\n')
@@ -26,10 +26,19 @@ const buncargo = () => (process.env.FACTORY_BUNCARGO ? [process.env.FACTORY_BUNC
 
 export const usesBuncargo = (top: string) => existsSync(join(top, 'dev.config.ts'))
 
-/** Starts this checkout's buncargo run in the background and returns its URLs, as the reader's machine
- * reaches them, the primary app first, and when buncargo stops the run for idling. */
-export function buncargoUp(top: string, apps?: string) {
-	const started = sh([...buncargo(), 'dev', '--detach', ...(apps ? [`--apps=${apps}`] : [])], { cwd: top })
+/** What `dev` starts: the apps asked for, the profile asked for, or the settings' profile. buncargo refuses
+ * `--apps` with `--profile`, so asking for both is refused here, before anything starts. */
+export function devSelection(asked: { apps?: string; profile?: string }, previewProfile = '') {
+	if (asked.apps && asked.profile) throw new Error('preview up: give --apps or --profile, not both (buncargo takes one)')
+	if (asked.apps) return [`--apps=${asked.apps}`]
+	const profile = asked.profile || previewProfile
+	return profile ? [`--profile=${profile}`] : []
+}
+
+/** Starts this checkout's buncargo run in the background and returns its URLs as buncargo prints them, the
+ * primary app first, and when buncargo stops the run for idling. */
+export function buncargoUp(top: string, selection: string[] = []) {
+	const started = sh([...buncargo(), 'dev', '--detach', ...selection], { cwd: top })
 	const listed = sh([...buncargo(), 'url'], { cwd: top })
 	const run = listed.ok ? parseRun(sh([...buncargo(), 'status', '--json'], { cwd: top }).out) : {}
 	const urls = listed.ok ? primaryFirst(parseUrlLines(listed.out), run.primary) : []
@@ -45,6 +54,65 @@ export function buncargoUp(top: string, apps?: string) {
 export function buncargoDown(top: string) {
 	const stopped = sh([...buncargo(), 'stop', '--all'], { cwd: top })
 	return { ok: stopped.ok, output: stopped.ok ? '' : tail(`${stopped.out}\n${stopped.err}`) }
+}
+
+// ---- where the reader opens it ----
+
+const LOOPBACK = new Set(['localhost', '127.0.0.1', '0.0.0.0', '[::1]'])
+
+const hostOf = (url: string) => {
+	try {
+		return new URL(url).hostname
+	} catch {
+		return null
+	}
+}
+
+const portOf = (url: string) => {
+	const parsed = new URL(url)
+	return parsed.port || (parsed.protocol === 'https:' ? '443' : '80')
+}
+
+/**
+ * Each address as the page's reader opens it: a loopback address moves to the page's host when the app
+ * answers there. An app that answers on this machine only keeps its loopback address, with a note and one
+ * `ssh -L` line that forwards every such port from the reader's machine. Addresses on other hosts stay as
+ * they are, and a page read on this machine needs no move.
+ */
+export async function reach(given: PreviewUrl[], pageHost: string) {
+	if (LOOPBACK.has(pageHost.toLowerCase())) return { urls: given, notes: [] as string[] }
+	const urls: PreviewUrl[] = []
+	const notes: string[] = []
+	const forwards: string[] = []
+	const local = (entry: PreviewUrl, url: string) => {
+		urls.push({ name: entry.name, url })
+		notes.push(`${entry.name} answers at ${url} on this machine only, so a reviewer on another machine cannot open it as it is.`)
+		forwards.push(portOf(url))
+	}
+	for (const entry of given) {
+		const host = hostOf(entry.url)?.toLowerCase()
+		const there = onHost(entry.url, pageHost)
+		if (there) {
+			if (await answers(there)) urls.push({ name: entry.name, url: there })
+			else if (await answers(entry.url)) local(entry, entry.url)
+			else {
+				urls.push(entry)
+				notes.push(`${entry.name} does not answer at ${entry.url}.`)
+			}
+		} else if (host === pageHost.toLowerCase() && !(await answers(entry.url))) {
+			const loopback = entry.url.replace(/^(https?:\/\/)[^/:?#]+/, (_, scheme: string) => `${scheme}127.0.0.1`)
+			if (await answers(loopback)) local(entry, loopback)
+			else {
+				urls.push(entry)
+				notes.push(`${entry.name} does not answer at ${entry.url}.`)
+			}
+		} else urls.push(entry)
+	}
+	if (forwards.length) {
+		const flags = [...new Set(forwards)].map((port) => `-L ${port}:127.0.0.1:${port}`).join(' ')
+		notes.push(`From another machine, forward first and open the address above: ssh -N ${flags} ${pageHost}`)
+	}
+	return { urls, notes }
 }
 
 // ---- a project's own start command ----

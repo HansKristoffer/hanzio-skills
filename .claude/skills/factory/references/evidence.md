@@ -31,11 +31,11 @@ One capture per thing a reviewer must see, at most eight; a screen the change do
 
 ## The base side comes first
 
-A before picture, a baseline number and a base transcript all need the code as it was. Research's `reproduction` already holds its command and what that printed on the base. Take the rest in this checkout before your first edit. Past that point, take it from a second checkout of the commit this branch started from, so the two sides differ by this change alone (`git worktree add --detach <temp folder> "$(git merge-base HEAD origin/<default>)"`, start the app there, `git worktree remove <temp folder>` afterwards) and pass `--commit <that commit>` to `factory evidence add`, never from memory or from production.
+A before picture, a baseline number and a base transcript all need the code as it was. Research's `reproduction` already holds its command and what that printed on the base. Take the rest in this checkout before your first edit. Past that point, take it from a second checkout of the commit this branch started from, so the two sides differ by this change alone (`git worktree add --detach <temp folder> "$(git merge-base HEAD origin/<default>)"`, set it up as the brief says, start the app there; afterwards stop it, with `bunx buncargo stop --all --root <temp folder>` for a buncargo run, then `git worktree remove <temp folder>`) and pass `--commit <that commit>` to `factory evidence add`, never from memory or from production.
 
 ## Captures
 
-1. **Start the app** as the repository's `AGENTS.md` says. With buncargo: `bunx buncargo dev --detach`, then `bunx buncargo url` for the address. Sign in with the seeded or demo account the project's note or seed files name.
+1. **Start the app** as the repository's `AGENTS.md` says. With buncargo: `bunx buncargo dev --detach` (with the profile the project's note names), then `bunx buncargo url` for the address. Sign in with the seeded or demo account the project's note or seed files name. A capture is pushed to the repository and shown in the PR, so it shows only seeded or made-up data.
 2. **Stills.** Call the Skill tool with `agent-browser` and drive the app with it, then save a PNG of the viewport at 1280 by 800 or wider. Frame what changed: scroll it into view, and open the dialog or the menu the change lives in. Use the same viewport, theme, account and data for a before and its after, so only the change differs.
 3. **A video.** Call the Skill tool with `product-video` and follow its "A silent clip for a reviewer". Its captions say what each step shows. Skip everything else that skill offers: no brand work, music, narration or critic.
 4. **Add each one**, with a title that names the screen or the flow in the user's words:

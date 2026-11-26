@@ -410,7 +410,7 @@ export function factoryTools(api: FactoryApi): Tool[] {
 			name: 'set_settings',
 			title: 'Set settings',
 			description:
-				"Replaces one layer of settings kept on this machine: global (all projects) or repo:<owner/name>. The layer is replaced whole, so read it with get_settings first and send it back changed. Keys: orchestrator, stages.{research,plan,implement,review,land} (provider, model, options, fallback, note), planApproval, reviewRounds, rulings, reviewers, bots, approval, merge, trust, ignore, reviewOverdueHours. Running issues keep the settings they started with. A project whose store is its file reads its factory.config.yaml instead of repo:<owner/name>.",
+				"Replaces one layer of settings kept on this machine: global (all projects) or repo:<owner/name>. The layer is replaced whole, so read it with get_settings first and send it back changed. Keys: orchestrator, stages.{research,plan,implement,review,land} (provider, model, options, fallback, note), planApproval, reviewRounds, rulings, reviewers, bots, approval, merge, trust, ignore, reviewOverdueHours, setup (commands a new checkout runs first), previewProfile. Running issues keep the settings they started with. A project whose store is its file reads its factory.config.yaml instead of repo:<owner/name>.",
 			inputSchema: {
 				type: 'object',
 				properties: {
